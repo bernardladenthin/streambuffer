@@ -1,3 +1,5 @@
+[![Travis build status](https://travis-ci.org/bernardladenthin/streambuffer.svg)](https://travis-ci.org/bernardladenthin/streambuffer) [![Maven Central](https://maven-badges.herokuapp.com/maven-central/net.ladenthin/streambuffer/badge.svg)](https://maven-badges.herokuapp.com/maven-central/net.ladenthin/streambuffer)
+
 streambuffer
 ============================
 A stream buffer is a class to buffer data that has been written to an OutputStream and provide the data in an InputStream.
