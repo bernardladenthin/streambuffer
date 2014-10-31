@@ -49,8 +49,16 @@ public class StreamBuffer implements Closeable {
     /**
      * A {@link Semaphore} to signal that data are added to the {@link #buffer}.
      * This signal is also used to announce that the stream was closed.
+     * This {@link Semaphore} is used only for internal communication.
      */
     private final Semaphore signalModification = new Semaphore(0);
+
+    /**
+     * A {@link Semaphore} to signal that data are added to the {@link #buffer}.
+     * This signal is also used to announce that the stream was closed.
+     * This {@link Semaphore} is used only for external communication.
+     */
+    private final Semaphore signalModificationExternal = new Semaphore(0);
 
     /**
      * A variable for the current position of the current element in the
@@ -149,6 +157,24 @@ public class StreamBuffer implements Closeable {
         // hold up the count to a maximum of one
         if (signalModification.availablePermits() == 0) {
             signalModification.release();
+        }
+        // same twice for external communication
+        if (signalModificationExternal.availablePermits() == 0) {
+            signalModificationExternal.release();
+        }
+    }
+    
+    /**
+     * This method is blocking until data is available on the
+     * {@link InputStream} or the stream was closed.
+     */
+    public void blockDataAvailable() throws InterruptedException {
+        if (isClosed()) {
+            return;
+        }
+        
+        if (availableBytes < 1) {
+            signalModificationExternal.acquire();
         }
     }
 
