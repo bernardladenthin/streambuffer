@@ -3,11 +3,11 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>net.ladenthin</groupId>
     <artifactId>streambuffer</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
     <packaging>jar</packaging>
     <name>streambuffer</name>
     <description>A stream buffer is a class to buffer data that has been written to an OutputStream and provide the data in an InputStream.</description>
-    <url>http://code.google.com/p/streambuffer/</url>
+    <url>https://github.com/bernardladenthin/streambuffer</url>
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
@@ -48,9 +48,9 @@
         </license>
     </licenses>
     <scm>
-        <connection>scm:git:https://code.google.com/p/streambuffer/</connection>
-        <developerConnection>scm:git:https://code.google.com/p/streambuffer/</developerConnection>
-        <url>http://code.google.com/p/streambuffer/source/browse</url>
+        <connection>scm:git:https://github.com/bernardladenthin/streambuffer</connection>
+        <developerConnection>scm:git:https://github.com/bernardladenthin/streambuffer</developerConnection>
+        <url>https://github.com/bernardladenthin/streambuffer</url>
     </scm>
     <dependencies>
         <dependency>
