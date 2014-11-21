@@ -155,37 +155,51 @@ public class StreamBufferTest {
      */
     @Test
     public void testSafeWriteFalse() throws IOException {
-        StreamBuffer sb = new StreamBuffer(false);
+        final StreamBuffer sb = new StreamBuffer(false);
+        // the initial value
+        final byte initialValue = (byte) 4;
+        // the new value
+        final byte newValue = (byte) 5;
 
         /**
-         * Create a new array (not immutable). The content of this block should
+         * Create a new array (not immutable). The content of this array should
          * be changed after it has been written to the stream.
          */
-        byte[] notImmutable = new byte[]{4, 4};
+        final byte[] notImmutable = new byte[]{initialValue, initialValue};
 
         /**
-         * Write the changeable buffer to the stream.
+         * Write the modifiable array to the stream.
          */
         sb.os.write(notImmutable);
 
         /**
-         * Change the memory from outside.
+         * Change the content of the modifiable array to other values.
          */
-        notImmutable[0] = 5;
-        notImmutable[1] = 5;
+        notImmutable[0] = newValue;
+        notImmutable[1] = newValue;
 
         /**
          * Read the content from the stream.
          */
-        byte[] fromMemory = new byte[2];
-        int read = sb.is.read(fromMemory);
+        final byte[] fromMemory = new byte[2];
+        final int read = sb.is.read(fromMemory);
 
         /**
-         * Because the original buffer has been changed, the read-out data
-         * should also have been changed.
+         * Ensure all values have been read.
          */
-        assertEquals(5, fromMemory[0]);
-        assertEquals(5, fromMemory[1]);
+        assertEquals(fromMemory.length, read);
+
+        /**
+         * Ensure the stream is empty.
+         */
+        assertEquals(sb.is.available(), 0);
+
+        /**
+         * Because the original array has been changed, the read-out data should
+         * also have been changed.
+         */
+        assertEquals(newValue, fromMemory[0]);
+        assertEquals(newValue, fromMemory[1]);
     }
 
     @Test
