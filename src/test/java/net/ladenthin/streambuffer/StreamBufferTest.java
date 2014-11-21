@@ -145,19 +145,45 @@ public class StreamBufferTest {
         assertEquals(4, fromMemory[3]);
     }
 
+    /**
+     * This test verifies that when a disabled duplication (disabled
+     * <code>safeWrite</code> option) of the array can be changed from outside.
+     * This ensures that the original array is used (it creates no protected
+     * duplicates).
+     *
+     * @throws IOException
+     */
     @Test
     public void testSafeWriteFalse() throws IOException {
         StreamBuffer sb = new StreamBuffer(false);
+
+        /**
+         * Create a new array (not immutable). The content of this block should
+         * be changed after it has been written to the stream.
+         */
         byte[] notImmutable = new byte[]{4, 4};
+
+        /**
+         * Write the changeable buffer to the stream.
+         */
         sb.os.write(notImmutable);
 
-        // change the memory from outside
+        /**
+         * Change the memory from outside.
+         */
         notImmutable[0] = 5;
         notImmutable[1] = 5;
 
+        /**
+         * Read the content from the stream.
+         */
         byte[] fromMemory = new byte[2];
         int read = sb.is.read(fromMemory);
 
+        /**
+         * Because the original buffer has been changed, the read-out data
+         * should also have been changed.
+         */
         assertEquals(5, fromMemory[0]);
         assertEquals(5, fromMemory[1]);
     }
