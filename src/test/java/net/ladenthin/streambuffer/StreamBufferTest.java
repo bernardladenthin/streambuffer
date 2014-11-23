@@ -130,19 +130,61 @@ public class StreamBufferTest {
         assertEquals(-1, read);
     }
 
+    /**
+     * This test verifies the read method of the input stream to write the
+     * bytes at a specific offset.
+     * @throws IOException 
+     */
     @Test
     public void testSafeWriteSimpleOffset() throws IOException {
-        StreamBuffer sb = new StreamBuffer(false);
-        byte[] content = new byte[]{4, 4, 4};
+        final StreamBuffer sb = new StreamBuffer(false);
+        // the initial value
+        final byte initialValue = (byte) 4;
+
+        /**
+         * Create a new array with initial values.
+         */
+        final byte[] content = new byte[]{initialValue, initialValue, initialValue};
+
+        /**
+         * Write the array to the stream.
+         */
         sb.os.write(content);
 
-        byte[] fromMemory = new byte[4];
-        int read = sb.is.read(fromMemory, 2, 2);
+        /**
+         * Ensure the array was completly written to the stream.
+         */
+        assertEquals(3, sb.is.available());
 
+        /**
+         * A buffer to read the content from the stream.
+         */
+        final byte[] fromMemory = new byte[4];
+
+        /**
+         * Read 2 bytes to a offset of 2 bytes.
+         */
+        final int read = sb.is.read(fromMemory, 2, 2);
+
+        /**
+         * Ensure only 2 values have been read.
+         */
+        assertEquals(2, read);
+
+        /**
+         * Ensure 1 value is remaining in the stream.
+         */
+        assertEquals(1, sb.is.available());
+
+        /**
+         * Ensure the initial values were written at the specific offset. The
+         * first 2 values should be 0 (unwritten). The last 2 values
+         * should be the initial value 4.
+         */
         assertEquals(0, fromMemory[0]);
         assertEquals(0, fromMemory[1]);
-        assertEquals(4, fromMemory[2]);
-        assertEquals(4, fromMemory[3]);
+        assertEquals(initialValue, fromMemory[2]);
+        assertEquals(initialValue, fromMemory[3]);
     }
 
     /**
