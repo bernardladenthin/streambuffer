@@ -137,7 +137,8 @@ public class StreamBufferTest {
      */
     @Test
     public void testSafeWriteSimpleOffset() throws IOException {
-        final StreamBuffer sb = new StreamBuffer(false);
+        final StreamBuffer sb = new StreamBuffer();
+        sb.setSafeWrite(false);
         // the initial value
         final byte initialValue = (byte) 4;
 
@@ -197,7 +198,8 @@ public class StreamBufferTest {
      */
     @Test
     public void testSafeWriteFalse() throws IOException {
-        final StreamBuffer sb = new StreamBuffer(false);
+        final StreamBuffer sb = new StreamBuffer();
+        sb.setSafeWrite(false);
         // the initial value
         final byte initialValue = (byte) 4;
         // the new value
@@ -246,7 +248,8 @@ public class StreamBufferTest {
 
     @Test
     public void testSafeWriteTrue() throws IOException {
-        StreamBuffer sb = new StreamBuffer(true);
+        StreamBuffer sb = new StreamBuffer();
+        sb.setSafeWrite(true);
         byte[] notImmutable = new byte[]{4, 4};
         sb.os.write(notImmutable);
 
@@ -368,7 +371,8 @@ public class StreamBufferTest {
 
     @Test
     public void testTrim() throws IOException {
-        StreamBuffer sb = new StreamBuffer(333);
+        StreamBuffer sb = new StreamBuffer();
+        sb.setMaxBufferElements(333);
         final byte value = 55;
         final int numberElements = 1_000;
         // write all values to the buffer

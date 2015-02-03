@@ -83,7 +83,7 @@ public class StreamBuffer implements Closeable {
      * immutable. This may be revoked by {@link #ignoreSafeWrite}, for example a
      * byte array was created internally.
      */
-    private final boolean safeWrite;
+    private volatile boolean safeWrite = false;
 
     /**
      * A flag to disable the {@link safeWrite}. I. e. to write a byte array from
@@ -100,20 +100,27 @@ public class StreamBuffer implements Closeable {
      * <code>0</code> to disable the trim option. Default is a maximum of
      * <code>100</code> elements.
      */
-    private final int maxBufferElements;
+    private volatile int maxBufferElements = 100;
 
     /**
-     * Construct a {@link StreamBuffer} with default settings. This constructor
-     * is recommended.
+     * Construct a new {@link StreamBuffer}.
      */
     public StreamBuffer() {
-        this.safeWrite = false;
-        maxBufferElements = 100;
     }
 
     /**
-     * Construct a {@link StreamBuffer} by specifying a secure or unsercure
-     * write operation.
+     * Returns the flag which indicates whether write operations are executed
+     * safe or unsafe.
+     *
+     * @return <code>true</code> if the safe write option is enabled, otherwise
+     * <code>false</code>.
+     */
+    public boolean isSafeWrite() {
+        return safeWrite;
+    }
+
+    /**
+     * Set a secure or unsercure write operation.
      *
      * @param safeWrite A flag to enable a safe write. If safe write is enabled,
      * modifiable byte arrays are cloned before they are written. Benefit: It
@@ -121,31 +128,25 @@ public class StreamBuffer implements Closeable {
      * external changes. Use <code>true</code> to force a clone. Otherwise use
      * <code>false</code> (default).
      */
-    public StreamBuffer(boolean safeWrite) {
+    public void setSafeWrite(boolean safeWrite) {
         this.safeWrite = safeWrite;
-        maxBufferElements = 100;
     }
 
     /**
-     * Construct a {@link StreamBuffer} by specifying maximum elements for the
-     * buffer.
+     * Returns the number of maximum elements which are held in maximum memory.
+     *
+     * @return the number of elements.
+     */
+    public int getMaxBufferElements() {
+        return maxBufferElements;
+    }
+
+    /**
+     * Set maximum elements for the buffer.
      *
      * @param maxBufferElements number of maximum elements.
      */
-    public StreamBuffer(int maxBufferElements) {
-        this.safeWrite = false;
-        this.maxBufferElements = maxBufferElements;
-    }
-
-    /**
-     * This constructor combines the constructor {@link #StreamBuffer(boolean)}
-     * and {@link #StreamBuffer(int)}.
-     *
-     * @param safeWrite see the constructor {@link #StreamBuffer(boolean)}.
-     * @param maxBufferElements see the constructor {@link #StreamBuffer(int)}.
-     */
-    public StreamBuffer(boolean safeWrite, int maxBufferElements) {
-        this.safeWrite = safeWrite;
+    public void setMaxBufferElements(int maxBufferElements) {
         this.maxBufferElements = maxBufferElements;
     }
 
@@ -182,7 +183,9 @@ public class StreamBuffer implements Closeable {
      * This method trims the buffer.
      */
     private void trim() throws IOException {
-        if ((maxBufferElements > 0) && (buffer.size() >= 2) && (buffer.size() > maxBufferElements)) {
+        // To be thread safe cache the maxBufferElements value.
+        int tmpMaxBufferElements = getMaxBufferElements();
+        if ((tmpMaxBufferElements > 0) && (buffer.size() >= 2) && (buffer.size() > tmpMaxBufferElements)) {
 
             // ned to store more bufs, may it is not possible to read out all data at once
             // the available method only returns an int value instead a long value
@@ -428,6 +431,8 @@ public class StreamBuffer implements Closeable {
         @Override
         public void write(final byte[] b, final int off, final int len)
                 throws IOException {
+            // To be thread safe cache the safeWrite value.
+            boolean tmpSafeWrite = isSafeWrite();
             // security check copied from super.write
             // === snip
             if (b == null) {
@@ -444,7 +449,7 @@ public class StreamBuffer implements Closeable {
             synchronized (bufferLock) {
                 if (off == 0 && b.length == len) {
                     // add the full byte[] to the buffer
-                    if (safeWrite && !ignoreSafeWrite) {
+                    if (tmpSafeWrite && !ignoreSafeWrite) {
                         buffer.add(b.clone());
                     } else {
                         buffer.add(b);

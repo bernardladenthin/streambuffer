@@ -3,7 +3,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>net.ladenthin</groupId>
     <artifactId>streambuffer</artifactId>
-    <version>1.0.1</version>
+    <version>1.1.0</version>
     <packaging>jar</packaging>
     <name>streambuffer</name>
     <description>A stream buffer is a class to buffer data that has been written to an OutputStream and provide the data in an InputStream.</description>
