@@ -164,10 +164,12 @@ public class StreamBuffer implements Closeable {
             signalModificationExternal.release();
         }
     }
-    
+
     /**
      * This method is blocking until data is available on the
-     * {@link InputStream} or the stream was closed.
+     * {@link InputStream} or the stream was closed. This method could be called
+     * from one thread only. This method could not be used to notify two threads.
+     * @throws java.lang.InterruptedException if the current thread is interrupted
      */
     public void blockDataAvailable() throws InterruptedException {
         if (isClosed()) {
@@ -180,15 +182,24 @@ public class StreamBuffer implements Closeable {
     }
 
     /**
-     * This method trims the buffer.
+     * This method trims the buffer. This method can be invoked after every
+     * write operation. The method checks itself if the buffer should be trimmed
+     * or not.
      */
     private void trim() throws IOException {
-        // To be thread safe cache the maxBufferElements value.
+        /**
+         * To be thread safe, cache the maxBufferElements value. May the method
+         * <code>setMaxBufferElements</code> was invoked from outside.
+         */
         int tmpMaxBufferElements = getMaxBufferElements();
         if ((tmpMaxBufferElements > 0) && (buffer.size() >= 2) && (buffer.size() > tmpMaxBufferElements)) {
 
-            // ned to store more bufs, may it is not possible to read out all data at once
-            // the available method only returns an int value instead a long value
+            /**
+             * Need to store more bufs, may it is not possible to read out all
+             * data at once. The available method only returns an int value
+             * instead a long value. Store all read parts of the full buffer in
+             * a queue.
+             */
             final Deque<byte[]> tmpBuffer = new LinkedList();
 
             int available;
@@ -202,8 +213,16 @@ public class StreamBuffer implements Closeable {
                 assert read == available : "Read not enough bytes from buffer.";
                 tmpBuffer.add(buf);
             }
-            // write all bytes back to the clean buffer
+            /**
+             * Write all previously read parts back to the buffer. The buffer is
+             * clean and contains no elements because all parts are read out.
+             */
             try {
+                /**
+                 * The reference to the buffer deque is not reachable out of the
+                 * trim method. It is possible to ignore the safeWrite flag to
+                 * prevent not necessary clone operations.
+                 */
                 ignoreSafeWrite = true;
                 while (!tmpBuffer.isEmpty()) {
                     os.write(tmpBuffer.pollFirst());
