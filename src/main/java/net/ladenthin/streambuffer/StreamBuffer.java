@@ -234,7 +234,7 @@ public class StreamBuffer implements Closeable {
      */
     private long tryWaitForEnoughBytes(final long bytes) throws IOException {
         // we can only wait for a positive number of bytes
-        assert !(bytes <= 0) : "Number of bytes are negative or zero : " + bytes;
+        assert bytes > 0 : "Number of bytes are negative or zero : " + bytes;
 
         // if we haven't enough bytes, the loop starts and wait for enough bytes
         while (bytes > availableBytes) {
@@ -333,7 +333,7 @@ public class StreamBuffer implements Closeable {
             // ==================================================
             // === snip
             // should never happen
-            assert !(missingBytes < 0) : "Copied more bytes as given";
+            assert missingBytes >= 0 : "Copied more bytes as given";
 
             // check if we don't need to copy further bytes anymore
             if (missingBytes == 0) {
@@ -357,7 +357,7 @@ public class StreamBuffer implements Closeable {
                     // ==================================================
                     // === snip
                     // should never happen
-                    assert !(missingBytes < 0) : "Copied more bytes as given";
+                    assert missingBytes >= 0 : "Copied more bytes as given";
 
                     // check if we don't need to copy further bytes anymore
                     if (missingBytes == 0) {
