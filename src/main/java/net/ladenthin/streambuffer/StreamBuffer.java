@@ -532,4 +532,13 @@ public class StreamBuffer implements Closeable {
     public OutputStream getOutputStream() {
         return os;
     }
+
+    /**
+     * Returns the number of elements in the buffer.
+     *
+     * @return the number of elements in the buffer.
+     */
+    public int getBufferSize() {
+        return buffer.size();
+    }
 }
