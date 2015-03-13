@@ -603,10 +603,12 @@ public class StreamBufferTest {
     public void blockDataAvailable_writeToStream_return() throws IOException, InterruptedException {
         final StreamBuffer sb = new StreamBuffer();
         final Semaphore s = new Semaphore(0);
+        final Semaphore s1 = new Semaphore(0);
         Thread consumer = new Thread(new Runnable() {
 
             public void run() {
                 try {
+                    s1.release();
                     sb.blockDataAvailable();
                     s.release();
                 } catch (InterruptedException ex) {
@@ -615,6 +617,11 @@ public class StreamBufferTest {
             }
         });
         consumer.start();
+        /**
+         * Sleep one second to give the method blockDataAvailable enough time to
+         * block the thread at the right condition.
+         */
+        s1.acquire();
         sb.os.write(anyValue);
         assertThat(s.tryAcquire(10, TimeUnit.SECONDS), is(true));
     }
@@ -623,10 +630,12 @@ public class StreamBufferTest {
     public void blockDataAvailable_closeStream_return() throws IOException, InterruptedException {
         final StreamBuffer sb = new StreamBuffer();
         final Semaphore s = new Semaphore(0);
+        final Semaphore s1 = new Semaphore(0);
         Thread consumer = new Thread(new Runnable() {
 
             public void run() {
                 try {
+                    s1.release();
                     sb.blockDataAvailable();
                     s.release();
                 } catch (InterruptedException ex) {
@@ -635,6 +644,12 @@ public class StreamBufferTest {
             }
         });
         consumer.start();
+        s1.acquire();
+        /**
+         * Sleep one second to give the method blockDataAvailable enough time to
+         * block the thread at the right condition.
+         */
+        Thread.sleep(1000);
         sb.os.close();
         assertThat(s.tryAcquire(10, TimeUnit.SECONDS), is(true));
     }
