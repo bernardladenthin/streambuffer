@@ -22,21 +22,28 @@ import java.io.DataInputStream;
 import java.io.DataOutput;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.CoreMatchers.not;
+import static org.hamcrest.number.OrderingComparison.*;
 import org.junit.Assert;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertThat;
 import org.junit.Test;
 
 public class StreamBufferTest {
 
+    /**
+     * The answer to all questions.
+     */
+    private final static byte anyValue = 42;
+
     @Test
     public void testSimpleRoundTrip() throws IOException {
-        byte testValue = 99;
-
         StreamBuffer sb = new StreamBuffer();
         sb.os.write(0);
         byte[] b0 = new byte[10];
         for (int i = 0; i < b0.length; ++i) {
-            b0[i] = testValue;
+            b0[i] = anyValue;
         }
         sb.os.write(b0);
         sb.os.write(0);
@@ -50,84 +57,8 @@ public class StreamBufferTest {
         assertEquals((long) 0, (long) target[11]);
 
         for (int i = 1; i < target.length - 1; ++i) {
-            assertEquals((long) testValue, (long) target[i]);
+            assertEquals(anyValue, (long) target[i]);
         }
-    }
-
-    @Test
-    public void testDestinationOffset() throws IOException {
-        byte testValue = 99;
-
-        StreamBuffer sb = new StreamBuffer();
-        byte[] b0 = new byte[6];
-        for (int i = 0; i < b0.length; ++i) {
-            b0[i] = testValue;
-        }
-        sb.os.write(b0);
-
-        assertEquals(6, sb.is.available());
-
-        byte[] target0 = new byte[4];
-        sb.is.read(target0, 2, 2);
-
-        byte[] target1 = new byte[4];
-        sb.is.read(target1, 2, 2);
-
-        byte[] target2 = new byte[4];
-        sb.is.read(target2, 2, 2);
-
-        assertEquals((long) target0[0], (long) 0);
-        assertEquals((long) target0[1], (long) 0);
-        for (int i = 2; i < target0.length; ++i) {
-            assertEquals((long) testValue, (long) target0[i]);
-        }
-
-        assertEquals((long) target1[0], (long) 0);
-        assertEquals((long) target1[1], (long) 0);
-        for (int i = 2; i < target1.length; ++i) {
-            assertEquals((long) testValue, (long) target1[i]);
-        }
-
-        assertEquals((long) target2[0], (long) 0);
-        assertEquals((long) target2[1], (long) 0);
-        for (int i = 2; i < target2.length; ++i) {
-            assertEquals((long) testValue, (long) target2[i]);
-        }
-    }
-
-    @Test(expected = IOException.class)
-    public void testWriteOnClosedStream() throws IOException {
-        StreamBuffer sb = new StreamBuffer();
-        sb.os.write(-1);
-        // test closed stream
-        sb.os.close();
-
-        final int v0 = sb.is.read();
-        assertEquals(255, v0);
-        int read = sb.is.read();
-        assertEquals(-1, read);
-
-        sb.os.write(-1);
-    }
-
-    @Test
-    public void testClosedStream() throws IOException {
-        StreamBuffer sb = new StreamBuffer();
-        sb.os.write(-1);
-        sb.os.write(-1);
-        sb.os.write(-1);
-
-        final int v0 = sb.is.read();
-        final int v1 = sb.is.read();
-        final int v2 = sb.is.read();
-        assertEquals(255, v0);
-        assertEquals(255, v1);
-        assertEquals(255, v2);
-
-        // test closed stream
-        sb.os.close();
-        int read = sb.is.read();
-        assertEquals(-1, read);
     }
 
     /**
@@ -140,12 +71,12 @@ public class StreamBufferTest {
         final StreamBuffer sb = new StreamBuffer();
         sb.setSafeWrite(false);
         // the initial value
-        final byte initialValue = (byte) 4;
+        final byte anyNumber = (byte) 4;
 
         /**
          * Create a new array with initial values.
          */
-        final byte[] content = new byte[]{initialValue, initialValue, initialValue};
+        final byte[] content = new byte[]{anyNumber, anyNumber, anyNumber};
 
         /**
          * Write the array to the stream.
@@ -184,84 +115,8 @@ public class StreamBufferTest {
          */
         assertEquals(0, fromMemory[0]);
         assertEquals(0, fromMemory[1]);
-        assertEquals(initialValue, fromMemory[2]);
-        assertEquals(initialValue, fromMemory[3]);
-    }
-
-    /**
-     * This test verifies that when a disabled duplication (disabled
-     * <code>safeWrite</code> option) of the array can be changed from outside.
-     * This ensures that the original array is used (it creates no protected
-     * duplicates).
-     *
-     * @throws IOException
-     */
-    @Test
-    public void testSafeWriteFalse() throws IOException {
-        final StreamBuffer sb = new StreamBuffer();
-        sb.setSafeWrite(false);
-        // the initial value
-        final byte initialValue = (byte) 4;
-        // the new value
-        final byte newValue = (byte) 5;
-
-        /**
-         * Create a new array (not immutable). The content of this array should
-         * be changed after it has been written to the stream.
-         */
-        final byte[] notImmutable = new byte[]{initialValue, initialValue};
-
-        /**
-         * Write the modifiable array to the stream.
-         */
-        sb.os.write(notImmutable);
-
-        /**
-         * Change the content of the modifiable array to other values.
-         */
-        notImmutable[0] = newValue;
-        notImmutable[1] = newValue;
-
-        /**
-         * Read the content from the stream.
-         */
-        final byte[] fromMemory = new byte[2];
-        final int read = sb.is.read(fromMemory);
-
-        /**
-         * Ensure all values have been read.
-         */
-        assertEquals(fromMemory.length, read);
-
-        /**
-         * Ensure the stream is empty.
-         */
-        assertEquals(sb.is.available(), 0);
-
-        /**
-         * Because the original array has been changed, the read-out data should
-         * also have been changed.
-         */
-        assertEquals(newValue, fromMemory[0]);
-        assertEquals(newValue, fromMemory[1]);
-    }
-
-    @Test
-    public void testSafeWriteTrue() throws IOException {
-        StreamBuffer sb = new StreamBuffer();
-        sb.setSafeWrite(true);
-        byte[] notImmutable = new byte[]{4, 4};
-        sb.os.write(notImmutable);
-
-        // change the memory from outside
-        notImmutable[0] = 5;
-        notImmutable[1] = 5;
-
-        byte[] fromMemory = new byte[2];
-        int read = sb.is.read(fromMemory);
-
-        assertEquals(4, fromMemory[0]);
-        assertEquals(4, fromMemory[1]);
+        assertEquals(anyNumber, fromMemory[2]);
+        assertEquals(anyNumber, fromMemory[3]);
     }
 
     @Test
@@ -370,24 +225,339 @@ public class StreamBufferTest {
     }
 
     @Test
-    public void testTrim() throws IOException {
+    public void constructor_noArguments_NoExceptionThrown() {
         StreamBuffer sb = new StreamBuffer();
-        sb.setMaxBufferElements(333);
-        final byte value = 55;
-        final int numberElements = 1000;
-        // write all values to the buffer
-        for (int i = 0; i < numberElements; ++i) {
-            sb.os.write(value);
-        }
-
-        assertEquals(numberElements, sb.is.available());
-
-        // read all values from the buffer and compare the value
-        for (int i = 0; i < numberElements; ++i) {
-            int read = sb.is.read();
-            assertEquals(value, read);
-        }
-
-        assertEquals(0, sb.is.available());
     }
+
+    @Test
+    public void getMaxBufferElements_initialValue_GreaterZero() {
+        StreamBuffer sb = new StreamBuffer();
+        assertThat(sb.getMaxBufferElements(), is(greaterThan(0)));
+    }
+
+    @Test
+    public void getMaxBufferElements_afterSet_Zero() {
+        StreamBuffer sb = new StreamBuffer();
+        sb.setMaxBufferElements(0);
+        assertThat(sb.getMaxBufferElements(), is(0));
+    }
+
+    @Test
+    public void isSafeWrite_initialValue_false() {
+        StreamBuffer sb = new StreamBuffer();
+        assertThat(sb.isSafeWrite(), is(false));
+    }
+
+    @Test
+    public void isSafeWrite_afterSet_true() {
+        StreamBuffer sb = new StreamBuffer();
+        sb.setSafeWrite(true);
+        assertThat(sb.isSafeWrite(), is(true));
+    }
+
+    @Test
+    public void isClosed_afterConstruct_false() {
+        StreamBuffer sb = new StreamBuffer();
+        assertThat(sb.isClosed(), is(false));
+    }
+
+    @Test
+    public void isClosed_afterClose_true() throws IOException {
+        StreamBuffer sb = new StreamBuffer();
+        sb.close();
+        assertThat(sb.isClosed(), is(true));
+    }
+
+    /**
+     * This test verifies that when the option safeWrite is disabled, the buffer
+     * could be changed from outside (the write method create no clones of the
+     * written arrays).
+     *
+     * @throws IOException
+     */
+    @Test
+    public void read_changeBufferFromOutside_hasChanged() throws IOException {
+        StreamBuffer sb = new StreamBuffer();
+        /**
+         * Disable the safe write option.
+         */
+        sb.setSafeWrite(false);
+        /**
+         * Create a new byte array which is not immutable.
+         */
+        byte[] notImmutable = new byte[]{anyValue};
+        /**
+         * Write the byte array.
+         */
+        sb.getOutputStream().write(notImmutable);
+        /**
+         * Change the byte array.
+         */
+        notImmutable[0]++;
+        /**
+         * A new byte array for the read method.
+         */
+        byte[] fromStream = new byte[1];
+        /**
+         * Read the content out of the stream.
+         */
+        sb.getInputStream().read(fromStream);
+
+        assertThat(fromStream[0], is(not((byte) anyValue)));
+    }
+
+    /**
+     * This test verifies that when the option safeWrite is enabled, the buffer
+     * couldn't be changed from outside (the write method create clones of the
+     * written arrays).
+     *
+     * @throws IOException
+     */
+    @Test
+    public void read_changeBufferFromOutside_notChanged() throws IOException {
+        StreamBuffer sb = new StreamBuffer();
+        /**
+         * Disable the safe write option.
+         */
+        sb.setSafeWrite(true);
+        /**
+         * Create a new byte array which is not immutable.
+         */
+        byte[] notImmutable = new byte[]{anyValue};
+        /**
+         * Write the byte array.
+         */
+        sb.getOutputStream().write(notImmutable);
+        /**
+         * Change the byte array.
+         */
+        notImmutable[0]++;
+        /**
+         * A new byte array for the read method.
+         */
+        byte[] fromStream = new byte[1];
+        /**
+         * Read the content out of the stream.
+         */
+        sb.getInputStream().read(fromStream);
+
+        assertThat(fromStream[0], is((byte) anyValue));
+    }
+
+    @Test
+    public void getBufferSize_reachMaxBufferElements_trimCalled() throws Exception {
+        StreamBuffer sb = new StreamBuffer();
+
+        sb.setMaxBufferElements(1);
+
+        /**
+         * Write more as one element to the stream to force a trim call.
+         */
+        sb.getOutputStream().write(anyValue);
+        sb.getOutputStream().write(anyValue);
+        sb.getOutputStream().write(anyValue);
+
+        assertThat(sb.getBufferSize(), is(1));
+    }
+
+    @Test
+    public void getBufferSize_reachMaxBufferElements_trimBufferRightValues() throws Exception {
+        StreamBuffer sb = new StreamBuffer();
+
+        sb.setMaxBufferElements(2);
+
+        /**
+         * Write more as one element to the stream to force a trim call.
+         */
+        sb.getOutputStream().write(1);
+        sb.getOutputStream().write(new byte[]{2, 3});
+        sb.getOutputStream().write(new byte[]{4, 5, 6});
+
+        byte[] read = new byte[sb.is.available()];
+        sb.is.read(read);
+
+        assertThat(read, is(new byte[]{1, 2, 3, 4, 5, 6}));
+    }
+
+    @Test
+    public void getBufferSize_writeSomeElements_trimNotCalled() throws Exception {
+        StreamBuffer sb = new StreamBuffer();
+
+        sb.setMaxBufferElements(4);
+
+        /**
+         * Write less than four elements to the stream. The trim method
+         * shouldn't called.
+         */
+        sb.getOutputStream().write(anyValue);
+        sb.getOutputStream().write(anyValue);
+        sb.getOutputStream().write(anyValue);
+
+        assertThat(sb.getBufferSize(), is(3));
+    }
+
+    @Test
+    public void setMaxBufferElements_writeNegativeValue_equalsToGetter() throws Exception {
+        StreamBuffer sb = new StreamBuffer();
+        sb.setMaxBufferElements(-1);
+        assertThat(-1, is(sb.getMaxBufferElements()));
+    }
+
+    @Test
+    public void setMaxBufferElements_useNegativeValue_trimNotCalled() throws Exception {
+        StreamBuffer sb = new StreamBuffer();
+
+        sb.setMaxBufferElements(-1);
+
+        /**
+         * Write less than four elements to the stream. The trim method
+         * shouldn't called.
+         */
+        sb.getOutputStream().write(anyValue);
+        sb.getOutputStream().write(anyValue);
+        sb.getOutputStream().write(anyValue);
+
+        assertThat(sb.getBufferSize(), is(3));
+    }
+
+    @Test
+    public void read_closedStreamBeforeWrite_ReturnMinusOne() throws Exception {
+        StreamBuffer sb = new StreamBuffer();
+        sb.os.close();
+        assertThat(sb.is.read(), is(-1));
+    }
+
+    @Test
+    public void read_closedStreamAfterWrite_ReturnMinusOne() throws Exception {
+        StreamBuffer sb = new StreamBuffer();
+        sb.os.write(anyValue);
+        sb.os.close();
+        /**
+         * Read the written value out of the buffer.
+         */
+        sb.is.read();
+        assertThat(sb.is.read(), is(-1));
+    }
+
+    @Test(expected = IOException.class)
+    public void write_closedStream_throwIOException() throws IOException {
+        StreamBuffer sb = new StreamBuffer();
+        sb.os.close();
+        sb.os.write(anyValue);
+    }
+
+    @Test
+    public void read_readWithOffset_useOffset() throws IOException {
+        StreamBuffer sb = new StreamBuffer();
+        sb.os.write(new byte[]{anyValue, anyValue, anyValue});
+
+        byte[] dest = new byte[9];
+        sb.is.read(dest, 3, 3);
+        assertThat(dest, is(new byte[]{0, 0, 0, anyValue, anyValue, anyValue, 0, 0, 0}));
+    }
+
+    @Test
+    public void read_zeroLength_unmodifiedByteArray() throws IOException {
+        StreamBuffer sb = new StreamBuffer();
+        sb.os.write(new byte[]{anyValue, anyValue, anyValue});
+
+        byte[] dest = new byte[1];
+        sb.is.read(dest, 0, 0);
+        assertThat(dest, is(new byte[]{0}));
+    }
+
+    @Test
+    public void read_nothingWritten_returnMinusOne() throws IOException {
+        StreamBuffer sb = new StreamBuffer();
+        sb.os.close();
+        byte[] dest = new byte[1];
+        int read = sb.is.read(dest, 0, 1);
+        assertThat(read, is(-1));
+    }
+
+    @Test(expected = NullPointerException.class)
+    public void read_noDestGiven_throwNullPointerException() throws IOException {
+        StreamBuffer sb = new StreamBuffer();
+        sb.is.read(null, 0, 0);
+    }
+
+    @Test(expected = IndexOutOfBoundsException.class)
+    public void read_useInvalidOffset_throwIndexOutOfBoundException() throws IOException {
+        StreamBuffer sb = new StreamBuffer();
+
+        byte[] dest = new byte[1];
+        sb.is.read(dest, 3, 1);
+    }
+
+    @Test(expected = IndexOutOfBoundsException.class)
+    public void read_greaterLengthAsDestination_throwIndexOutOfBoundException() throws IOException {
+        StreamBuffer sb = new StreamBuffer();
+
+        byte[] dest = new byte[1];
+        sb.is.read(dest, 0, 2);
+    }
+
+    @Test(expected = IndexOutOfBoundsException.class)
+    public void read_negativeLength_throwIndexOutOfBoundException() throws IOException {
+        StreamBuffer sb = new StreamBuffer();
+
+        byte[] dest = new byte[1];
+        sb.is.read(dest, 0, -1);
+    }
+
+    @Test(expected = IndexOutOfBoundsException.class)
+    public void read_negativeOffset_throwIndexOutOfBoundException() throws IOException {
+        StreamBuffer sb = new StreamBuffer();
+
+        byte[] dest = new byte[1];
+        sb.is.read(dest, -1, 1);
+    }
+
+    @Test(expected = NullPointerException.class)
+    public void write_noDestGiven_throwNullPointerException() throws IOException {
+        StreamBuffer sb = new StreamBuffer();
+        sb.os.write(null, 0, 0);
+    }
+
+    @Test(expected = IndexOutOfBoundsException.class)
+    public void write_useInvalidOffset_throwIndexOutOfBoundException() throws IOException {
+        StreamBuffer sb = new StreamBuffer();
+
+        byte[] from = new byte[1];
+        sb.os.write(from, 3, 1);
+    }
+
+    @Test(expected = IndexOutOfBoundsException.class)
+    public void write_greaterLengthAsDestination_throwIndexOutOfBoundException() throws IOException {
+        StreamBuffer sb = new StreamBuffer();
+
+        byte[] from = new byte[1];
+        sb.os.write(from, 0, 2);
+    }
+
+    @Test(expected = IndexOutOfBoundsException.class)
+    public void write_negativeLength_throwIndexOutOfBoundException() throws IOException {
+        StreamBuffer sb = new StreamBuffer();
+
+        byte[] from = new byte[1];
+        sb.os.write(from, 0, -1);
+    }
+
+    @Test(expected = IndexOutOfBoundsException.class)
+    public void write_negativeOffset_throwIndexOutOfBoundException() throws IOException {
+        StreamBuffer sb = new StreamBuffer();
+
+        byte[] from = new byte[1];
+        sb.os.write(from, -1, 1);
+    }
+
+    @Test
+    public void write_positiveOffset_bytesNotWritten() throws IOException {
+        StreamBuffer sb = new StreamBuffer();
+
+        byte[] from = new byte[]{anyValue, anyValue};
+        sb.os.write(from, 1, 1);
+        assertThat(sb.is.available(), is(1));
+    }
+
 }
