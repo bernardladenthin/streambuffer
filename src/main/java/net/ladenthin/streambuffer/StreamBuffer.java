@@ -155,7 +155,7 @@ public class StreamBuffer implements Closeable {
      * signals a modification. It cloud be a write on the stream or a close.
      */
     private void signalModification() {
-        // hold up the count to a maximum of one
+        // hold up the permits to a maximum of one
         if (signalModification.availablePermits() == 0) {
             signalModification.release();
         }
