@@ -418,7 +418,8 @@ public class StreamBuffer implements Closeable {
                 buffer.add(new byte[]{(byte) b});
                 // increment the length
                 ++availableBytes;
-                assert !(availableBytes < 0) : "More memory used as a long can count";
+                // the count must be positive after any write operation
+                assert availableBytes > 0 : "More memory used as a long can count";
                 trim();
             }
             // always at least, signal bytes are written to the buffer
@@ -460,7 +461,8 @@ public class StreamBuffer implements Closeable {
                 }
                 // increment the length
                 availableBytes += len;
-                assert !(availableBytes < 0) : "More memory used as a long can count";
+                // the count must be positive after any write operation
+                assert availableBytes > 0 : "More memory used as a long can count";
                 trim();
             }
             // always at least, signal bytes are written to the buffer
