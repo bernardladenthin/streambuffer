@@ -561,6 +561,7 @@ public class StreamBufferTest {
 
         byte[] from = new byte[]{anyValue, anyValue};
         sb.os.write(from, 1, 1);
+
         assertThat(sb.is.available(), is(1));
     }
 
@@ -596,6 +597,7 @@ public class StreamBufferTest {
         sb.os.write(from);
 
         sb.os.write(from);
+
         assertThat(sb.is.available(), is(Integer.MAX_VALUE));
     }
     
@@ -623,6 +625,7 @@ public class StreamBufferTest {
          */
         s1.acquire();
         sb.os.write(anyValue);
+
         assertThat(s.tryAcquire(10, TimeUnit.SECONDS), is(true));
     }
     
@@ -651,7 +654,40 @@ public class StreamBufferTest {
          */
         Thread.sleep(1000);
         sb.os.close();
+
         assertThat(s.tryAcquire(10, TimeUnit.SECONDS), is(true));
+    }
+
+    @Test
+    public void read_closeStream_returnWrittenBytes() throws IOException, InterruptedException {
+        final StreamBuffer sb = new StreamBuffer();
+        Thread consumer = new Thread(new Runnable() {
+
+            public void run() {
+                try {
+                    /**
+                     * Sleep one second to give the method read enough time to
+                     * block the thread at the right condition.
+                     */
+                    Thread.sleep(1000);
+                    // first, write a value
+                    sb.os.write(anyValue);
+                    // wait again
+                    Thread.sleep(1000);
+                    // close the stream
+                    sb.os.close();
+                } catch (InterruptedException ex) {
+                    throw new RuntimeException(ex);
+                } catch (IOException ex) {
+                    throw new RuntimeException(ex);
+                }
+            }
+        });
+        consumer.start();
+        byte[] dest = new byte[3];
+        int read = sb.is.read(dest);
+
+        assertThat(read, is(1));
     }
 
 }
