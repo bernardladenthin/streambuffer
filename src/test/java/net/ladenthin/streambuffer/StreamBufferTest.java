@@ -374,7 +374,7 @@ public class StreamBufferTest {
         StreamBuffer sb = new StreamBuffer();
         sb.setMaxBufferElements(333);
         final byte value = 55;
-        final int numberElements = 1_000;
+        final int numberElements = 1000;
         // write all values to the buffer
         for (int i = 0; i < numberElements; ++i) {
             sb.os.write(value);
