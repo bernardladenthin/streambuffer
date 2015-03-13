@@ -198,9 +198,8 @@ public class StreamBuffer implements Closeable {
                 // read out of the buffer
                 // and store the result to the tmpBuffer
                 int read = is.read(buf);
-                if (read != available) {
-                    throw new IOException("Read not enough bytes from buffer.");
-                }
+                // should never happen
+                assert read == available : "Read not enough bytes from buffer.";
                 tmpBuffer.add(buf);
             }
             // write all bytes back to the clean buffer
