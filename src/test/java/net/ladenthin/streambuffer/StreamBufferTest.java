@@ -560,4 +560,39 @@ public class StreamBufferTest {
         assertThat(sb.is.available(), is(1));
     }
 
+    @Test
+    public void available_bufferContainsMoreBytesAsMaxInt_returnMaxValue() throws IOException {
+        StreamBuffer sb = new StreamBuffer();
+
+        /**
+         * It's not a good idea to allocate a very big array at once. Allocate a
+         * small piece instead and write this again and again to the stream. I
+         * have choosen 16 pieces and write this value 17 times to force an
+         * "overflow" for the method available.
+         */
+        byte[] from = new byte[Integer.MAX_VALUE / 16];
+        sb.os.write(from);
+        sb.os.write(from);
+        sb.os.write(from);
+        sb.os.write(from);
+
+        sb.os.write(from);
+        sb.os.write(from);
+        sb.os.write(from);
+        sb.os.write(from);
+
+        sb.os.write(from);
+        sb.os.write(from);
+        sb.os.write(from);
+        sb.os.write(from);
+
+        sb.os.write(from);
+        sb.os.write(from);
+        sb.os.write(from);
+        sb.os.write(from);
+
+        sb.os.write(from);
+        assertThat(sb.is.available(), is(Integer.MAX_VALUE));
+    }
+
 }
