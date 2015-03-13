@@ -460,7 +460,7 @@ public class StreamBuffer implements Closeable {
                     buffer.add(target);
                 }
                 // increment the length
-                availableBytes += b.length;
+                availableBytes += len;
                 assert !(availableBytes < 0) : "More memory used as a long can count";
                 trim();
             }
