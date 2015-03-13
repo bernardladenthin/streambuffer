@@ -22,6 +22,10 @@ import java.io.DataInputStream;
 import java.io.DataOutput;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.not;
 import static org.hamcrest.number.OrderingComparison.*;
@@ -593,6 +597,46 @@ public class StreamBufferTest {
 
         sb.os.write(from);
         assertThat(sb.is.available(), is(Integer.MAX_VALUE));
+    }
+    
+    @Test
+    public void blockDataAvailable_writeToStream_return() throws IOException, InterruptedException {
+        final StreamBuffer sb = new StreamBuffer();
+        final Semaphore s = new Semaphore(0);
+        Thread consumer = new Thread(new Runnable() {
+
+            public void run() {
+                try {
+                    sb.blockDataAvailable();
+                    s.release();
+                } catch (InterruptedException ex) {
+                    throw new RuntimeException(ex);
+                }
+            }
+        });
+        consumer.start();
+        sb.os.write(anyValue);
+        assertThat(s.tryAcquire(10, TimeUnit.SECONDS), is(true));
+    }
+    
+    @Test
+    public void blockDataAvailable_closeStream_return() throws IOException, InterruptedException {
+        final StreamBuffer sb = new StreamBuffer();
+        final Semaphore s = new Semaphore(0);
+        Thread consumer = new Thread(new Runnable() {
+
+            public void run() {
+                try {
+                    sb.blockDataAvailable();
+                    s.release();
+                } catch (InterruptedException ex) {
+                    throw new RuntimeException(ex);
+                }
+            }
+        });
+        consumer.start();
+        sb.os.close();
+        assertThat(s.tryAcquire(10, TimeUnit.SECONDS), is(true));
     }
 
 }
