@@ -16,6 +16,7 @@
  */
 package net.ladenthin.streambuffer;
 
+import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInput;
 import java.io.DataInputStream;
@@ -24,8 +25,6 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.not;
 import static org.hamcrest.number.OrderingComparison.*;
@@ -360,8 +359,9 @@ public class StreamBufferTest {
         sb.getOutputStream().write(anyValue);
         sb.getOutputStream().write(anyValue);
         sb.getOutputStream().write(anyValue);
+        int result = sb.getBufferSize();
 
-        assertThat(sb.getBufferSize(), is(1));
+        assertThat(result, is(1));
     }
 
     @Test
@@ -690,4 +690,20 @@ public class StreamBufferTest {
         assertThat(read, is(1));
     }
 
+    @Test
+    public void mark_useBufferedInputStream_resetPosition() throws IOException, InterruptedException {
+        final StreamBuffer sb = new StreamBuffer();
+        
+        BufferedInputStream bis = new BufferedInputStream(sb.is, 3);
+        sb.os.write(anyValue);
+        sb.os.write(anyValue);
+        sb.os.write(anyValue);
+        bis.mark(1);
+        bis.read();
+        bis.reset();
+        
+        int result = bis.available();
+        
+        assertThat(result, is(3));
+    }
 }
