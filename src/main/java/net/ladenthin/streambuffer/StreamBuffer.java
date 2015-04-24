@@ -349,19 +349,7 @@ public class StreamBuffer implements Closeable {
             int copiedBytes = 1;
 
             int missingBytes = len - copiedBytes;
-
-            // the next snippet is used two times
-            // ==================================================
-            // === snip
-            // should never happen
-            assert missingBytes >= 0 : "Copied more bytes as given";
-
-            // check if we don't need to copy further bytes anymore
-            if (missingBytes == 0) {
-                return copiedBytes;
-            }
-            // === snap
-            // ==================================================
+            if (noMoreMissingBytes(missingBytes)) return copiedBytes;
 
             long maximumAvailableBytes = tryWaitForEnoughBytes(missingBytes);
 
@@ -374,18 +362,7 @@ public class StreamBuffer implements Closeable {
             synchronized (bufferLock) {
                 for (;;) {
 
-                    // the next snippet is used two times
-                    // ==================================================
-                    // === snip
-                    // should never happen
-                    assert missingBytes >= 0 : "Copied more bytes as given";
-
-                    // check if we don't need to copy further bytes anymore
-                    if (missingBytes == 0) {
-                        return copiedBytes;
-                    }
-                    // === snap
-                    // ==================================================
+                    if (noMoreMissingBytes(missingBytes)) return copiedBytes;
 
                     // get the first element from FIFO
                     final byte[] first = buffer.getFirst();
@@ -422,6 +399,21 @@ public class StreamBuffer implements Closeable {
                     }
                 }
             }
+        }
+
+        /**
+         * Ensure that no more bytes are missing.
+         * @param missingBytes number of missing bytes.
+         * @return <code>true</code> if no more bytes are missing, otherwise <code>false</code>.
+         */
+        private boolean noMoreMissingBytes(int missingBytes) {
+            assert missingBytes >= 0 : "Copied more bytes as given";
+
+            // check if we don't need to copy further bytes anymore
+            if (missingBytes == 0) {
+                return true;
+            }
+            return false;
         }
 
     };
