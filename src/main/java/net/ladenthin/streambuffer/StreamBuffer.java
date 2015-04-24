@@ -102,6 +102,9 @@ public class StreamBuffer implements Closeable {
      */
     private volatile int maxBufferElements = 100;
 
+    private final SBInputStream is = new SBInputStream();
+    private final SBOutputStream os = new SBOutputStream();
+
     /**
      * Construct a new {@link StreamBuffer}.
      */
@@ -275,7 +278,7 @@ public class StreamBuffer implements Closeable {
         return availableBytes;
     }
 
-    InputStream is = new InputStream() {
+    public class SBInputStream extends InputStream {
         @Override
         public int available() throws IOException {
             if (availableBytes > Integer.MAX_VALUE) {
@@ -417,7 +420,8 @@ public class StreamBuffer implements Closeable {
         }
 
     };
-    OutputStream os = new OutputStream() {
+
+    public class SBOutputStream extends OutputStream {
         @Override
         public void close() throws IOException {
             closeAll();
