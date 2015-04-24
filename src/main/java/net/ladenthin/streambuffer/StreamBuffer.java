@@ -491,7 +491,6 @@ public class StreamBuffer implements Closeable {
         }
     };
 
-    @Override
     public void close() throws IOException {
         closeAll();
     }
