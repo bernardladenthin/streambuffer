@@ -86,7 +86,7 @@ public class StreamBuffer implements Closeable {
     private volatile boolean safeWrite = false;
 
     /**
-     * A flag to disable the {@link safeWrite}. I. e. to write a byte array from
+     * A flag to disable the {@link StreamBuffer#safeWrite}. I. e. to write a byte array from
      * the trim method.
      */
     private boolean ignoreSafeWrite = false;
@@ -142,7 +142,9 @@ public class StreamBuffer implements Closeable {
     }
 
     /**
-     * Set maximum elements for the buffer.
+     * Set maximum elements for the buffer. Change the value doesn't invoke a
+     * trim call if the buffer contains more elements. Only write operations
+     * force a trim call.
      *
      * @param maxBufferElements number of maximum elements.
      */
