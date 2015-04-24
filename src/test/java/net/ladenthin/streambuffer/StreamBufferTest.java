@@ -16,13 +16,7 @@
  */
 package net.ladenthin.streambuffer;
 
-import java.io.BufferedInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.DataInput;
-import java.io.DataInputStream;
-import java.io.DataOutput;
-import java.io.DataOutputStream;
-import java.io.IOException;
+import java.io.*;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import static org.hamcrest.CoreMatchers.is;
@@ -43,18 +37,20 @@ public class StreamBufferTest {
     @Test
     public void testSimpleRoundTrip() throws IOException {
         StreamBuffer sb = new StreamBuffer();
-        sb.os.write(0);
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
+        os.write(0);
         byte[] b0 = new byte[10];
         for (int i = 0; i < b0.length; ++i) {
             b0[i] = anyValue;
         }
-        sb.os.write(b0);
-        sb.os.write(0);
+        os.write(b0);
+        os.write(0);
 
-        assertEquals(12, sb.is.available());
+        assertEquals(12, is.available());
 
         byte[] target = new byte[12];
-        sb.is.read(target);
+        is.read(target);
 
         assertEquals((long) 0, (long) target[0]);
         assertEquals((long) 0, (long) target[11]);
@@ -72,6 +68,8 @@ public class StreamBufferTest {
     @Test
     public void testSafeWriteSimpleOffset() throws IOException {
         final StreamBuffer sb = new StreamBuffer();
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
         sb.setSafeWrite(false);
         // the initial value
         final byte anyNumber = (byte) 4;
@@ -84,12 +82,12 @@ public class StreamBufferTest {
         /**
          * Write the array to the stream.
          */
-        sb.os.write(content);
+        os.write(content);
 
         /**
          * Ensure the array was completly written to the stream.
          */
-        assertEquals(3, sb.is.available());
+        assertEquals(3, is.available());
 
         /**
          * A buffer to read the content from the stream.
@@ -99,7 +97,7 @@ public class StreamBufferTest {
         /**
          * Read 2 bytes to a offset of 2 bytes.
          */
-        final int read = sb.is.read(fromMemory, 2, 2);
+        final int read = is.read(fromMemory, 2, 2);
 
         /**
          * Ensure only 2 values have been read.
@@ -109,7 +107,7 @@ public class StreamBufferTest {
         /**
          * Ensure 1 value is remaining in the stream.
          */
-        assertEquals(1, sb.is.available());
+        assertEquals(1, is.available());
 
         /**
          * Ensure the initial values were written at the specific offset. The
@@ -125,22 +123,24 @@ public class StreamBufferTest {
     @Test
     public void testMultipleArray() throws IOException {
         StreamBuffer sb = new StreamBuffer();
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
         byte[] b4 = new byte[]{4, 4, 4, 4};
         byte[] b5 = new byte[]{5, 5, 5, 5, 5};
         byte[] b6 = new byte[]{6, 6, 6, 6, 6, 6};
-        sb.os.write(b4);
-        sb.os.write(b5);
-        sb.os.write(b6);
-        assertEquals(4 + 5 + 6, sb.is.available());
+        os.write(b4);
+        os.write(b5);
+        os.write(b6);
+        assertEquals(4 + 5 + 6, is.available());
 
         byte[] t0 = new byte[6];
         byte[] t1 = new byte[6];
         byte[] t2 = new byte[3];
-        sb.is.read(t0);
-        sb.is.read(t1);
-        sb.is.read(t2);
+        is.read(t0);
+        is.read(t1);
+        is.read(t2);
 
-        assertEquals((4 + 5 + 6) - (6 + 6 + 3), sb.is.available());
+        assertEquals((4 + 5 + 6) - (6 + 6 + 3), is.available());
 
         assertEquals(t0[0], 4);
         assertEquals(t0[1], 4);
@@ -166,6 +166,8 @@ public class StreamBufferTest {
         final int size = 32640; //255/2*(255+1)
         ByteArrayOutputStream baosOriginalData = new ByteArrayOutputStream(size);
         StreamBuffer sb = new StreamBuffer();
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
         for (int i = 1; i <= 255; ++i) {
             byte[] array = new byte[i];
             if (i >= 250) {
@@ -176,13 +178,13 @@ public class StreamBufferTest {
                 array[j] = (byte) i;
             }
 
-            sb.os.write(array);
+            os.write(array);
             baosOriginalData.write(array);
         }
 
         final byte[] originalData = baosOriginalData.toByteArray();
 
-        assertEquals(size, sb.is.available());
+        assertEquals(size, is.available());
 
         ByteArrayOutputStream baosReadFromTwist = new ByteArrayOutputStream(size);
         long readBytes = 0;
@@ -190,14 +192,14 @@ public class StreamBufferTest {
             readBytes += i;
             byte[] array = new byte[i];
 
-            sb.is.read(array);
-            assertEquals(size - readBytes, sb.is.available());
+            is.read(array);
+            assertEquals(size - readBytes, is.available());
             baosReadFromTwist.write(array);
         }
 
         assertEquals(size, readBytes);
 
-        assertEquals(0, sb.is.available());
+        assertEquals(0, is.available());
 
         byte[] byteChain = baosReadFromTwist.toByteArray();
         assertEquals(size, byteChain.length);
@@ -217,8 +219,10 @@ public class StreamBufferTest {
     @Test
     public void testDataInputOutput() throws IOException {
         StreamBuffer sb = new StreamBuffer();
-        DataInput din = new DataInputStream(sb.is);
-        DataOutput dout = new DataOutputStream(sb.os);
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
+        DataInput din = new DataInputStream(is);
+        DataOutput dout = new DataOutputStream(os);
 
         final String testString = "test string";
 
@@ -367,6 +371,8 @@ public class StreamBufferTest {
     @Test
     public void getBufferSize_reachMaxBufferElements_trimBufferRightValues() throws Exception {
         StreamBuffer sb = new StreamBuffer();
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
 
         sb.setMaxBufferElements(2);
 
@@ -377,8 +383,8 @@ public class StreamBufferTest {
         sb.getOutputStream().write(new byte[]{2, 3});
         sb.getOutputStream().write(new byte[]{4, 5, 6});
 
-        byte[] read = new byte[sb.is.available()];
-        sb.is.read(read);
+        byte[] read = new byte[is.available()];
+        is.read(read);
 
         assertThat(read, is(new byte[]{1, 2, 3, 4, 5, 6}));
     }
@@ -427,147 +433,183 @@ public class StreamBufferTest {
     @Test
     public void read_closedStreamBeforeWrite_ReturnMinusOne() throws Exception {
         StreamBuffer sb = new StreamBuffer();
-        sb.os.close();
-        assertThat(sb.is.read(), is(-1));
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
+        os.close();
+        assertThat(is.read(), is(-1));
     }
 
     @Test
     public void read_closedStreamAfterWrite_ReturnMinusOne() throws Exception {
         StreamBuffer sb = new StreamBuffer();
-        sb.os.write(anyValue);
-        sb.os.close();
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
+        os.write(anyValue);
+        os.close();
         /**
          * Read the written value out of the buffer.
          */
-        sb.is.read();
-        assertThat(sb.is.read(), is(-1));
+        is.read();
+        assertThat(is.read(), is(-1));
     }
 
     @Test(expected = IOException.class)
     public void write_closedStream_throwIOException() throws IOException {
         StreamBuffer sb = new StreamBuffer();
-        sb.os.close();
-        sb.os.write(anyValue);
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
+        os.close();
+        os.write(anyValue);
     }
 
     @Test
     public void read_readWithOffset_useOffset() throws IOException {
         StreamBuffer sb = new StreamBuffer();
-        sb.os.write(new byte[]{anyValue, anyValue, anyValue});
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
+        os.write(new byte[]{anyValue, anyValue, anyValue});
 
         byte[] dest = new byte[9];
-        sb.is.read(dest, 3, 3);
+        is.read(dest, 3, 3);
         assertThat(dest, is(new byte[]{0, 0, 0, anyValue, anyValue, anyValue, 0, 0, 0}));
     }
 
     @Test
     public void read_zeroLength_unmodifiedByteArray() throws IOException {
         StreamBuffer sb = new StreamBuffer();
-        sb.os.write(new byte[]{anyValue, anyValue, anyValue});
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
+        os.write(new byte[]{anyValue, anyValue, anyValue});
 
         byte[] dest = new byte[1];
-        sb.is.read(dest, 0, 0);
+        is.read(dest, 0, 0);
         assertThat(dest, is(new byte[]{0}));
     }
 
     @Test
     public void read_nothingWritten_returnMinusOne() throws IOException {
         StreamBuffer sb = new StreamBuffer();
-        sb.os.close();
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
+        os.close();
         byte[] dest = new byte[1];
-        int read = sb.is.read(dest, 0, 1);
+        int read = is.read(dest, 0, 1);
         assertThat(read, is(-1));
     }
 
     @Test(expected = NullPointerException.class)
     public void read_noDestGiven_throwNullPointerException() throws IOException {
         StreamBuffer sb = new StreamBuffer();
-        sb.is.read(null, 0, 0);
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
+        is.read(null, 0, 0);
     }
 
     @Test(expected = IndexOutOfBoundsException.class)
     public void read_useInvalidOffset_throwIndexOutOfBoundException() throws IOException {
         StreamBuffer sb = new StreamBuffer();
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
 
         byte[] dest = new byte[1];
-        sb.is.read(dest, 3, 1);
+        is.read(dest, 3, 1);
     }
 
     @Test(expected = IndexOutOfBoundsException.class)
     public void read_greaterLengthAsDestination_throwIndexOutOfBoundException() throws IOException {
         StreamBuffer sb = new StreamBuffer();
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
 
         byte[] dest = new byte[1];
-        sb.is.read(dest, 0, 2);
+        is.read(dest, 0, 2);
     }
 
     @Test(expected = IndexOutOfBoundsException.class)
     public void read_negativeLength_throwIndexOutOfBoundException() throws IOException {
         StreamBuffer sb = new StreamBuffer();
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
 
         byte[] dest = new byte[1];
-        sb.is.read(dest, 0, -1);
+        is.read(dest, 0, -1);
     }
 
     @Test(expected = IndexOutOfBoundsException.class)
     public void read_negativeOffset_throwIndexOutOfBoundException() throws IOException {
         StreamBuffer sb = new StreamBuffer();
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
 
         byte[] dest = new byte[1];
-        sb.is.read(dest, -1, 1);
+        is.read(dest, -1, 1);
     }
 
     @Test(expected = NullPointerException.class)
     public void write_noDestGiven_throwNullPointerException() throws IOException {
         StreamBuffer sb = new StreamBuffer();
-        sb.os.write(null, 0, 0);
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
+        os.write(null, 0, 0);
     }
 
     @Test(expected = IndexOutOfBoundsException.class)
     public void write_useInvalidOffset_throwIndexOutOfBoundException() throws IOException {
         StreamBuffer sb = new StreamBuffer();
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
 
         byte[] from = new byte[1];
-        sb.os.write(from, 3, 1);
+        os.write(from, 3, 1);
     }
 
     @Test(expected = IndexOutOfBoundsException.class)
     public void write_greaterLengthAsDestination_throwIndexOutOfBoundException() throws IOException {
         StreamBuffer sb = new StreamBuffer();
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
 
         byte[] from = new byte[1];
-        sb.os.write(from, 0, 2);
+        os.write(from, 0, 2);
     }
 
     @Test(expected = IndexOutOfBoundsException.class)
     public void write_negativeLength_throwIndexOutOfBoundException() throws IOException {
         StreamBuffer sb = new StreamBuffer();
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
 
         byte[] from = new byte[1];
-        sb.os.write(from, 0, -1);
+        os.write(from, 0, -1);
     }
 
     @Test(expected = IndexOutOfBoundsException.class)
     public void write_negativeOffset_throwIndexOutOfBoundException() throws IOException {
         StreamBuffer sb = new StreamBuffer();
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
 
         byte[] from = new byte[1];
-        sb.os.write(from, -1, 1);
+        os.write(from, -1, 1);
     }
 
     @Test
     public void write_positiveOffset_bytesNotWritten() throws IOException {
         StreamBuffer sb = new StreamBuffer();
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
 
         byte[] from = new byte[]{anyValue, anyValue};
-        sb.os.write(from, 1, 1);
+        os.write(from, 1, 1);
 
-        assertThat(sb.is.available(), is(1));
+        assertThat(is.available(), is(1));
     }
 
     @Test
     public void available_bufferContainsMoreBytesAsMaxInt_returnMaxValue() throws IOException {
         StreamBuffer sb = new StreamBuffer();
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
 
         /**
          * It's not a good idea to allocate a very big array at once. Allocate a
@@ -576,34 +618,36 @@ public class StreamBufferTest {
          * "overflow" for the method available.
          */
         byte[] from = new byte[Integer.MAX_VALUE / 16];
-        sb.os.write(from);
-        sb.os.write(from);
-        sb.os.write(from);
-        sb.os.write(from);
+        os.write(from);
+        os.write(from);
+        os.write(from);
+        os.write(from);
 
-        sb.os.write(from);
-        sb.os.write(from);
-        sb.os.write(from);
-        sb.os.write(from);
+        os.write(from);
+        os.write(from);
+        os.write(from);
+        os.write(from);
 
-        sb.os.write(from);
-        sb.os.write(from);
-        sb.os.write(from);
-        sb.os.write(from);
+        os.write(from);
+        os.write(from);
+        os.write(from);
+        os.write(from);
 
-        sb.os.write(from);
-        sb.os.write(from);
-        sb.os.write(from);
-        sb.os.write(from);
+        os.write(from);
+        os.write(from);
+        os.write(from);
+        os.write(from);
 
-        sb.os.write(from);
+        os.write(from);
 
-        assertThat(sb.is.available(), is(Integer.MAX_VALUE));
+        assertThat(is.available(), is(Integer.MAX_VALUE));
     }
     
     @Test
     public void blockDataAvailable_writeToStream_return() throws IOException, InterruptedException {
         final StreamBuffer sb = new StreamBuffer();
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
         final Semaphore s = new Semaphore(0);
         final Semaphore s1 = new Semaphore(0);
         Thread consumer = new Thread(new Runnable() {
@@ -624,7 +668,7 @@ public class StreamBufferTest {
          * block the thread at the right condition.
          */
         s1.acquire();
-        sb.os.write(anyValue);
+        os.write(anyValue);
 
         assertThat(s.tryAcquire(10, TimeUnit.SECONDS), is(true));
     }
@@ -632,6 +676,8 @@ public class StreamBufferTest {
     @Test
     public void blockDataAvailable_closeStream_return() throws IOException, InterruptedException {
         final StreamBuffer sb = new StreamBuffer();
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
         final Semaphore s = new Semaphore(0);
         final Semaphore s1 = new Semaphore(0);
         Thread consumer = new Thread(new Runnable() {
@@ -653,7 +699,7 @@ public class StreamBufferTest {
          * block the thread at the right condition.
          */
         Thread.sleep(1000);
-        sb.os.close();
+        os.close();
 
         assertThat(s.tryAcquire(10, TimeUnit.SECONDS), is(true));
     }
@@ -661,6 +707,8 @@ public class StreamBufferTest {
     @Test
     public void read_closeStream_returnWrittenBytes() throws IOException, InterruptedException {
         final StreamBuffer sb = new StreamBuffer();
+        final InputStream is = sb.getInputStream();
+        final OutputStream os = sb.getOutputStream();
         Thread consumer = new Thread(new Runnable() {
 
             public void run() {
@@ -671,11 +719,11 @@ public class StreamBufferTest {
                      */
                     Thread.sleep(1000);
                     // first, write a value
-                    sb.os.write(anyValue);
+                    os.write(anyValue);
                     // wait again
                     Thread.sleep(1000);
                     // close the stream
-                    sb.os.close();
+                    os.close();
                 } catch (InterruptedException ex) {
                     throw new RuntimeException(ex);
                 } catch (IOException ex) {
@@ -685,7 +733,7 @@ public class StreamBufferTest {
         });
         consumer.start();
         byte[] dest = new byte[3];
-        int read = sb.is.read(dest);
+        int read = is.read(dest);
 
         assertThat(read, is(1));
     }
@@ -693,11 +741,13 @@ public class StreamBufferTest {
     @Test
     public void mark_useBufferedInputStream_resetPosition() throws IOException, InterruptedException {
         final StreamBuffer sb = new StreamBuffer();
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
         
-        BufferedInputStream bis = new BufferedInputStream(sb.is, 3);
-        sb.os.write(anyValue);
-        sb.os.write(anyValue);
-        sb.os.write(anyValue);
+        BufferedInputStream bis = new BufferedInputStream(is, 3);
+        os.write(anyValue);
+        os.write(anyValue);
+        os.write(anyValue);
         bis.mark(1);
         bis.read();
         bis.reset();
