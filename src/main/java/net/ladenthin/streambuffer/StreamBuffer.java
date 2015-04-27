@@ -352,7 +352,9 @@ public class StreamBuffer implements Closeable {
             int copiedBytes = 1;
 
             int missingBytes = len - copiedBytes;
-            if (noMoreMissingBytes(missingBytes)) return copiedBytes;
+            if (noMoreMissingBytes(missingBytes)) {
+                return copiedBytes;
+            }
 
             long maximumAvailableBytes = tryWaitForEnoughBytes(missingBytes);
 
@@ -365,7 +367,9 @@ public class StreamBuffer implements Closeable {
             synchronized (bufferLock) {
                 for (;;) {
 
-                    if (noMoreMissingBytes(missingBytes)) return copiedBytes;
+                    if (noMoreMissingBytes(missingBytes)) {
+                        return copiedBytes;
+                    }
 
                     // get the first element from FIFO
                     final byte[] first = buffer.getFirst();
