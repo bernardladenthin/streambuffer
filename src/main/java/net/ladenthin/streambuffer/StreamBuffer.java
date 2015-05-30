@@ -356,7 +356,7 @@ public class StreamBuffer implements Closeable {
             b[off] = (byte) c;
             // === snap
 
-            // we have already copied one byte initialize with 1
+            // we have already copied one byte, initialize with 1
             int copiedBytes = 1;
 
             int missingBytes = len - copiedBytes;
