@@ -425,10 +425,7 @@ public class StreamBuffer implements Closeable {
             assert missingBytes >= 0 : "Copied more bytes as given";
 
             // check if we don't need to copy further bytes anymore
-            if (missingBytes == 0) {
-                return true;
-            }
-            return false;
+            return missingBytes == 0;
         }
 
     }
