@@ -192,12 +192,7 @@ public class StreamBuffer implements Closeable {
      * or not.
      */
     private void trim() throws IOException {
-        /**
-         * To be thread safe, cache the maxBufferElements value. May the method
-         * <code>setMaxBufferElements</code> was invoked from outside.
-         */
-        int tmpMaxBufferElements = getMaxBufferElements();
-        if ((tmpMaxBufferElements > 0) && (buffer.size() >= 2) && (buffer.size() > tmpMaxBufferElements)) {
+        if (isTrimShouldBeExecuted()) {
 
             /**
              * Need to store more bufs, may it is not possible to read out all
@@ -236,6 +231,19 @@ public class StreamBuffer implements Closeable {
                 ignoreSafeWrite = false;
             }
         }
+    }
+
+    /**
+     * Checks if a trim should be performed.
+     * @return <code>true</code> if a trim should be performed, otherwise <code>false</code>.
+     */
+    private boolean isTrimShouldBeExecuted() {
+        /**
+         * To be thread safe, cache the maxBufferElements value. May the method
+         * {@link #setMaxBufferElements(int)} was invoked from outside by another thread.
+         */
+        final int maxBufferElements = getMaxBufferElements();
+        return (maxBufferElements > 0) && (buffer.size() >= 2) && (buffer.size() > maxBufferElements);
     }
 
     /**
