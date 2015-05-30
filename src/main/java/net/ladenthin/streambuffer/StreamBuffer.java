@@ -431,7 +431,7 @@ public class StreamBuffer implements Closeable {
             return false;
         }
 
-    };
+    }
 
     public class SBOutputStream extends OutputStream {
         @Override
@@ -497,7 +497,7 @@ public class StreamBuffer implements Closeable {
             // always at least, signal bytes are written to the buffer
             signalModification();
         }
-    };
+    }
 
     public void close() throws IOException {
         closeAll();
