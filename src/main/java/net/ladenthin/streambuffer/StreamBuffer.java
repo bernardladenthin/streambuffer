@@ -31,7 +31,7 @@ import java.util.concurrent.Semaphore;
  * process. It is possible to call concurrent a method in the
  * {@link OutputStream} and {@link InputStream}. Read/Write at the same time.
  *
- * @author Bernard Ladenthin <bernard.ladenthin@gmail.com>
+ * @author Bernard Ladenthin bernard.ladenthin@gmail.com
  */
 public class StreamBuffer implements Closeable {
 
@@ -153,6 +153,49 @@ public class StreamBuffer implements Closeable {
      */
     public void setMaxBufferElements(int maxBufferElements) {
         this.maxBufferElements = maxBufferElements;
+    }
+
+    /**
+     * Security check mostly copied from {@link InputStream#read(byte[], int, int)}.
+     * Ensures the parameter are valid.
+     * @param b the byte array to copy from
+     * @param off the offset to read from the array
+     * @param len the len of the bytes to read from the array
+     * @return <code>true</code> if there are bytes to read, otherwise <code>false</code>
+     * @throws NullPointerException if the array is null
+     * @throws IndexOutOfBoundsException if the index is not correct
+     */
+    public static boolean correctOffsetAndLengthToRead(byte[] b, int off, int len) {
+        if (b == null) {
+            throw new NullPointerException();
+        } else if (off < 0 || len < 0 || len > b.length - off) {
+            throw new IndexOutOfBoundsException();
+        } else if (len == 0) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Security check mostly copied from {@link OutputStream#write(byte[], int, int)}.
+     * Ensures the parameter are valid.
+     * @param b the byte array to write to the array
+     * @param off the offset to write to the array
+     * @param len the len of the bytes to write to the array
+     * @return <code>true</code> if there are bytes to write, otherwise <code>false</code>
+     * @throws NullPointerException if the array is null
+     * @throws IndexOutOfBoundsException if the index is not correct
+     */
+    public static boolean correctOffsetAndLengthToWrite(byte[] b, int off, int len) {
+        if (b == null) {
+            throw new NullPointerException();
+        } else if ((off < 0) || (off > b.length) || (len < 0)
+                || ((off + len) > b.length) || ((off + len) < 0)) {
+            throw new IndexOutOfBoundsException();
+        } else if (len == 0) {
+            return false;
+        }
+        return true;
     }
 
     /**
@@ -335,16 +378,9 @@ public class StreamBuffer implements Closeable {
         // the method calls internal "read(b, 0, b.length)"
         @Override
         public int read(final byte b[], final int off, final int len) throws IOException {
-            // security check copied from super.read
-            // === snip
-            if (b == null) {
-                throw new NullPointerException();
-            } else if (off < 0 || len < 0 || len > b.length - off) {
-                throw new IndexOutOfBoundsException();
-            } else if (len == 0) {
+            if (!correctOffsetAndLengthToRead(b, off, len)) {
                 return 0;
             }
-            // === snap
 
             // try to read the first byte from FIFO
             // copied from super.read
@@ -457,21 +493,13 @@ public class StreamBuffer implements Closeable {
         @Override
         public void write(final byte[] b, final int off, final int len)
                 throws IOException {
-            // To be thread safe cache the safeWrite value.
-            boolean tmpSafeWrite = isSafeWrite();
-            // security check copied from super.write
-            // === snip
-            if (b == null) {
-                throw new NullPointerException();
-            } else if ((off < 0) || (off > b.length) || (len < 0)
-                    || ((off + len) > b.length) || ((off + len) < 0)) {
-                throw new IndexOutOfBoundsException();
-            } else if (len == 0) {
+            if (!correctOffsetAndLengthToWrite(b, off, len)) {
                 return;
             }
-            // === snap
-
             requireNonClosed();
+            // To be thread safe cache the safeWrite value.
+            boolean tmpSafeWrite = isSafeWrite();
+
             synchronized (bufferLock) {
                 if (off == 0 && b.length == len) {
                     // add the full byte[] to the buffer
