@@ -3,3 +3,19 @@ install: mvn install -Dgpg.skip=true
 jdk:
 - oraclejdk7
 - openjdk7
+
+env:
+  global:
+   # The next declaration is the encrypted COVERITY_SCAN_TOKEN, created
+   #   via the "travis encrypt" command using the project repo's public key
+   - secure: "KtgH3yF2xXwGJSOZ9Tnh1AYHZus5mA1hEnDftchQh09COn7ZqOV8zZUGeqj+DE86MSgoY+s3eUWqOC0XGRvGj4boG2YIEFSKyyAyKENAfsD5JE/7ult/1ppDXcbdgDimm0Pa648Pn+qTyiv1iHMLFXzNbdCC6HtVIhi2Z74xkl8="
+
+addons:
+  coverity_scan:
+    project:
+      name: "bernardladenthin/streambuffer"
+      description: "Build submitted via Travis CI"
+    notification_email: bernard.ladenthin@gmail.com
+    build_command_prepend: "mvn clean"
+    build_command:   "mvn -DskipTests=true compile"
+    branch_pattern: coverity_scan

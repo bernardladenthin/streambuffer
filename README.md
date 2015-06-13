@@ -1,11 +1,28 @@
-[![Travis build status](https://travis-ci.org/bernardladenthin/streambuffer.svg)](https://travis-ci.org/bernardladenthin/streambuffer) [![Maven Central](https://maven-badges.herokuapp.com/maven-central/net.ladenthin/streambuffer/badge.svg)](https://maven-badges.herokuapp.com/maven-central/net.ladenthin/streambuffer) [![Coverage Status](https://coveralls.io/repos/bernardladenthin/streambuffer/badge.svg)](https://coveralls.io/r/bernardladenthin/streambuffer)
+[![Travis build status](https://travis-ci.org/bernardladenthin/streambuffer.svg)](https://travis-ci.org/bernardladenthin/streambuffer)
+[![Maven Central](https://maven-badges.herokuapp.com/maven-central/net.ladenthin/streambuffer/badge.svg)](https://maven-badges.herokuapp.com/maven-central/net.ladenthin/streambuffer)
+[![Coverage Status](https://coveralls.io/repos/bernardladenthin/streambuffer/badge.svg)](https://coveralls.io/r/bernardladenthin/streambuffer)
+[![Coverity Scan Build Status](https://scan.coverity.com/projects/5453/badge.svg)](https://scan.coverity.com/projects/5453)
+[![License](http://img.shields.io/:license-apache-blue.svg)](http://www.apache.org/licenses/LICENSE-2.0.html)
 
 #streambuffer
 A stream buffer is a class to buffer data that has been written to an OutputStream and provides the data in an InputStream.
 
   * Hosting on GitHub: [https://github.com/bernardladenthin/streambuffer](https://github.com/bernardladenthin/streambuffer)
   * Documentation: [https://github.com/bernardladenthin/streambuffer](https://github.com/bernardladenthin/streambuffer)
-  * Code license: [Apache License 2.0](http://www.apache.org/licenses/LICENSE-2.0)
+
+##Where can I get the latest release?
+You can pull it from the central Maven repositories:
+
+```xml
+<dependency>
+  <groupId>net.ladenthin</groupId>
+  <artifactId>streambuffer</artifactId>
+  <version>1.1.0</version>
+</dependency>
+```
+
+##License
+Code is under the [Apache Licence v2](https://www.apache.org/licenses/LICENSE-2.0.txt).
 
 ##Motivation
 Typically, data is read from the InputStream by one thread and data is written to the corresponding OutputStream by some other thread. Since JDK1.0 a developer can use a PipedInputStream and PipedOutputStream. The connection of this two classes has some disadvantages:
