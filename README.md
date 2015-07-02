@@ -61,7 +61,7 @@ All writing operations don't clone the given byte arrays. A byte array is not im
 ###Trim (shrink the FIFO)
 The value of the maximum buffer elements could be changed at the runtime. If the limit is reached, the next writing operation invokes the trim method . The trim method creats a new byte array containing the complete buffer.
 
-###Support for 64bit byte arrays
+###Support for large byte arrays
 Need to write and buffer large arrys? No problem. The Streambuffer is hardened against large arrys. E.g. the available method returns Integer.MAX_VALUE as long as there are more bytes available than a 32bit array can store.
 
 ###Compatibility
