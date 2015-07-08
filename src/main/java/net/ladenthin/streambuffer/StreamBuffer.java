@@ -241,14 +241,14 @@ public class StreamBuffer implements Closeable {
              * Need to store more bufs, may it is not possible to read out all
              * data at once. The available method only returns an int value
              * instead a long value. Store all read parts of the full buffer in
-             * a queue.
+             * a deque.
              */
             final Deque<byte[]> tmpBuffer = new LinkedList();
 
             int available;
             // empty the current buffer, read out all bytes
             while ((available = is.available()) > 0) {
-                byte[] buf = new byte[available];
+                final byte[] buf = new byte[available];
                 // read out of the buffer
                 // and store the result to the tmpBuffer
                 int read = is.read(buf);
@@ -268,6 +268,7 @@ public class StreamBuffer implements Closeable {
                  */
                 ignoreSafeWrite = true;
                 while (!tmpBuffer.isEmpty()) {
+                    // pollFirst returns always a non null value, tmpBuffer is only filled with non null values
                     os.write(tmpBuffer.pollFirst());
                 }
             } finally {
