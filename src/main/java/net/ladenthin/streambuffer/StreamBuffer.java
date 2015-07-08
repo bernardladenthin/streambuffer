@@ -593,6 +593,8 @@ public class StreamBuffer implements Closeable {
      * @return the number of elements in the buffer.
      */
     public int getBufferSize() {
-        return buffer.size();
+        synchronized (bufferLock) {
+            return buffer.size();
+        }
     }
 }
