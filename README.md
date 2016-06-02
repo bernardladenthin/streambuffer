@@ -3,6 +3,7 @@
 [![Coverage Status](https://coveralls.io/repos/bernardladenthin/streambuffer/badge.svg)](https://coveralls.io/r/bernardladenthin/streambuffer)
 [![Coverity Scan Build Status](https://scan.coverity.com/projects/5453/badge.svg)](https://scan.coverity.com/projects/5453)
 [![License](http://img.shields.io/:license-apache-blue.svg)](http://www.apache.org/licenses/LICENSE-2.0.html)
+[![Dependency Status](https://www.versioneye.com/user/projects/56e09efedf573d0048dafea3/badge.svg?style=flat)](https://www.versioneye.com/user/projects/56e09efedf573d0048dafea3)
 
 #streambuffer
 A stream buffer is a class to buffer data that has been written to an OutputStream and provides the data in an InputStream.
