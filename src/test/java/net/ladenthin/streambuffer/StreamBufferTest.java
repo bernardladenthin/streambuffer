@@ -1,3 +1,4 @@
+// @formatter:off
 /**
  * Copyright 2014 Bernard Ladenthin bernard.ladenthin@gmail.com
  *
@@ -14,18 +15,22 @@
  * limitations under the License.
  *
  */
+// @formatter:on
 package net.ladenthin.streambuffer;
+
+import org.junit.Assert;
+import org.junit.Test;
 
 import java.io.*;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.not;
-import static org.hamcrest.number.OrderingComparison.*;
-import org.junit.Assert;
+import static org.hamcrest.number.OrderingComparison.greaterThan;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
-import org.junit.Test;
+
 
 public class StreamBufferTest {
 

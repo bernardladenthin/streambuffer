@@ -1,3 +1,4 @@
+// @formatter:off
 /**
  * Copyright 2014 Bernard Ladenthin bernard.ladenthin@gmail.com
  *
@@ -14,6 +15,7 @@
  * limitations under the License.
  *
  */
+// @formatter:on
 package net.ladenthin.streambuffer;
 
 import java.io.Closeable;
