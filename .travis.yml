@@ -18,7 +18,7 @@ addons:
     project:
       name: "bernardladenthin/streambuffer"
       description: "Build submitted via Travis CI"
-    notification_email: bernard@ladenthin.net
+    notification_email: bernard.ladenthin@gmail.com
     build_command_prepend: "mvn clean"
     build_command:   "mvn -DskipTests=true compile"
     branch_pattern: coverity_scan
