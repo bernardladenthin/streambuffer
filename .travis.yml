@@ -8,14 +8,17 @@ env:
   global:
    # The next declaration is the encrypted COVERITY_SCAN_TOKEN, created
    #   via the "travis encrypt" command using the project repo's public key
-   - secure: "KtgH3yF2xXwGJSOZ9Tnh1AYHZus5mA1hEnDftchQh09COn7ZqOV8zZUGeqj+DE86MSgoY+s3eUWqOC0XGRvGj4boG2YIEFSKyyAyKENAfsD5JE/7ult/1ppDXcbdgDimm0Pa648Pn+qTyiv1iHMLFXzNbdCC6HtVIhi2Z74xkl8="
+   - secure: "uYhystsHudliu0dhn//lI5jGUs58Ng3eJ9GZbUtajVor0RtIjpmE2MnUjkvGR6vB6bBpErbiC5imWwfLwX9a+JT51KAOvUf7HQv2/WO7voMx2oZ1d9ahhq3S6hRkBnNKWJDTe1MjS9D2fr/y0uknuShgQ4t5FYBIQTqHEl30ssQ="
+
+before_install:
+      - echo -n | openssl s_client -connect scan.coverity.com:443 | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' | sudo tee -a /etc/ssl/certs/ca-
 
 addons:
   coverity_scan:
     project:
       name: "bernardladenthin/streambuffer"
       description: "Build submitted via Travis CI"
-    notification_email: bernard.ladenthin@gmail.com
+    notification_email: bernard@ladenthin.net
     build_command_prepend: "mvn clean"
     build_command:   "mvn -DskipTests=true compile"
     branch_pattern: coverity_scan
