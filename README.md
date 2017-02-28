@@ -66,5 +66,5 @@ The value of the maximum buffer elements could be changed at the runtime. If the
 Need to write and buffer large arrys? No problem. The Streambuffer is hardened against large arrys. E.g. the available method returns Integer.MAX_VALUE as long as there are more bytes available than a 32bit array can store.
 
 ###Compatibility
-Streambuffer is compatible to Java 1.5 and upwards.
+Streambuffer is compatible to Java 1.6 and upwards.
 
