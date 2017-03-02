@@ -1,6 +1,7 @@
 [![Travis build status](https://travis-ci.org/bernardladenthin/streambuffer.svg)](https://travis-ci.org/bernardladenthin/streambuffer)
 [![Maven Central](https://maven-badges.herokuapp.com/maven-central/net.ladenthin/streambuffer/badge.svg)](https://maven-badges.herokuapp.com/maven-central/net.ladenthin/streambuffer)
 [![Coverage Status](https://coveralls.io/repos/bernardladenthin/streambuffer/badge.svg)](https://coveralls.io/r/bernardladenthin/streambuffer)
+[![Codecov](https://codecov.io/github/bernardladenthin/streambuffer/coverage.png)](https://codecov.io/gh/bernardladenthin/streambuffer)
 [![Coverity Scan Build Status](https://scan.coverity.com/projects/5453/badge.svg)](https://scan.coverity.com/projects/5453)
 [![License](http://img.shields.io/:license-apache-blue.svg)](http://www.apache.org/licenses/LICENSE-2.0.html)
 [![Dependency Status](https://www.versioneye.com/user/projects/56e09efedf573d0048dafea3/badge.svg?style=flat)](https://www.versioneye.com/user/projects/56e09efedf573d0048dafea3)
