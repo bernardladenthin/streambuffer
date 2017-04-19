@@ -22,6 +22,8 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import java.io.*;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
@@ -30,6 +32,7 @@ import static org.hamcrest.CoreMatchers.not;
 import static org.hamcrest.number.OrderingComparison.greaterThan;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
+import static org.junit.Assert.assertTrue;
 
 
 /**
@@ -836,7 +839,10 @@ public class StreamBufferTest {
       long presumableFreeMemory = Runtime.getRuntime().maxMemory() - allocatedMemory;
       return presumableFreeMemory;
     }
-    
+    static class Stats {
+      long written=0;
+      long read=0;
+    }
     @Test
     public void testMemory() throws IOException {
       long startMemory = getAvailableMemory();
@@ -844,22 +850,55 @@ public class StreamBufferTest {
       InputStream is = sb.getInputStream();
       OutputStream os = sb.getOutputStream();
       PrintWriter writer=new PrintWriter(os);
+      BufferedReader reader=new BufferedReader(new InputStreamReader(is));
       int power=12;
-      int blocks=1000;
+      final Stats stats=new Stats();
       String line="0123456789";
       for (int i=0;i<power;i++) {
         line=line+line;
       }
+      final String block=line;
       if (debug)
         System.out.println(String.format("line size=%8d =10*2^%2d",line.length(),power));
-      for (int i=0;i<blocks;i++) {
-        writer.println(line);
+      ScheduledExecutorService readexecutor = Executors.newSingleThreadScheduledExecutor();
+      ScheduledExecutorService writeexecutor = Executors.newSingleThreadScheduledExecutor();
+      Runnable writeTask = new Runnable() {
+        public void run() {
+          // Invoke method(s) to do the work
+          try {
+            writer.println(block);
+            stats.written+=block.length();
+          } catch (Exception e) {
+            // ignore
+          }
+        }
+      };
+      Runnable readTask = new Runnable() {
+        public void run() {
+          // Invoke method(s) to do the work
+          try {
+            String line=reader.readLine();
+            stats.read+=line.length();
+          } catch (Exception e) {
+            // ignore
+          }
+        }
+      };
+      // update meter value every 2 seconds
+      writeexecutor.scheduleAtFixedRate(writeTask, 0, 400000,TimeUnit.NANOSECONDS);
+      readexecutor.scheduleAtFixedRate(readTask,  0, 220000,TimeUnit.NANOSECONDS);
+      long usedMemory=0;
+      while (usedMemory<=64000 && stats.written/1024<64000) {
+          long endMemory=getAvailableMemory();
+          long writtenBytes=stats.written/1024;
+          long readBytes=stats.read/1024;
+          usedMemory=(startMemory-endMemory)/1024;
+          if (debug)
+            System.out.println(String.format("memory used=%6d kB for %6d/%6d kB bytes written/read",usedMemory,writtenBytes,readBytes));
       }
-      long endMemory=getAvailableMemory();
-      long bytes=blocks*line.length()/1024/1024;
-      long usedMemory=(startMemory-endMemory)/1024/1024;
-      if (debug)
-        System.out.println(String.format("memory used=%6d MB for %6d MB bytes piped",usedMemory,bytes));
+      writeexecutor.shutdown();
+      readexecutor.shutdown();
       sb.close();
+      assertTrue("Memory usage should be lower than 64MByte",usedMemory<64000);
     }
 }
