@@ -38,6 +38,8 @@ import static org.junit.Assert.assertThat;
  */
 public class StreamBufferTest {
 
+    static boolean debug=true;
+    
     /**
      * The answer to all questions.
      */
@@ -822,5 +824,42 @@ public class StreamBufferTest {
         
         assertThat(result, is(3));
         sb.close();
+    }
+    
+    /**
+     * get the available memory
+     * @return
+     */
+    public long getAvailableMemory() {
+      long allocatedMemory = 
+        (Runtime.getRuntime().totalMemory()-Runtime.getRuntime().freeMemory());
+      long presumableFreeMemory = Runtime.getRuntime().maxMemory() - allocatedMemory;
+      return presumableFreeMemory;
+    }
+    
+    @Test
+    public void testMemory() throws IOException {
+      long startMemory = getAvailableMemory();
+      final StreamBuffer sb = new StreamBuffer();
+      InputStream is = sb.getInputStream();
+      OutputStream os = sb.getOutputStream();
+      PrintWriter writer=new PrintWriter(os);
+      int power=12;
+      int blocks=1000;
+      String line="0123456789";
+      for (int i=0;i<power;i++) {
+        line=line+line;
+      }
+      if (debug)
+        System.out.println(String.format("line size=%8d =10*2^%2d",line.length(),power));
+      for (int i=0;i<blocks;i++) {
+        writer.println(line);
+      }
+      long endMemory=getAvailableMemory();
+      long bytes=blocks*line.length()/1024/1024;
+      long usedMemory=(startMemory-endMemory)/1024/1024;
+      if (debug)
+        System.out.println(String.format("memory used=%6d MB for %6d MB bytes piped",usedMemory,bytes));
+      sb.close();
     }
 }
