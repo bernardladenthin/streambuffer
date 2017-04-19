@@ -53,7 +53,7 @@ In contrast to a PipedOutputStream, writing operations couldn't deadlock a threa
 Streambuffer extends the standard classes, all your software could rely on an established interface. The InputStream can be used against the OutputStream completely thread safe. There is no need to synchronize something after a read or writing operation.
 
 ### Smart read operations
-If you write a big arry to the stream and read only one byte out of the stream, it would be wasteful to make a copy without the read part. The streambuffer uses a pointer to figure out how many bytes are already read from the big array. The trim method considering this pointer and copies is only the remaining part.
+If you write a big array to the stream and read only one byte out of the stream, it would be wasteful to make a copy without the read part. The streambuffer uses a pointer to figure out how many bytes are already read from the big array. The trim method considering this pointer and copies is only the remaining part.
 
 ### Safe write (immutable byte array)
 All writing operations don't clone the given byte arrays. A byte array is not immutable and could be changed outside of the streambuffer. If your piece of code changes the content of the array after it was written to the OutputStream you have two options.
