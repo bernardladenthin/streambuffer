@@ -6,13 +6,13 @@
 [![License](http://img.shields.io/:license-apache-blue.svg)](http://www.apache.org/licenses/LICENSE-2.0.html)
 [![Dependency Status](https://www.versioneye.com/user/projects/56e09efedf573d0048dafea3/badge.svg?style=flat)](https://www.versioneye.com/user/projects/56e09efedf573d0048dafea3)
 
-#streambuffer
+# streambuffer
 A stream buffer is a class to buffer data that has been written to an OutputStream and provides the data in an InputStream.
 
   * Hosting on GitHub: [https://github.com/bernardladenthin/streambuffer](https://github.com/bernardladenthin/streambuffer)
   * Documentation: [https://github.com/bernardladenthin/streambuffer](https://github.com/bernardladenthin/streambuffer)
 
-##Where can I get the latest release?
+## Where can I get the latest release?
 You can pull it from the central Maven repositories:
 
 ```xml
@@ -23,10 +23,10 @@ You can pull it from the central Maven repositories:
 </dependency>
 ```
 
-##License
+## License
 Code is under the [Apache Licence v2](https://www.apache.org/licenses/LICENSE-2.0.txt).
 
-##Motivation
+## Motivation
 Typically, data is read from the InputStream by one thread and data is written to the corresponding OutputStream by some other thread. Since JDK1.0 a developer can use a PipedInputStream and PipedOutputStream. The connection of this two classes has some disadvantages:
 
    * The writing operations of the PipedOutputStream blocks until the data was completely written to the circular buffer. If the buffer is not big enough, the write operation must wait until data has been read out of the circular buffer. The writing operations may block the writing thread.
@@ -39,33 +39,33 @@ Typically, data is read from the InputStream by one thread and data is written t
 
 It is not recommended attempting to use both streams from a single thread, as it may deadlock the thread. The piped input stream contains a buffer, decoupling read operations from writing operations, within limits.
 
-##Solution
+## Solution
 Streambuffer is a class which connects an OutputStream and an InputStream through a dynamic growing FIFO. Instead to buffer the written data in a circular buffer, the Streambuffer holds the reference to the byte array. 
 
-##Deadlock
-###Read
+## Deadlock
+### Read
 The read method may wait for new data and deadlock the thread. A deadlock could be prevented if the read method is only trying to read so much data which is available.
-###Write
+### Write
 In contrast to a PipedOutputStream, writing operations couldn't deadlock a thread.
 
-##Features
-###Extends InputStream and OutputStream thread safe
+## Features
+### Extends InputStream and OutputStream thread safe
 Streambuffer extends the standard classes, all your software could rely on an established interface. The InputStream can be used against the OutputStream completely thread safe. There is no need to synchronize something after a read or writing operation.
 
-###Smart read operations
+### Smart read operations
 If you write a big arry to the stream and read only one byte out of the stream, it would be wasteful to make a copy without the read part. The streambuffer uses a pointer to figure out how many bytes are already read from the big array. The trim method considering this pointer and copies is only the remaining part.
 
-###Safe write (immutable byte array)
+### Safe write (immutable byte array)
 All writing operations don't clone the given byte arrays. A byte array is not immutable and could be changed outside of the streambuffer. If your piece of code changes the content of the array after it was written to the OutputStream you have two options.
    * Clone the byte array before they are written to the stream.
    * Enable the safeWrite feature to clone every written byte array (recommended). Please prefer this option. If you write only a part of a byte array (e.g. using an offset), the Streambuffer creates nevertheless a new byte array which couldn't be changed from outside.
 
-###Trim (shrink the FIFO)
+### Trim (shrink the FIFO)
 The value of the maximum buffer elements could be changed at the runtime. If the limit is reached, the next writing operation invokes the trim method . The trim method creats a new byte array containing the complete buffer.
 
-###Support for large byte arrays
+### Support for large byte arrays
 Need to write and buffer large arrys? No problem. The Streambuffer is hardened against large arrys. E.g. the available method returns Integer.MAX_VALUE as long as there are more bytes available than a 32bit array can store.
 
-###Compatibility
+### Compatibility
 Streambuffer is compatible to Java 1.6 and upwards.
 

@@ -22,6 +22,8 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import java.io.*;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
@@ -30,10 +32,17 @@ import static org.hamcrest.CoreMatchers.not;
 import static org.hamcrest.number.OrderingComparison.greaterThan;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
+import static org.junit.Assert.assertTrue;
 
 
+/**
+ * JUnit Test for StreamBuffer
+ *
+ */
 public class StreamBufferTest {
 
+    static boolean debug=true;
+    
     /**
      * The answer to all questions.
      */
@@ -63,6 +72,7 @@ public class StreamBufferTest {
         for (int i = 1; i < target.length - 1; ++i) {
             assertEquals(anyValue, (long) target[i]);
         }
+        sb.close();
     }
 
     /**
@@ -123,6 +133,7 @@ public class StreamBufferTest {
         assertEquals(0, fromMemory[1]);
         assertEquals(anyNumber, fromMemory[2]);
         assertEquals(anyNumber, fromMemory[3]);
+        sb.close();
     }
 
     @Test
@@ -164,6 +175,7 @@ public class StreamBufferTest {
         assertEquals(t2[0], 6);
         assertEquals(t2[1], 6);
         assertEquals(t2[2], 6);
+        sb.close();
     }
 
     @Test
@@ -218,7 +230,7 @@ public class StreamBufferTest {
         }
 
         Assert.assertArrayEquals(originalData, byteChain);
-
+        sb.close();
     }
 
     @Test
@@ -234,43 +246,54 @@ public class StreamBufferTest {
         dout.writeUTF(testString);
         String readUTF = din.readUTF();
         assertEquals(testString, readUTF);
+        sb.close();
     }
 
     @Test
     public void constructor_noArguments_NoExceptionThrown() {
         StreamBuffer sb = new StreamBuffer();
+        try {
+          sb.close();
+        } catch (IOException e) {
+         // ignore
+        }
     }
 
     @Test
-    public void getMaxBufferElements_initialValue_GreaterZero() {
+    public void getMaxBufferElements_initialValue_GreaterZero() throws IOException {
         StreamBuffer sb = new StreamBuffer();
         assertThat(sb.getMaxBufferElements(), is(greaterThan(0)));
+        sb.close();
     }
 
     @Test
-    public void getMaxBufferElements_afterSet_Zero() {
+    public void getMaxBufferElements_afterSet_Zero() throws IOException {
         StreamBuffer sb = new StreamBuffer();
         sb.setMaxBufferElements(0);
         assertThat(sb.getMaxBufferElements(), is(0));
+        sb.close();
     }
 
     @Test
-    public void isSafeWrite_initialValue_false() {
+    public void isSafeWrite_initialValue_false() throws IOException {
         StreamBuffer sb = new StreamBuffer();
         assertThat(sb.isSafeWrite(), is(false));
+        sb.close();
     }
 
     @Test
-    public void isSafeWrite_afterSet_true() {
+    public void isSafeWrite_afterSet_true() throws IOException {
         StreamBuffer sb = new StreamBuffer();
         sb.setSafeWrite(true);
         assertThat(sb.isSafeWrite(), is(true));
+        sb.close();
     }
 
     @Test
-    public void isClosed_afterConstruct_false() {
+    public void isClosed_afterConstruct_false() throws IOException {
         StreamBuffer sb = new StreamBuffer();
         assertThat(sb.isClosed(), is(false));
+        sb.close();
     }
 
     @Test
@@ -316,6 +339,7 @@ public class StreamBufferTest {
         sb.getInputStream().read(fromStream);
 
         assertThat(fromStream[0], is(not((byte) anyValue)));
+        sb.close();
     }
 
     /**
@@ -354,6 +378,7 @@ public class StreamBufferTest {
         sb.getInputStream().read(fromStream);
 
         assertThat(fromStream[0], is((byte) anyValue));
+        sb.close();
     }
 
     @Test
@@ -371,6 +396,7 @@ public class StreamBufferTest {
         int result = sb.getBufferSize();
 
         assertThat(result, is(1));
+        sb.close();
     }
 
     @Test
@@ -392,6 +418,8 @@ public class StreamBufferTest {
         is.read(read);
 
         assertThat(read, is(new byte[]{1, 2, 3, 4, 5, 6}));
+        os.close();
+        sb.close();
     }
 
     @Test
@@ -409,6 +437,7 @@ public class StreamBufferTest {
         sb.getOutputStream().write(anyValue);
 
         assertThat(sb.getBufferSize(), is(3));
+        sb.close();
     }
 
     @Test
@@ -416,6 +445,7 @@ public class StreamBufferTest {
         StreamBuffer sb = new StreamBuffer();
         sb.setMaxBufferElements(-1);
         assertThat(-1, is(sb.getMaxBufferElements()));
+        sb.close();
     }
 
     @Test
@@ -433,6 +463,7 @@ public class StreamBufferTest {
         sb.getOutputStream().write(anyValue);
 
         assertThat(sb.getBufferSize(), is(3));
+        sb.close();
     }
 
     @Test
@@ -442,6 +473,7 @@ public class StreamBufferTest {
         OutputStream os = sb.getOutputStream();
         os.close();
         assertThat(is.read(), is(-1));
+        sb.close();
     }
 
     @Test
@@ -456,6 +488,7 @@ public class StreamBufferTest {
          */
         is.read();
         assertThat(is.read(), is(-1));
+        sb.close();
     }
 
     @Test(expected = IOException.class)
@@ -465,6 +498,8 @@ public class StreamBufferTest {
         OutputStream os = sb.getOutputStream();
         os.close();
         os.write(anyValue);
+        is.close();
+        sb.close();
     }
 
     @Test
@@ -477,6 +512,7 @@ public class StreamBufferTest {
         byte[] dest = new byte[9];
         is.read(dest, 3, 3);
         assertThat(dest, is(new byte[]{0, 0, 0, anyValue, anyValue, anyValue, 0, 0, 0}));
+        sb.close();
     }
 
     @Test
@@ -489,6 +525,7 @@ public class StreamBufferTest {
         byte[] dest = new byte[1];
         is.read(dest, 0, 0);
         assertThat(dest, is(new byte[]{0}));
+        sb.close();
     }
 
     @Test
@@ -500,6 +537,7 @@ public class StreamBufferTest {
         byte[] dest = new byte[1];
         int read = is.read(dest, 0, 1);
         assertThat(read, is(-1));
+        sb.close();
     }
 
     @Test(expected = NullPointerException.class)
@@ -508,6 +546,8 @@ public class StreamBufferTest {
         InputStream is = sb.getInputStream();
         OutputStream os = sb.getOutputStream();
         is.read(null, 0, 0);
+        os.close();
+        sb.close();
     }
 
     @Test(expected = IndexOutOfBoundsException.class)
@@ -518,6 +558,8 @@ public class StreamBufferTest {
 
         byte[] dest = new byte[1];
         is.read(dest, 3, 1);
+        os.close();
+        sb.close();
     }
 
     @Test(expected = IndexOutOfBoundsException.class)
@@ -528,6 +570,8 @@ public class StreamBufferTest {
 
         byte[] dest = new byte[1];
         is.read(dest, 0, 2);
+        os.close();
+        sb.close();
     }
 
     @Test(expected = IndexOutOfBoundsException.class)
@@ -538,6 +582,8 @@ public class StreamBufferTest {
 
         byte[] dest = new byte[1];
         is.read(dest, 0, -1);
+        os.close();
+        sb.close();
     }
 
     @Test(expected = IndexOutOfBoundsException.class)
@@ -548,6 +594,8 @@ public class StreamBufferTest {
 
         byte[] dest = new byte[1];
         is.read(dest, -1, 1);
+        os.close();
+        sb.close();
     }
 
     @Test(expected = NullPointerException.class)
@@ -556,6 +604,8 @@ public class StreamBufferTest {
         InputStream is = sb.getInputStream();
         OutputStream os = sb.getOutputStream();
         os.write(null, 0, 0);
+        is.close();
+        sb.close();
     }
 
     @Test(expected = IndexOutOfBoundsException.class)
@@ -566,6 +616,8 @@ public class StreamBufferTest {
 
         byte[] from = new byte[1];
         os.write(from, 3, 1);
+        is.close();
+        sb.close();
     }
 
     @Test(expected = IndexOutOfBoundsException.class)
@@ -576,6 +628,8 @@ public class StreamBufferTest {
 
         byte[] from = new byte[1];
         os.write(from, 0, 2);
+        is.close();
+        sb.close();
     }
 
     @Test(expected = IndexOutOfBoundsException.class)
@@ -586,6 +640,8 @@ public class StreamBufferTest {
 
         byte[] from = new byte[1];
         os.write(from, 0, -1);
+        is.close();
+        sb.close();
     }
 
     @Test(expected = IndexOutOfBoundsException.class)
@@ -596,6 +652,8 @@ public class StreamBufferTest {
 
         byte[] from = new byte[1];
         os.write(from, -1, 1);
+        is.close();
+        sb.close();
     }
 
     @Test
@@ -608,6 +666,7 @@ public class StreamBufferTest {
         os.write(from, 1, 1);
 
         assertThat(is.available(), is(1));
+        sb.close();
     }
 
     @Test
@@ -646,6 +705,8 @@ public class StreamBufferTest {
         os.write(from);
 
         assertThat(is.available(), is(Integer.MAX_VALUE));
+        is.close();
+        sb.close();
     }
     
     @Test
@@ -676,6 +737,8 @@ public class StreamBufferTest {
         os.write(anyValue);
 
         assertThat(s.tryAcquire(10, TimeUnit.SECONDS), is(true));
+        is.close();
+        sb.close();
     }
     
     @Test
@@ -704,9 +767,11 @@ public class StreamBufferTest {
          * block the thread at the right condition.
          */
         Thread.sleep(1000);
+        is.close();
         os.close();
 
         assertThat(s.tryAcquire(10, TimeUnit.SECONDS), is(true));
+        sb.close();
     }
 
     @Test
@@ -741,6 +806,7 @@ public class StreamBufferTest {
         int read = is.read(dest);
 
         assertThat(read, is(1));
+        sb.close();
     }
 
     @Test
@@ -760,5 +826,79 @@ public class StreamBufferTest {
         int result = bis.available();
         
         assertThat(result, is(3));
+        sb.close();
+    }
+    
+    /**
+     * get the available memory
+     * @return
+     */
+    public long getAvailableMemory() {
+      long allocatedMemory = 
+        (Runtime.getRuntime().totalMemory()-Runtime.getRuntime().freeMemory());
+      long presumableFreeMemory = Runtime.getRuntime().maxMemory() - allocatedMemory;
+      return presumableFreeMemory;
+    }
+    static class Stats {
+      long written=0;
+      long read=0;
+    }
+    @Test
+    public void testMemory() throws IOException {
+      long startMemory = getAvailableMemory();
+      final StreamBuffer sb = new StreamBuffer();
+      InputStream is = sb.getInputStream();
+      OutputStream os = sb.getOutputStream();
+      PrintWriter writer=new PrintWriter(os);
+      BufferedReader reader=new BufferedReader(new InputStreamReader(is));
+      int power=12;
+      final Stats stats=new Stats();
+      String line="0123456789";
+      for (int i=0;i<power;i++) {
+        line=line+line;
+      }
+      final String block=line;
+      if (debug)
+        System.out.println(String.format("line size=%8d =10*2^%2d",line.length(),power));
+      ScheduledExecutorService readexecutor = Executors.newSingleThreadScheduledExecutor();
+      ScheduledExecutorService writeexecutor = Executors.newSingleThreadScheduledExecutor();
+      Runnable writeTask = new Runnable() {
+        public void run() {
+          // Invoke method(s) to do the work
+          try {
+            writer.println(block);
+            stats.written+=block.length();
+          } catch (Exception e) {
+            // ignore
+          }
+        }
+      };
+      Runnable readTask = new Runnable() {
+        public void run() {
+          // Invoke method(s) to do the work
+          try {
+            String line=reader.readLine();
+            stats.read+=line.length();
+          } catch (Exception e) {
+            // ignore
+          }
+        }
+      };
+      // update meter value every 2 seconds
+      writeexecutor.scheduleAtFixedRate(writeTask, 0, 400000,TimeUnit.NANOSECONDS);
+      readexecutor.scheduleAtFixedRate(readTask,  0, 220000,TimeUnit.NANOSECONDS);
+      long usedMemory=0;
+      while (usedMemory<=64000 && stats.written/1024<64000) {
+          long endMemory=getAvailableMemory();
+          long writtenBytes=stats.written/1024;
+          long readBytes=stats.read/1024;
+          usedMemory=(startMemory-endMemory)/1024;
+          if (debug)
+            System.out.println(String.format("memory used=%6d kB for %6d/%6d kB bytes written/read",usedMemory,writtenBytes,readBytes));
+      }
+      writeexecutor.shutdown();
+      readexecutor.shutdown();
+      sb.close();
+      assertTrue("Memory usage should be lower than 64MByte",usedMemory<64000);
     }
 }
