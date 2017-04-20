@@ -46,7 +46,7 @@ public class StreamBuffer implements Closeable {
     /**
      * The buffer which contains the raw data.
      */
-    private final Deque<byte[]> buffer = new LinkedList();
+    private final Deque<byte[]> buffer = new LinkedList<>();
 
     /**
      * A {@link Semaphore} to signal that data are added to the {@link #buffer}.
@@ -245,7 +245,7 @@ public class StreamBuffer implements Closeable {
              * instead a long value. Store all read parts of the full buffer in
              * a deque.
              */
-            final Deque<byte[]> tmpBuffer = new LinkedList();
+            final Deque<byte[]> tmpBuffer = new LinkedList<>();
 
             int available;
             // empty the current buffer, read out all bytes
