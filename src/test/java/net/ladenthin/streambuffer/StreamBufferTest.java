@@ -22,6 +22,7 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import java.io.*;
+import java.lang.ref.WeakReference;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Semaphore;
@@ -828,77 +829,115 @@ public class StreamBufferTest {
         assertThat(result, is(3));
         sb.close();
     }
-    
+
     /**
-     * get the available memory
-     * @return
+     * http://stackoverflow.com/questions/12807797/java-get-available-memory
      */
-    public long getAvailableMemory() {
+    private long getAvailableMemory() {
       long allocatedMemory = 
         (Runtime.getRuntime().totalMemory()-Runtime.getRuntime().freeMemory());
       long presumableFreeMemory = Runtime.getRuntime().maxMemory() - allocatedMemory;
       return presumableFreeMemory;
     }
     static class Stats {
-      long written=0;
-      long read=0;
+      volatile long written=0;
+      volatile long read=0;
     }
+    byte[] concat(byte[]a, byte[]b) {
+        byte[] c = new byte[a.length + b.length];
+        System.arraycopy(a, 0, c, 0, a.length);
+        System.arraycopy(b, 0, c, a.length, b.length);
+        return c;
+    }
+
+    /**
+     * This method guarantees that garbage collection is
+     * done unlike <code>{@link System#gc()}</code>
+     * http://stackoverflow.com/questions/1481178/how-to-force-garbage-collection-in-java
+     */
+    public static void gc() {
+        Object obj = new Object();
+        WeakReference<Object> ref = new WeakReference<Object>(obj);
+        obj = null;
+        while(ref.get() != null) {
+            System.gc();
+        }
+    }
+
     @Test
     public void testMemory() throws IOException {
-      long startMemory = getAvailableMemory();
-      final StreamBuffer sb = new StreamBuffer();
-      InputStream is = sb.getInputStream();
-      OutputStream os = sb.getOutputStream();
-      PrintWriter writer=new PrintWriter(os);
-      BufferedReader reader=new BufferedReader(new InputStreamReader(is));
-      int power=12;
-      final Stats stats=new Stats();
-      String line="0123456789";
-      for (int i=0;i<power;i++) {
-        line=line+line;
-      }
-      final String block=line;
-      if (debug)
-        System.out.println(String.format("line size=%8d =10*2^%2d",line.length(),power));
-      ScheduledExecutorService readexecutor = Executors.newSingleThreadScheduledExecutor();
-      ScheduledExecutorService writeexecutor = Executors.newSingleThreadScheduledExecutor();
-      Runnable writeTask = new Runnable() {
-        public void run() {
-          // Invoke method(s) to do the work
-          try {
-            writer.println(block);
-            stats.written+=block.length();
-          } catch (Exception e) {
-            // ignore
-          }
+        gc();
+        long startMemory = getAvailableMemory();
+        final StreamBuffer sb = new StreamBuffer();
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
+        int power = 12;
+        final Stats stats = new Stats();
+        byte[] line = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+        for (int i = 0; i < power; i++) {
+            line = concat(line, line);
         }
-      };
-      Runnable readTask = new Runnable() {
-        public void run() {
-          // Invoke method(s) to do the work
-          try {
-            String line=reader.readLine();
-            stats.read+=line.length();
-          } catch (Exception e) {
-            // ignore
-          }
+
+        byte[] block = line;
+        if (debug) {
+            System.out.println(String.format("line size=%8d =10*2^%2d", block.length, power));
         }
-      };
-      // update meter value every 2 seconds
-      writeexecutor.scheduleAtFixedRate(writeTask, 0, 400000,TimeUnit.NANOSECONDS);
-      readexecutor.scheduleAtFixedRate(readTask,  0, 220000,TimeUnit.NANOSECONDS);
-      long usedMemory=0;
-      while (usedMemory<=64000 && stats.written/1024<64000) {
-          long endMemory=getAvailableMemory();
-          long writtenBytes=stats.written/1024;
-          long readBytes=stats.read/1024;
-          usedMemory=(startMemory-endMemory)/1024;
-          if (debug)
-            System.out.println(String.format("memory used=%6d kB for %6d/%6d kB bytes written/read",usedMemory,writtenBytes,readBytes));
-      }
-      writeexecutor.shutdown();
-      readexecutor.shutdown();
-      sb.close();
-      assertTrue("Memory usage should be lower than 64MByte",usedMemory<64000);
+        ScheduledExecutorService readexecutor = Executors.newSingleThreadScheduledExecutor();
+        ScheduledExecutorService writeexecutor = Executors.newSingleThreadScheduledExecutor();
+        Runnable writeTask = new Runnable() {
+            public void run() {
+                // Invoke method(s) to do the work
+                try {
+                    os.write(block);
+                    stats.written += block.length;
+                } catch (Exception e) {
+                    // ignore
+                }
+            }
+        };
+        Runnable readTask = new Runnable() {
+            public void run() {
+                // Invoke method(s) to do the work
+                try {
+                    // read an half block every step
+                    byte[] line = new byte[block.length / 2];
+                    is.read(line);
+                    stats.read += line.length;
+                } catch (Exception e) {
+                    // ignore
+                }
+            }
+        };
+        // update meter value every 2 seconds
+        writeexecutor.scheduleAtFixedRate(writeTask, 0, 400000, TimeUnit.NANOSECONDS);
+        readexecutor.scheduleAtFixedRate(readTask, 0, 180000, TimeUnit.NANOSECONDS);
+        long usedMemory = 0;
+        final int mebibyte = 64;
+        while (usedMemory <= mebibyte * 1024 && stats.written / 1024 < mebibyte * 1024) {
+            long endMemory = getAvailableMemory();
+            long writtenBytes = stats.written / 1024;
+            long readBytes = stats.read / 1024;
+            usedMemory = (startMemory - endMemory) / 1024;
+            if (debug) {
+                System.out.println(String.format("memory used=%6d KiB for %6d/%6d KiB written/read", usedMemory, writtenBytes, readBytes));
+            }
+        }
+        writeexecutor.shutdown();
+        readexecutor.shutdown();
+
+        // read fully
+        if (debug) {
+            System.out.println("sb.getInputStream().available(): " + sb.getInputStream().available());
+        }
+        if (sb.getInputStream().available() != 0) {
+            is.read(new byte[sb.getInputStream().available()]);
+        }
+        assertTrue("Read the inputStream completely", sb.getInputStream().available() == 0);
+        sb.close();
+        gc();
+        if (debug) {
+            System.out.println("usedMemory: " + usedMemory);
+        }
+        assertTrue("Memory usage should be lower than 64MByte: usedMemory:" + usedMemory, usedMemory < mebibyte * 1024);
     }
 }
