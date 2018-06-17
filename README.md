@@ -3,6 +3,7 @@
 [![Coverage Status](https://coveralls.io/repos/bernardladenthin/streambuffer/badge.svg)](https://coveralls.io/r/bernardladenthin/streambuffer)
 [![Codecov](https://codecov.io/github/bernardladenthin/streambuffer/coverage.png)](https://codecov.io/gh/bernardladenthin/streambuffer)
 [![Coverity Scan Build Status](https://scan.coverity.com/projects/5453/badge.svg)](https://scan.coverity.com/projects/5453)
+[![Known Vulnerabilities](https://snyk.io/test/github/bernardladenthin/streambuffer/badge.svg?targetFile=pom.xml)](https://snyk.io/test/github/bernardladenthin/streambuffer?targetFile=pom.xml)
 [![License](http://img.shields.io/:license-apache-blue.svg)](http://www.apache.org/licenses/LICENSE-2.0.html)
 
 # streambuffer
