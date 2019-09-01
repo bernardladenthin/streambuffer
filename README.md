@@ -4,6 +4,8 @@
 [![Codecov](https://codecov.io/github/bernardladenthin/streambuffer/coverage.png)](https://codecov.io/gh/bernardladenthin/streambuffer)
 [![Coverity Scan Build Status](https://scan.coverity.com/projects/5453/badge.svg)](https://scan.coverity.com/projects/5453)
 [![Known Vulnerabilities](https://snyk.io/test/github/bernardladenthin/streambuffer/badge.svg?targetFile=pom.xml)](https://snyk.io/test/github/bernardladenthin/streambuffer?targetFile=pom.xml)
+[![Code Quality: Java](https://img.shields.io/lgtm/grade/java/g/bernardladenthin/streambuffer.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/bernardladenthin/streambuffer/context:java)
+[![Total Alerts](https://img.shields.io/lgtm/alerts/g/bernardladenthin/streambuffer.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/bernardladenthin/streambuffer/alerts)
 [![License](http://img.shields.io/:license-apache-blue.svg)](http://www.apache.org/licenses/LICENSE-2.0.html)
 
 # streambuffer
