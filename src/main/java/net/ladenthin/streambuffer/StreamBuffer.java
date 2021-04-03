@@ -36,6 +36,8 @@ import java.util.concurrent.Semaphore;
  * @author Bernard Ladenthin bernard.ladenthin@gmail.com
  */
 public class StreamBuffer implements Closeable {
+    
+    final static String EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION = "Invalid offset or length given to correctOffsetAndLengthToWrite.";
 
     /**
      * An object to get an unique access to the {@link #buffer}. It is needed to
@@ -186,14 +188,14 @@ public class StreamBuffer implements Closeable {
      * @param len the len of the bytes to write to the array
      * @return <code>true</code> if there are bytes to write, otherwise <code>false</code>
      * @throws NullPointerException if the array is null
-     * @throws IndexOutOfBoundsException if the index is not correct
+     * @throws IndexOutOfBoundsException if the offset or length is not invalid
      */
     public static boolean correctOffsetAndLengthToWrite(byte[] b, int off, int len) {
         if (b == null) {
             throw new NullPointerException();
         } else if ((off < 0) || (off > b.length) || (len < 0)
                 || ((off + len) > b.length) || ((off + len) < 0)) {
-            throw new IndexOutOfBoundsException();
+            throw new IndexOutOfBoundsException(EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION);
         } else if (len == 0) {
             return false;
         }
