@@ -58,13 +58,6 @@ public class StreamBuffer implements Closeable {
     private final Semaphore signalModification = new Semaphore(0);
 
     /**
-     * A {@link Semaphore} to signal that data are added to the {@link #buffer}.
-     * This signal is also used to announce that the stream was closed.
-     * This {@link Semaphore} is used only for external communication.
-     */
-    private final Semaphore signalModificationExternal = new Semaphore(0);
-
-    /**
      * A variable for the current position of the current element in the
      * {@link #buffer}.
      */
@@ -213,26 +206,14 @@ public class StreamBuffer implements Closeable {
         if (signalModification.availablePermits() == 0) {
             signalModification.release();
         }
-        // same twice for external communication
-        if (signalModificationExternal.availablePermits() == 0) {
-            signalModificationExternal.release();
-        }
     }
-
+    
     /**
-     * This method is blocking until data is available on the
-     * {@link InputStream} or the stream was closed. This method could be called
-     * from one thread only. This method could not be used to notify two threads.
-     * @throws java.lang.InterruptedException if the current thread is interrupted
+     * Use {@link #tryWaitForEnoughBytes(long)}.
      */
+    @Deprecated
     public void blockDataAvailable() throws InterruptedException {
-        if (isClosed()) {
-            return;
-        }
-        
-        if (availableBytes < 1) {
-            signalModificationExternal.acquire();
-        }
+        tryWaitForEnoughBytes(1);
     }
 
     /**
@@ -305,27 +286,29 @@ public class StreamBuffer implements Closeable {
      * This method blocks until the stream is closed or enough bytes are
      * available, which can be read from the buffer.
      *
+     * This method is blocking until data is available on the
+     * {@link InputStream} or the stream was closed. This method could must be called
+     * from one thread only (same thread as read methods, do not call this method during read operations).
+     * It's not allowed to use this method to notify multiple threads.
+     * @throws java.lang.InterruptedException if the current thread is interrupted
+     *
      * @param bytes the number of bytes waiting for.
      * @throws IOException If the thread is interrupted.
      * @return The available bytes.
      */
-    private long tryWaitForEnoughBytes(final long bytes) throws IOException {
+    private long tryWaitForEnoughBytes(final long bytes) throws InterruptedException {
         // we can only wait for a positive number of bytes
         assert bytes > 0 : "Number of bytes are negative or zero : " + bytes;
 
         // if we haven't enough bytes, the loop starts and wait for enough bytes
         while (bytes > availableBytes) {
-            try {
-                // first of all, check for a closed stream
-                if (streamClosed) {
-                    // is the stream closed, return only the current available bytes
-                    return availableBytes;
-                }
-                // wait for a next loop run and block until a modification is signalized
-                signalModification.acquire();
-            } catch (InterruptedException ex) {
-                throw new IOException(ex);
+            // first of all, check for a closed stream
+            if (streamClosed) {
+                // is the stream closed, return only the current available bytes
+                return availableBytes;
             }
+            // wait for a next loop run and block until a modification is signalized
+            signalModification.acquire();
         }
         // return the available bytes (maybe higher as the required bytes)
         return availableBytes;
@@ -347,11 +330,16 @@ public class StreamBuffer implements Closeable {
 
         @Override
         public int read() throws IOException {
-            // we wait for enough bytes (one byte)
-            if (tryWaitForEnoughBytes(1) < 1) {
-                // try to wait, but not enough bytes available
-                // return the end of stream is reached
-                return -1;
+            try{
+                // we wait for enough bytes (one byte)
+                if (tryWaitForEnoughBytes(1) < 1) {
+                    // try to wait, but not enough bytes available
+                    // return the end of stream is reached
+                    return -1;
+                }
+            }
+            catch (InterruptedException e) {
+                throw new IOException(e);
             }
 
             // enough bytes are available, lock and modify the FIFO
@@ -402,7 +390,12 @@ public class StreamBuffer implements Closeable {
                 return copiedBytes;
             }
 
-            long maximumAvailableBytes = tryWaitForEnoughBytes(missingBytes);
+            long maximumAvailableBytes;
+            try {
+                maximumAvailableBytes = tryWaitForEnoughBytes(missingBytes);
+            } catch (InterruptedException e) {
+                throw new IOException(e);
+            }
 
             if (maximumAvailableBytes < 1) {
                 // try to wait, but no more bytes available

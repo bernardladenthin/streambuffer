@@ -703,8 +703,6 @@ public class StreamBufferTest {
     }
     
     @Test
-    @Ignore
-    // See https://github.com/bernardladenthin/streambuffer/issues/7
     public void blockDataAvailable_dataWrittenBeforeAndReadAfterwards_waiting() throws IOException, InterruptedException {
         final StreamBuffer sb = new StreamBuffer();
         InputStream is = sb.getInputStream();
