@@ -332,7 +332,7 @@ public class StreamBuffer implements Closeable {
         return availableBytes;
     }
 
-    public class SBInputStream extends InputStream {
+    private class SBInputStream extends InputStream {
         @Override
         public int available() throws IOException {
             if (availableBytes > Integer.MAX_VALUE) {
@@ -469,7 +469,7 @@ public class StreamBuffer implements Closeable {
 
     }
 
-    public class SBOutputStream extends OutputStream {
+    private class SBOutputStream extends OutputStream {
         @Override
         public void close() throws IOException {
             closeAll();
