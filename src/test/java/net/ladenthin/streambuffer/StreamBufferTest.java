@@ -619,7 +619,7 @@ public class StreamBufferTest {
                 os.write(new byte[]{anyValue, 0, 1});
                 break;
             default:
-                throw IllegalArgumentException("Unknown WriteMethod: " + writeMethod);
+                throw new IllegalArgumentException("Unknown WriteMethod: " + writeMethod);
         }
     }
 
@@ -657,6 +657,8 @@ public class StreamBufferTest {
         StreamBuffer sb = new StreamBuffer();
         InputStream is = sb.getInputStream();
         OutputStream os = sb.getOutputStream();
+        
+        final int chunks = 16;
 
         /**
          * It's not a good idea to allocate a very big array at once. Allocate a
@@ -664,28 +666,12 @@ public class StreamBufferTest {
          * have choosen 16 pieces and write this value 17 times to force an
          * "overflow" for the method available.
          */
-        byte[] from = new byte[Integer.MAX_VALUE / 16];
-        os.write(from);
-        os.write(from);
-        os.write(from);
-        os.write(from);
-
-        os.write(from);
-        os.write(from);
-        os.write(from);
-        os.write(from);
-
-        os.write(from);
-        os.write(from);
-        os.write(from);
-        os.write(from);
-
-        os.write(from);
-        os.write(from);
-        os.write(from);
-        os.write(from);
-
-        os.write(from);
+        byte[] chunk = new byte[Integer.MAX_VALUE / chunks];
+        for (int i = 0; i < chunks; i++) {
+            os.write(chunk);
+        }
+        // write one additional
+        os.write(chunk);
 
         assertThat(is.available(), is(Integer.MAX_VALUE));
     }
