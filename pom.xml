@@ -75,6 +75,12 @@
             <version>2.0.2-beta</version>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>com.tngtech.java</groupId>
+            <artifactId>junit-dataprovider</artifactId>
+            <version>1.13.1</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
     <build>
         <plugins>
@@ -178,6 +184,14 @@
                 <groupId>org.pitest</groupId>
                 <artifactId>pitest-maven</artifactId>
                 <version>1.6.4</version>
+                <configuration>
+                    <targetClasses>
+                        <param>net.ladenthin.streambuffer.*</param>
+                    </targetClasses>
+                    <targetTests>
+                        <param>net.ladenthin.streambuffer.*</param>
+                    </targetTests>
+                </configuration>
              </plugin>
         </plugins>
     </build>

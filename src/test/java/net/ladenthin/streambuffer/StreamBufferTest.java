@@ -18,7 +18,9 @@
 // @formatter:on
 package net.ladenthin.streambuffer;
 
-import org.junit.Assert;
+import com.tngtech.java.junit.dataprovider.DataProvider;
+import com.tngtech.java.junit.dataprovider.DataProviderRunner;
+import com.tngtech.java.junit.dataprovider.UseDataProvider;
 import org.junit.Test;
 
 import java.io.*;
@@ -30,9 +32,22 @@ import static org.hamcrest.CoreMatchers.not;
 import static org.hamcrest.number.OrderingComparison.greaterThan;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
+import static org.junit.Assert.assertArrayEquals;
+import org.junit.runner.RunWith;
 
-
+@RunWith(DataProviderRunner.class)
 public class StreamBufferTest {
+    
+    private final static String DATA_PROVIDER_WRITE_METHODS = "writeMethods";
+    
+    @DataProvider
+    public static Object[][] writeMethods() {
+        return new Object[][] {
+            { WriteMethod.ByteArray },
+            { WriteMethod.Int },
+            { WriteMethod.ByteArrayWithParameter },
+        };
+    }
 
     /**
      * The answer to all questions.
@@ -207,18 +222,9 @@ public class StreamBufferTest {
         assertEquals(0, is.available());
 
         byte[] byteChain = baosReadFromTwist.toByteArray();
+        
         assertEquals(size, byteChain.length);
-
-        for (int i = 0; i < originalData.length; ++i) {
-            byte b = originalData[i];
-        }
-
-        for (int i = 0; i < byteChain.length; ++i) {
-            byte b = byteChain[i];
-        }
-
-        Assert.assertArrayEquals(originalData, byteChain);
-
+        assertArrayEquals(originalData, byteChain);
     }
 
     @Test
@@ -238,7 +244,7 @@ public class StreamBufferTest {
 
     @Test
     public void constructor_noArguments_NoExceptionThrown() {
-        StreamBuffer sb = new StreamBuffer();
+        new StreamBuffer();
     }
 
     @Test
@@ -458,15 +464,6 @@ public class StreamBufferTest {
         assertThat(is.read(), is(-1));
     }
 
-    @Test(expected = IOException.class)
-    public void write_closedStream_throwIOException() throws IOException {
-        StreamBuffer sb = new StreamBuffer();
-        InputStream is = sb.getInputStream();
-        OutputStream os = sb.getOutputStream();
-        os.close();
-        os.write(anyValue);
-    }
-
     @Test
     public void read_readWithOffset_useOffset() throws IOException {
         StreamBuffer sb = new StreamBuffer();
@@ -609,6 +606,51 @@ public class StreamBufferTest {
 
         assertThat(is.available(), is(1));
     }
+    
+    private void writeAnyValue(WriteMethod writeMethod, OutputStream os) throws IOException {
+        switch(writeMethod) {
+            case ByteArray:
+                os.write(new byte[]{anyValue});
+                break;
+            case Int:
+                os.write(anyValue);
+                break;
+            case ByteArrayWithParameter:
+                os.write(new byte[]{anyValue, 0, 1});
+                break;
+            default:
+                throw IllegalArgumentException("Unknown WriteMethod: " + writeMethod);
+        }
+    }
+
+    @Test(expected = IOException.class)
+    @UseDataProvider( DATA_PROVIDER_WRITE_METHODS )
+    public void write_closedStream_throwIOException(WriteMethod writeMethod) throws IOException {
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        os.close();
+        writeAnyValue(writeMethod, os);
+    }
+    
+    @Test
+    public void write_invalidOffset_notWritten() throws IOException {
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        int invalidOffset = 1;
+        os.write(new byte[]{anyValue}, invalidOffset, 0);
+        
+        assertThat( sb.getBufferSize(), is(0));
+    }
+    
+    @Test
+    public void write_invalidLength_notWritten() throws IOException {
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        int invalidLength = 0;
+        os.write(new byte[]{anyValue}, 0, invalidLength);
+        
+        assertThat( sb.getBufferSize(), is(0));
+    }
 
     @Test
     public void available_bufferContainsMoreBytesAsMaxInt_returnMaxValue() throws IOException {
@@ -649,9 +691,9 @@ public class StreamBufferTest {
     }
     
     @Test
-    public void blockDataAvailable_writeToStream_return() throws IOException, InterruptedException {
+    @UseDataProvider( DATA_PROVIDER_WRITE_METHODS )
+    public void blockDataAvailable_writeToStream_return(WriteMethod writeMethod) throws IOException, InterruptedException {
         final StreamBuffer sb = new StreamBuffer();
-        InputStream is = sb.getInputStream();
         OutputStream os = sb.getOutputStream();
         final Semaphore s = new Semaphore(0);
         final Semaphore s1 = new Semaphore(0);
@@ -673,7 +715,7 @@ public class StreamBufferTest {
          * block the thread at the right condition.
          */
         s1.acquire();
-        os.write(anyValue);
+        writeAnyValue(writeMethod, os);
 
         assertThat(s.tryAcquire(10, TimeUnit.SECONDS), is(true));
     }
