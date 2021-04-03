@@ -92,6 +92,8 @@ public class StreamBuffer implements Closeable {
     /**
      * A flag to disable the {@link StreamBuffer#safeWrite}. I. e. to write a byte array from
      * the trim method.
+     * It should be used if the reference to the buffer deque is not reachable out of the scope.
+     * It is possible to ignore the safeWrite flag to prevent not necessary clone operations.
      */
     private boolean ignoreSafeWrite = false;
 
@@ -265,11 +267,6 @@ public class StreamBuffer implements Closeable {
              * clean and contains no elements because all parts are read out.
              */
             try {
-                /**
-                 * The reference to the buffer deque is not reachable out of the
-                 * trim method. It is possible to ignore the safeWrite flag to
-                 * prevent not necessary clone operations.
-                 */
                 ignoreSafeWrite = true;
                 while (!tmpBuffer.isEmpty()) {
                     // pollFirst returns always a non null value, tmpBuffer is only filled with non null values
@@ -479,18 +476,12 @@ public class StreamBuffer implements Closeable {
 
         @Override
         public void write(final int b) throws IOException {
-            requireNonClosed();
-            synchronized (bufferLock) {
-                // add the byte to the buffer
-                buffer.add(new byte[]{(byte) b});
-                // increment the length
-                ++availableBytes;
-                // the count must be positive after any write operation
-                assert availableBytes > 0 : "More memory used as a long can count";
-                trim();
+            try {
+                ignoreSafeWrite = true;
+                write(new byte[]{(byte) b});
+            } finally {
+                ignoreSafeWrite = false;
             }
-            // always at least, signal bytes are written to the buffer
-            signalModification();
         }
 
         // please do not override the method "void write(final byte[] b)"
