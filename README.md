@@ -45,7 +45,7 @@ It is not recommended attempting to use both streams from a single thread, as it
 Streambuffer is a class which connects an OutputStream and an InputStream through a dynamic growing FIFO. Instead to buffer the written data in a circular buffer, the Streambuffer holds the reference to the byte array. 
 
 ### Similar solutions
-[gradle: StreamByteBuffer]https://github.com/gradle/gradle/blob/master/subprojects/base-services/src/main/java/org/gradle/internal/io/StreamByteBuffer.java)
+[gradle: StreamByteBuffer](https://github.com/gradle/gradle/blob/master/subprojects/base-services/src/main/java/org/gradle/internal/io/StreamByteBuffer.java)
 
 ## Deadlock
 ### Read
