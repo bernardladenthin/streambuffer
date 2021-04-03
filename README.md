@@ -61,9 +61,10 @@ Streambuffer extends the standard classes, all your software could rely on an es
 If you write a big array to the stream and read only one byte out of the stream, it would be wasteful to make a copy without the read part. The streambuffer uses an index to figure out how many bytes are already read from the big array. The trim method considering this index and copies is only the remaining part.
 
 ### Safe write (immutable byte array)
-All writing operations don't clone the given byte arrays. A byte array is not immutable and could be changed outside of the streambuffer. If your piece of code changes the content of the array after it was written to the OutputStream you have two options.
+All writing operations don't clone the given byte arrays. A byte array is not immutable and could be changed outside of the streambuffer at any time. It is also possible that a part was read, a change happened and the remaining bytes will be different in the next read. If your piece of code changes the content of the array after it was written to the OutputStream you have two options.
    * Clone the byte array before they are written to the stream.
    * Enable the safeWrite feature to clone every written byte array (recommended). Please prefer this option. If you write only a part of a byte array (e.g. using an offset), the Streambuffer creates nevertheless a new byte array which couldn't be changed from outside.
+   * A trim may prevent this behavior but it is not guaranteed because the invocation of trim happens after a write and in a certain configuration only.
 
 ### Trim (shrink the FIFO)
 The value of the maximum buffer elements could be changed at the runtime. If the limit is reached, the next writing operation invokes the trim method . The trim method creats a new byte array containing the complete buffer.
