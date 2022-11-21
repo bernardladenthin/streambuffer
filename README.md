@@ -7,6 +7,7 @@
 [![Code Quality: Java](https://img.shields.io/lgtm/grade/java/g/bernardladenthin/streambuffer.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/bernardladenthin/streambuffer/context:java)
 [![Total Alerts](https://img.shields.io/lgtm/alerts/g/bernardladenthin/streambuffer.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/bernardladenthin/streambuffer/alerts)
 [![License](http://img.shields.io/:license-apache-blue.svg)](http://www.apache.org/licenses/LICENSE-2.0.html)
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fbernardladenthin%2Fstreambuffer.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fbernardladenthin%2Fstreambuffer?ref=badge_shield)
 
 # streambuffer
 A stream buffer is a class to buffer data that has been written to an OutputStream and provides the data in an InputStream.
@@ -27,6 +28,9 @@ You can pull it from the central Maven repositories:
 
 ## License
 Code is under the [Apache Licence v2](https://www.apache.org/licenses/LICENSE-2.0.txt).
+
+
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fbernardladenthin%2Fstreambuffer.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fbernardladenthin%2Fstreambuffer?ref=badge_large)
 
 ## Motivation
 Typically, data is read from the InputStream by one thread and data is written to the corresponding OutputStream by some other thread. Since JDK1.0 a developer can use a PipedInputStream and PipedOutputStream. The connection of this two classes has some disadvantages:
@@ -74,4 +78,3 @@ Need to write and buffer large arrys? No problem. The Streambuffer is hardened a
 
 ### Compatibility
 Streambuffer is compatible to Java 1.6 and upwards.
-
