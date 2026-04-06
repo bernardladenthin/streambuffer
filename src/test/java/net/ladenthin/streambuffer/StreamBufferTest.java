@@ -1058,6 +1058,309 @@ public class StreamBufferTest {
         assertSame("StreamBuffer should return the same InputStream instance", first, second);
     }
     
+    // <editor-fold defaultstate="collapsed" desc="correctOffsetAndLengthToRead">
+    @Test(expected = NullPointerException.class)
+    public void correctOffsetAndLengthToRead_nullArray_throwsNullPointerException() {
+        // act
+        StreamBuffer.correctOffsetAndLengthToRead(null, 0, 1);
+    }
+
+    @Test(expected = IndexOutOfBoundsException.class)
+    public void correctOffsetAndLengthToRead_negativeOffset_throwsIndexOutOfBoundsException() {
+        // arrange
+        byte[] b = new byte[5];
+
+        // act
+        StreamBuffer.correctOffsetAndLengthToRead(b, -1, 1);
+    }
+
+    @Test(expected = IndexOutOfBoundsException.class)
+    public void correctOffsetAndLengthToRead_negativeLength_throwsIndexOutOfBoundsException() {
+        // arrange
+        byte[] b = new byte[5];
+
+        // act
+        StreamBuffer.correctOffsetAndLengthToRead(b, 0, -1);
+    }
+
+    @Test(expected = IndexOutOfBoundsException.class)
+    public void correctOffsetAndLengthToRead_lengthExceedsRemainingArray_throwsIndexOutOfBoundsException() {
+        // arrange
+        byte[] b = new byte[5];
+
+        // act
+        StreamBuffer.correctOffsetAndLengthToRead(b, 3, 3);
+    }
+
+    @Test
+    public void correctOffsetAndLengthToRead_zeroLength_returnsFalse() {
+        // arrange
+        byte[] b = new byte[5];
+
+        // act
+        boolean result = StreamBuffer.correctOffsetAndLengthToRead(b, 0, 0);
+
+        // assert
+        assertThat(result, is(false));
+    }
+
+    @Test
+    public void correctOffsetAndLengthToRead_validParameters_returnsTrue() {
+        // arrange
+        byte[] b = new byte[5];
+
+        // act
+        boolean result = StreamBuffer.correctOffsetAndLengthToRead(b, 1, 3);
+
+        // assert
+        assertThat(result, is(true));
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="correctOffsetAndLengthToWrite">
+    @Test(expected = NullPointerException.class)
+    public void correctOffsetAndLengthToWrite_nullArray_throwsNullPointerException() {
+        // act
+        StreamBuffer.correctOffsetAndLengthToWrite(null, 0, 1);
+    }
+
+    @Test
+    public void correctOffsetAndLengthToWrite_negativeOffset_throwsIndexOutOfBoundsException() {
+        // arrange
+        thrown.expect(IndexOutOfBoundsException.class);
+        thrown.expectMessage(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION);
+        byte[] b = new byte[5];
+
+        // act
+        StreamBuffer.correctOffsetAndLengthToWrite(b, -1, 1);
+    }
+
+    @Test
+    public void correctOffsetAndLengthToWrite_negativeLength_throwsIndexOutOfBoundsException() {
+        // arrange
+        thrown.expect(IndexOutOfBoundsException.class);
+        thrown.expectMessage(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION);
+        byte[] b = new byte[5];
+
+        // act
+        StreamBuffer.correctOffsetAndLengthToWrite(b, 0, -1);
+    }
+
+    @Test
+    public void correctOffsetAndLengthToWrite_offsetExceedsArrayLength_throwsIndexOutOfBoundsException() {
+        // arrange
+        thrown.expect(IndexOutOfBoundsException.class);
+        thrown.expectMessage(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION);
+        byte[] b = new byte[1];
+
+        // act
+        StreamBuffer.correctOffsetAndLengthToWrite(b, 2, 1);
+    }
+
+    @Test
+    public void correctOffsetAndLengthToWrite_lengthExceedsRemainingArray_throwsIndexOutOfBoundsException() {
+        // arrange
+        thrown.expect(IndexOutOfBoundsException.class);
+        thrown.expectMessage(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION);
+        byte[] b = new byte[5];
+
+        // act
+        StreamBuffer.correctOffsetAndLengthToWrite(b, 3, 3);
+    }
+
+    @Test
+    public void correctOffsetAndLengthToWrite_zeroLength_returnsFalse() {
+        // arrange
+        byte[] b = new byte[5];
+
+        // act
+        boolean result = StreamBuffer.correctOffsetAndLengthToWrite(b, 0, 0);
+
+        // assert
+        assertThat(result, is(false));
+    }
+
+    @Test
+    public void correctOffsetAndLengthToWrite_validParameters_returnsTrue() {
+        // arrange
+        byte[] b = new byte[5];
+
+        // act
+        boolean result = StreamBuffer.correctOffsetAndLengthToWrite(b, 1, 3);
+
+        // assert
+        assertThat(result, is(true));
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="isTrimShouldBeExecuted boundary">
+    @Test
+    public void getBufferSize_exactlyAtMaxBufferElements_trimNotCalled() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        sb.setMaxBufferElements(2);
+
+        // act
+        sb.getOutputStream().write(anyValue);
+        sb.getOutputStream().write(anyValue);
+
+        // assert
+        assertThat(sb.getBufferSize(), is(2));
+    }
+
+    @Test
+    public void getBufferSize_oneAboveMaxBufferElements_trimCalled() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        sb.setMaxBufferElements(2);
+
+        // act
+        sb.getOutputStream().write(anyValue);
+        sb.getOutputStream().write(anyValue);
+        sb.getOutputStream().write(anyValue);
+
+        // assert
+        assertThat(sb.getBufferSize(), is(1));
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="getOutputStream">
+    @Test
+    public void multipleOutputStream_returnsSameInstance_eachCall() {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+
+        // act
+        OutputStream first = sb.getOutputStream();
+        OutputStream second = sb.getOutputStream();
+
+        // assert
+        assertSame("StreamBuffer should return the same OutputStream instance", first, second);
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="requireNonClosed">
+    @Test
+    public void write_closedStream_throwIOExceptionWithStreamClosedMessage() throws IOException {
+        // arrange
+        thrown.expect(IOException.class);
+        thrown.expectMessage("Stream closed.");
+        StreamBuffer sb = new StreamBuffer();
+        sb.close();
+
+        // act
+        sb.getOutputStream().write(new byte[]{anyValue}, 0, 1);
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="write inherited">
+    @Test
+    public void write_fullArrayWithoutOffsetParameter_allBytesWritten() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        InputStream is = sb.getInputStream();
+        byte[] source = new byte[]{1, 2, 3};
+
+        // act
+        sb.getOutputStream().write(source);
+
+        // assert
+        assertThat(is.available(), is(3));
+        byte[] dest = new byte[3];
+        is.read(dest);
+        assertThat(dest, is(new byte[]{1, 2, 3}));
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="read inherited">
+    @Test
+    public void read_fullArrayWithoutOffsetParameter_allBytesRead() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        sb.getOutputStream().write(new byte[]{1, 2, 3});
+
+        // act
+        byte[] dest = new byte[3];
+        int bytesRead = sb.getInputStream().read(dest);
+
+        // assert
+        assertThat(bytesRead, is(3));
+        assertThat(dest, is(new byte[]{1, 2, 3}));
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="trim with partial buffer entry">
+    @Test
+    public void trim_withPartiallyConsumedBufferEntry_remainingBytesCorrectAfterTrim() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        sb.setMaxBufferElements(1);
+        sb.getOutputStream().write(new byte[]{1, 2, 3});
+        // Read one byte to advance positionAtCurrentBufferEntry to 1
+        assertThat(sb.getInputStream().read(), is(1));
+
+        // act — write a second entry to trigger trim while positionAtCurrentBufferEntry == 1
+        sb.getOutputStream().write(new byte[]{4, 5, 6});
+
+        // assert — remaining 5 bytes should be 2,3,4,5,6 in order
+        byte[] dest = new byte[5];
+        int bytesRead = sb.getInputStream().read(dest);
+        assertThat(bytesRead, is(5));
+        assertThat(dest, is(new byte[]{2, 3, 4, 5, 6}));
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="available">
+    @Test
+    public void available_emptyBuffer_returnsZero() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+
+        // act
+        int result = sb.getInputStream().available();
+
+        // assert
+        assertThat(result, is(0));
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="safeWrite partial range">
+    @Test
+    public void write_partialRangeWithSafeWriteDisabled_externalMutationNotAffectingReadValue() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        sb.setSafeWrite(false);
+        byte[] source = new byte[]{0, anyValue, 0};
+
+        // act — partial write always copies via System.arraycopy, regardless of safeWrite flag
+        sb.getOutputStream().write(source, 1, 1);
+        source[1]++;
+
+        // assert — the buffered byte is a copy; mutation of source must not affect it
+        byte[] dest = new byte[1];
+        sb.getInputStream().read(dest);
+        assertThat(dest[0], is(anyValue));
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="read partial return on closed stream">
+    @Test
+    public void read_byteArrayWhenStreamClosedAfterOneByte_returnsOneByte() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        sb.getOutputStream().write(anyValue);
+        sb.close();
+
+        // act — only 1 byte available; stream closed; read(dest, 0, 2) must return 1, not -1
+        byte[] dest = new byte[2];
+        int bytesRead = sb.getInputStream().read(dest, 0, 2);
+
+        // assert
+        assertThat(bytesRead, is(1));
+        assertThat(dest[0], is(anyValue));
+    }
+    // </editor-fold>
+
     @Test(timeout = 10_000)
     public void concurrentTrimAndWrite_noCrashOrCorruption() throws Exception {
         final StreamBuffer sb = new StreamBuffer();
