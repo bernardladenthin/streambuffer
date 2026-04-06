@@ -1108,7 +1108,7 @@ public class StreamBufferTest {
     }
 
     @Test
-    public void listener_addListenerAndWrite_listenerCalledWithDataWritten() throws IOException {
+    public void listener_addListenerAndWrite_listenerCalledWithDataWritten() throws IOException, InterruptedException {
         final StreamBuffer sb = new StreamBuffer();
         final Semaphore listenerCalled = new Semaphore(0);
         final StreamBuffer.StreamBufferEvent[] eventHolder = new StreamBuffer.StreamBufferEvent[1];
@@ -1129,7 +1129,7 @@ public class StreamBufferTest {
     }
 
     @Test
-    public void listener_addListenerAndClose_listenerCalledWithStreamClosed() throws IOException {
+    public void listener_addListenerAndClose_listenerCalledWithStreamClosed() throws IOException, InterruptedException {
         final StreamBuffer sb = new StreamBuffer();
         final Semaphore listenerCalled = new Semaphore(0);
         final StreamBuffer.StreamBufferEvent[] eventHolder = new StreamBuffer.StreamBufferEvent[1];
