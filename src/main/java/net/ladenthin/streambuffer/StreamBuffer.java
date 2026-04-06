@@ -24,6 +24,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Deque;
 import java.util.LinkedList;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Semaphore;
 
 /**
@@ -36,7 +37,32 @@ import java.util.concurrent.Semaphore;
  * @author Bernard Ladenthin bernard.ladenthin@gmail.com
  */
 public class StreamBuffer implements Closeable {
-    
+
+    /**
+     * Event type for listener notifications.
+     */
+    public enum StreamBufferEvent {
+        /**
+         * Data has been written to the buffer.
+         */
+        DATA_WRITTEN,
+        /**
+         * The stream has been closed.
+         */
+        STREAM_CLOSED
+    }
+
+    /**
+     * Listener interface for modifications to the {@link StreamBuffer}.
+     */
+    public interface StreamBufferListener {
+        /**
+         * Called when a modification occurs in the stream buffer.
+         * @param event the type of modification that occurred
+         */
+        void onModification(StreamBufferEvent event);
+    }
+
     final static String EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION = "Invalid offset or length given to correctOffsetAndLengthToWrite.";
 
     /**
@@ -56,6 +82,12 @@ public class StreamBuffer implements Closeable {
      * This {@link Semaphore} is used only for internal communication.
      */
     private final Semaphore signalModification = new Semaphore(0);
+
+    /**
+     * List of listeners to be notified on modifications.
+     * Uses {@link CopyOnWriteArrayList} for thread-safe iteration without locks.
+     */
+    private final CopyOnWriteArrayList<StreamBufferListener> listeners = new CopyOnWriteArrayList<>();
 
     /**
      * A variable for the current position of the current element in the
@@ -155,6 +187,30 @@ public class StreamBuffer implements Closeable {
     }
 
     /**
+     * Add a listener to be notified on stream modifications.
+     * Multiple listeners can be registered. Each listener is notified independently.
+     *
+     * @param listener the listener to add
+     * @throws NullPointerException if listener is null
+     */
+    public void addListener(StreamBufferListener listener) {
+        if (listener == null) {
+            throw new NullPointerException("Listener cannot be null");
+        }
+        listeners.add(listener);
+    }
+
+    /**
+     * Remove a listener from the notification list.
+     *
+     * @param listener the listener to remove
+     * @return <code>true</code> if the listener was found and removed, otherwise <code>false</code>
+     */
+    public boolean removeListener(StreamBufferListener listener) {
+        return listeners.remove(listener);
+    }
+
+    /**
      * Security check mostly copied from {@link InputStream#read(byte[], int, int)}.
      * Ensures the parameter are valid.
      * @param b the byte array to copy from
@@ -200,11 +256,21 @@ public class StreamBuffer implements Closeable {
     /**
      * Call this method always after all changes are synchronized. This method
      * signals a modification. It cloud be a write on the stream or a close.
+     *
+     * @param event the type of modification that occurred
      */
-    private void signalModification() {
+    private void signalModification(StreamBufferEvent event) {
         // hold up the permits to a maximum of one
         if (signalModification.availablePermits() == 0) {
             signalModification.release();
+        }
+        // notify all external listeners
+        for (StreamBufferListener listener : listeners) {
+            try {
+                listener.onModification(event);
+            } catch (Exception e) {
+                // ignore exceptions from listeners to prevent affecting stream operations
+            }
         }
     }
     
@@ -509,7 +575,7 @@ public class StreamBuffer implements Closeable {
                 trim();
             }
             // always at least, signal bytes are written to the buffer
-            signalModification();
+            signalModification(StreamBufferEvent.DATA_WRITTEN);
         }
     }
 
@@ -522,7 +588,7 @@ public class StreamBuffer implements Closeable {
      */
     private void closeAll() {
         streamClosed = true;
-        signalModification();
+        signalModification(StreamBufferEvent.STREAM_CLOSED);
     }
 
     /**
