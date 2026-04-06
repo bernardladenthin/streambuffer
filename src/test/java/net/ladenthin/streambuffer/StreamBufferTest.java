@@ -1409,4 +1409,186 @@ public class StreamBufferTest {
         trimmer.join();
         reader.join();
     }
+
+    @Test
+    public void listener_addListenerAndWrite_listenerCalledWithDataWritten() throws IOException, InterruptedException {
+        final StreamBuffer sb = new StreamBuffer();
+        final Semaphore listenerCalled = new Semaphore(0);
+        final StreamBuffer.StreamBufferEvent[] eventHolder = new StreamBuffer.StreamBufferEvent[1];
+
+        StreamBuffer.StreamBufferListener listener = new StreamBuffer.StreamBufferListener() {
+            @Override
+            public void onModification(StreamBuffer.StreamBufferEvent event) {
+                eventHolder[0] = event;
+                listenerCalled.release();
+            }
+        };
+
+        sb.addListener(listener);
+        sb.getOutputStream().write(anyValue);
+
+        assertThat(listenerCalled.tryAcquire(5, TimeUnit.SECONDS), is(true));
+        assertThat(eventHolder[0], is(StreamBuffer.StreamBufferEvent.DATA_WRITTEN));
+    }
+
+    @Test
+    public void listener_addListenerAndClose_listenerCalledWithStreamClosed() throws IOException, InterruptedException {
+        final StreamBuffer sb = new StreamBuffer();
+        final Semaphore listenerCalled = new Semaphore(0);
+        final StreamBuffer.StreamBufferEvent[] eventHolder = new StreamBuffer.StreamBufferEvent[1];
+
+        StreamBuffer.StreamBufferListener listener = new StreamBuffer.StreamBufferListener() {
+            @Override
+            public void onModification(StreamBuffer.StreamBufferEvent event) {
+                eventHolder[0] = event;
+                listenerCalled.release();
+            }
+        };
+
+        sb.addListener(listener);
+        sb.close();
+
+        assertThat(listenerCalled.tryAcquire(5, TimeUnit.SECONDS), is(true));
+        assertThat(eventHolder[0], is(StreamBuffer.StreamBufferEvent.STREAM_CLOSED));
+    }
+
+    @Test
+    public void listener_multipleListeners_allNotified() throws IOException, InterruptedException {
+        final StreamBuffer sb = new StreamBuffer();
+        final Semaphore listener1Called = new Semaphore(0);
+        final Semaphore listener2Called = new Semaphore(0);
+        final Semaphore listener3Called = new Semaphore(0);
+
+        StreamBuffer.StreamBufferListener listener1 = new StreamBuffer.StreamBufferListener() {
+            @Override
+            public void onModification(StreamBuffer.StreamBufferEvent event) {
+                listener1Called.release();
+            }
+        };
+
+        StreamBuffer.StreamBufferListener listener2 = new StreamBuffer.StreamBufferListener() {
+            @Override
+            public void onModification(StreamBuffer.StreamBufferEvent event) {
+                listener2Called.release();
+            }
+        };
+
+        StreamBuffer.StreamBufferListener listener3 = new StreamBuffer.StreamBufferListener() {
+            @Override
+            public void onModification(StreamBuffer.StreamBufferEvent event) {
+                listener3Called.release();
+            }
+        };
+
+        sb.addListener(listener1);
+        sb.addListener(listener2);
+        sb.addListener(listener3);
+        sb.getOutputStream().write(anyValue);
+
+        assertThat(listener1Called.tryAcquire(5, TimeUnit.SECONDS), is(true));
+        assertThat(listener2Called.tryAcquire(5, TimeUnit.SECONDS), is(true));
+        assertThat(listener3Called.tryAcquire(5, TimeUnit.SECONDS), is(true));
+    }
+
+    @Test
+    public void listener_removeListener_notCalled() throws IOException, InterruptedException {
+        final StreamBuffer sb = new StreamBuffer();
+        final Semaphore listenerCalled = new Semaphore(0);
+
+        StreamBuffer.StreamBufferListener listener = new StreamBuffer.StreamBufferListener() {
+            @Override
+            public void onModification(StreamBuffer.StreamBufferEvent event) {
+                listenerCalled.release();
+            }
+        };
+
+        sb.addListener(listener);
+        boolean removed = sb.removeListener(listener);
+        sb.getOutputStream().write(anyValue);
+
+        assertThat(removed, is(true));
+        assertThat(listenerCalled.tryAcquire(1, TimeUnit.SECONDS), is(false));
+    }
+
+    @Test
+    public void listener_removeNonExistentListener_returnsFalse() throws IOException {
+        final StreamBuffer sb = new StreamBuffer();
+
+        StreamBuffer.StreamBufferListener listener = new StreamBuffer.StreamBufferListener() {
+            @Override
+            public void onModification(StreamBuffer.StreamBufferEvent event) {
+            }
+        };
+
+        boolean removed = sb.removeListener(listener);
+        assertThat(removed, is(false));
+    }
+
+    @Test
+    public void listener_listenerThrowsException_streamOperationNotAffected() throws IOException {
+        final StreamBuffer sb = new StreamBuffer();
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
+
+        StreamBuffer.StreamBufferListener faultyListener = new StreamBuffer.StreamBufferListener() {
+            @Override
+            public void onModification(StreamBuffer.StreamBufferEvent event) {
+                throw new RuntimeException("Listener error");
+            }
+        };
+
+        sb.addListener(faultyListener);
+        os.write(anyValue);
+
+        // stream should still work despite listener exception
+        int read = is.read();
+        assertThat(read, is((int) anyValue & 0xff));
+    }
+
+    @Test
+    public void listener_multipleWrites_listenerCalledEachTime() throws IOException, InterruptedException {
+        final StreamBuffer sb = new StreamBuffer();
+        final Semaphore[] callCount = {new Semaphore(0)};
+
+        StreamBuffer.StreamBufferListener listener = new StreamBuffer.StreamBufferListener() {
+            @Override
+            public void onModification(StreamBuffer.StreamBufferEvent event) {
+                callCount[0].release();
+            }
+        };
+
+        sb.addListener(listener);
+        sb.getOutputStream().write(1);
+        sb.getOutputStream().write(2);
+        sb.getOutputStream().write(3);
+
+        assertThat(callCount[0].tryAcquire(3, 5, TimeUnit.SECONDS), is(true));
+    }
+
+    @Test
+    public void listener_addNullListener_throwsNullPointerException() throws IOException {
+        final StreamBuffer sb = new StreamBuffer();
+
+        thrown.expect(NullPointerException.class);
+        sb.addListener(null);
+    }
+
+    @Test
+    public void listener_writeMultipleBytes_listenerCalled() throws IOException, InterruptedException {
+        final StreamBuffer sb = new StreamBuffer();
+        final Semaphore listenerCalled = new Semaphore(0);
+
+        StreamBuffer.StreamBufferListener listener = new StreamBuffer.StreamBufferListener() {
+            @Override
+            public void onModification(StreamBuffer.StreamBufferEvent event) {
+                listenerCalled.release();
+            }
+        };
+
+        sb.addListener(listener);
+        byte[] data = new byte[]{1, 2, 3, 4, 5};
+        sb.getOutputStream().write(data);
+
+        assertThat(listenerCalled.tryAcquire(5, TimeUnit.SECONDS), is(true));
+    }
 }
