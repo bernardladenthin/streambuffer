@@ -1,16 +1,14 @@
 language: java
-install: mvn install -Dgpg.skip=true
+install: mvn install -Dgpg.skip=true -Dmaven.javadoc.skip=true
+
 jdk:
-- openjdk12
+  - openjdk8
+  - openjdk11
 
 env:
   global:
-   # The next declaration is the encrypted COVERITY_SCAN_TOKEN, created
-   #   via the "travis encrypt" command using the project repo's public key
-   - secure: "uYhystsHudliu0dhn//lI5jGUs58Ng3eJ9GZbUtajVor0RtIjpmE2MnUjkvGR6vB6bBpErbiC5imWwfLwX9a+JT51KAOvUf7HQv2/WO7voMx2oZ1d9ahhq3S6hRkBnNKWJDTe1MjS9D2fr/y0uknuShgQ4t5FYBIQTqHEl30ssQ="
-
-before_install:
-      - echo -n | openssl s_client -connect scan.coverity.com:443 | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' | sudo tee -a /etc/ssl/certs/ca-
+    # COVERITY_SCAN_TOKEN (encrypted)
+    - secure: "uYhystsHudliu0dhn//lI5jGUs58Ng3eJ9GZbUtajVor0RtIjpmE2MnUjkvGR6vB6bBpErbiC5imWwfLwX9a+JT51KAOvUf7HQv2/WO7voMx2oZ1d9ahhq3S6hRkBnNKWJDTe1MjS9D2fr/y0uknuShgQ4t5FYBIQTqHEl30ssQ="
 
 addons:
   coverity_scan:
@@ -19,8 +17,8 @@ addons:
       description: "Build submitted via Travis CI"
     notification_email: bernard.ladenthin@gmail.com
     build_command_prepend: "mvn clean"
-    build_command:   "mvn -DskipTests=true compile"
+    build_command: "mvn -DskipTests=true compile"
     branch_pattern: coverity_scan
 
 after_success:
-- bash <(curl -s https://codecov.io/bash)
+  - bash <(curl -s https://codecov.io/bash)
