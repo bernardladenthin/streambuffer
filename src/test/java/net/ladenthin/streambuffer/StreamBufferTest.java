@@ -1591,4 +1591,329 @@ public class StreamBufferTest {
 
         assertThat(listenerCalled.tryAcquire(5, TimeUnit.SECONDS), is(true));
     }
+
+    // <editor-fold defaultstate="collapsed" desc="read unsigned byte round-trip">
+    @Test
+    public void read_writeByte0xFF_returns255() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+
+        // act
+        sb.getOutputStream().write(0xFF);
+        int result = sb.getInputStream().read();
+
+        // assert
+        assertThat(result, is(255));
+    }
+
+    @Test
+    public void read_writeByte0x80_returns128() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+
+        // act
+        sb.getOutputStream().write(0x80);
+        int result = sb.getInputStream().read();
+
+        // assert
+        assertThat(result, is(128));
+    }
+
+    @Test
+    public void read_writeNegativeByteValue_returnsUnsigned() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        byte negativeByte = -1; // 0xFF as signed byte
+
+        // act
+        sb.getOutputStream().write(new byte[]{negativeByte});
+        int result = sb.getInputStream().read();
+
+        // assert — must be 255, not -1 (which would signal EOF)
+        assertThat(result, is(255));
+    }
+
+    @Test
+    public void read_writeAllHighByteValues_returnsCorrectUnsigned() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        InputStream is = sb.getInputStream();
+
+        // act & assert — write and read values 128..255
+        for (int i = 128; i <= 255; i++) {
+            os.write(i);
+            assertThat(is.read(), is(i));
+        }
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="correctOffsetAndLengthToWrite integer overflow">
+    @Test
+    public void correctOffsetAndLengthToWrite_integerOverflow_throwsIndexOutOfBoundsException() {
+        // arrange
+        thrown.expect(IndexOutOfBoundsException.class);
+        thrown.expectMessage(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION);
+        byte[] b = new byte[10];
+
+        // act — Integer.MAX_VALUE + 1 overflows to negative
+        StreamBuffer.correctOffsetAndLengthToWrite(b, Integer.MAX_VALUE, 1);
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="close via InputStream">
+    @Test(expected = IOException.class)
+    public void write_closedViaInputStream_throwsIOException() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        sb.getInputStream().close();
+
+        // act
+        sb.getOutputStream().write(anyValue);
+    }
+
+    @Test
+    public void isClosed_closedViaInputStream_true() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+
+        // act
+        sb.getInputStream().close();
+
+        // assert
+        assertThat(sb.isClosed(), is(true));
+    }
+
+    @Test
+    public void read_closedViaOutputStream_returnsMinusOne() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        sb.getOutputStream().close();
+
+        // act
+        int result = sb.getInputStream().read();
+
+        // assert
+        assertThat(result, is(-1));
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="listener notification via stream close">
+    @Test
+    public void listener_closeViaOutputStream_listenerCalledWithStreamClosed() throws IOException, InterruptedException {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+        final Semaphore listenerCalled = new Semaphore(0);
+        final StreamBuffer.StreamBufferEvent[] eventHolder = new StreamBuffer.StreamBufferEvent[1];
+
+        sb.addListener(new StreamBuffer.StreamBufferListener() {
+            @Override
+            public void onModification(StreamBuffer.StreamBufferEvent event) {
+                eventHolder[0] = event;
+                listenerCalled.release();
+            }
+        });
+
+        // act
+        sb.getOutputStream().close();
+
+        // assert
+        assertThat(listenerCalled.tryAcquire(5, TimeUnit.SECONDS), is(true));
+        assertThat(eventHolder[0], is(StreamBuffer.StreamBufferEvent.STREAM_CLOSED));
+    }
+
+    @Test
+    public void listener_closeViaInputStream_listenerCalledWithStreamClosed() throws IOException, InterruptedException {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+        final Semaphore listenerCalled = new Semaphore(0);
+        final StreamBuffer.StreamBufferEvent[] eventHolder = new StreamBuffer.StreamBufferEvent[1];
+
+        sb.addListener(new StreamBuffer.StreamBufferListener() {
+            @Override
+            public void onModification(StreamBuffer.StreamBufferEvent event) {
+                eventHolder[0] = event;
+                listenerCalled.release();
+            }
+        });
+
+        // act
+        sb.getInputStream().close();
+
+        // assert
+        assertThat(listenerCalled.tryAcquire(5, TimeUnit.SECONDS), is(true));
+        assertThat(eventHolder[0], is(StreamBuffer.StreamBufferEvent.STREAM_CLOSED));
+    }
+
+    @Test
+    public void listener_writeWithPartialRange_listenerCalledWithDataWritten() throws IOException, InterruptedException {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+        final Semaphore listenerCalled = new Semaphore(0);
+        final StreamBuffer.StreamBufferEvent[] eventHolder = new StreamBuffer.StreamBufferEvent[1];
+
+        sb.addListener(new StreamBuffer.StreamBufferListener() {
+            @Override
+            public void onModification(StreamBuffer.StreamBufferEvent event) {
+                eventHolder[0] = event;
+                listenerCalled.release();
+            }
+        });
+
+        // act — partial write(byte[], off, len)
+        sb.getOutputStream().write(new byte[]{0, anyValue, 0}, 1, 1);
+
+        // assert
+        assertThat(listenerCalled.tryAcquire(5, TimeUnit.SECONDS), is(true));
+        assertThat(eventHolder[0], is(StreamBuffer.StreamBufferEvent.DATA_WRITTEN));
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="trim with safeWrite">
+    @Test
+    public void trim_withSafeWriteEnabled_preservesDataIntegrity() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        sb.setSafeWrite(true);
+        sb.setMaxBufferElements(1);
+
+        // act — write multiple entries to trigger trim while safeWrite is on
+        sb.getOutputStream().write(new byte[]{1, 2, 3});
+        sb.getOutputStream().write(new byte[]{4, 5, 6});
+
+        // assert — all bytes preserved in correct order after trim
+        byte[] dest = new byte[6];
+        int bytesRead = sb.getInputStream().read(dest);
+        assertThat(bytesRead, is(6));
+        assertThat(dest, is(new byte[]{1, 2, 3, 4, 5, 6}));
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="maxBufferElements zero disables trim">
+    @Test
+    public void setMaxBufferElements_zero_trimNotCalled() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        sb.setMaxBufferElements(0);
+
+        // act — write many individual entries
+        for (int i = 0; i < 200; i++) {
+            sb.getOutputStream().write(anyValue);
+        }
+
+        // assert — all entries remain un-trimmed (each write(int) adds one entry)
+        assertThat(sb.getBufferSize(), is(greaterThan(1)));
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="removeListener null">
+    @Test
+    public void removeListener_null_returnsFalse() {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+
+        // act
+        boolean result = sb.removeListener(null);
+
+        // assert
+        assertThat(result, is(false));
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="read single byte via array">
+    @Test
+    public void read_arrayWithLengthOne_returnsSingleByte() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        sb.getOutputStream().write(anyValue);
+
+        // act
+        byte[] dest = new byte[1];
+        int bytesRead = sb.getInputStream().read(dest, 0, 1);
+
+        // assert
+        assertThat(bytesRead, is(1));
+        assertThat(dest[0], is(anyValue));
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="available after close with buffered data">
+    @Test
+    public void available_closedWithDataRemaining_returnsCorrectCount() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        sb.getOutputStream().write(new byte[]{1, 2, 3, 4, 5});
+        sb.close();
+
+        // act
+        int result = sb.getInputStream().available();
+
+        // assert
+        assertThat(result, is(5));
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="thread interruption during read">
+    @Test(timeout = 5000)
+    public void read_threadInterrupted_throwsIOException() throws Exception {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+        final InputStream is = sb.getInputStream();
+        final Semaphore started = new Semaphore(0);
+        final Throwable[] caught = new Throwable[1];
+
+        Thread reader = new Thread(() -> {
+            try {
+                started.release();
+                is.read(); // will block — no data, not closed
+            } catch (IOException e) {
+                caught[0] = e;
+            }
+        });
+
+        // act
+        reader.start();
+        started.acquire(); // wait for thread to start
+        Thread.sleep(500); // let it block on read()
+        reader.interrupt();
+        reader.join();
+
+        // assert
+        assertThat("IOException should be thrown wrapping InterruptedException",
+                caught[0] instanceof IOException, is(true));
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="correctOffsetAndLengthToRead empty array">
+    @Test(expected = IndexOutOfBoundsException.class)
+    public void correctOffsetAndLengthToRead_emptyArrayWithPositiveLength_throwsIndexOutOfBoundsException() {
+        // act
+        StreamBuffer.correctOffsetAndLengthToRead(new byte[0], 0, 1);
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="correctOffsetAndLengthToWrite empty array">
+    @Test
+    public void correctOffsetAndLengthToWrite_emptyArrayZeroLength_returnsFalse() {
+        // act
+        boolean result = StreamBuffer.correctOffsetAndLengthToWrite(new byte[0], 0, 0);
+
+        // assert
+        assertThat(result, is(false));
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="getBufferSize initial">
+    @Test
+    public void getBufferSize_emptyBuffer_returnsZero() {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+
+        // act
+        int result = sb.getBufferSize();
+
+        // assert
+        assertThat(result, is(0));
+    }
+    // </editor-fold>
 }
