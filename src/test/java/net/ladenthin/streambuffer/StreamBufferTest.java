@@ -1882,6 +1882,40 @@ public class StreamBufferTest {
         assertThat("IOException should be thrown wrapping InterruptedException",
                 caught[0] instanceof IOException, is(true));
     }
+
+    @Test(timeout = 5000)
+    public void read_arrayThreadInterruptedWhileWaitingForSecondByte_throwsIOException() throws Exception {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+        final InputStream is = sb.getInputStream();
+        final OutputStream os = sb.getOutputStream();
+        final Semaphore started = new Semaphore(0);
+        final Throwable[] caught = new Throwable[1];
+
+        // write exactly 1 byte so the internal read() at the start of read(b,off,len)
+        // succeeds immediately, then tryWaitForEnoughBytes blocks waiting for the second byte
+        os.write(42);
+
+        Thread reader = new Thread(() -> {
+            try {
+                started.release();
+                is.read(new byte[2], 0, 2);
+            } catch (IOException e) {
+                caught[0] = e;
+            }
+        });
+
+        // act
+        reader.start();
+        started.acquire(); // wait for thread to start
+        Thread.sleep(500); // let it block inside tryWaitForEnoughBytes
+        reader.interrupt();
+        reader.join();
+
+        // assert
+        assertThat("IOException should be thrown wrapping InterruptedException",
+                caught[0] instanceof IOException, is(true));
+    }
     // </editor-fold>
 
     // <editor-fold defaultstate="collapsed" desc="correctOffsetAndLengthToRead empty array">
