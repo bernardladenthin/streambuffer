@@ -62,7 +62,7 @@ It is also not recommended to use both ends of a pipe from a single thread, as t
 
 ### Similar Solutions
 
-- [Gradle: StreamByteBuffer](https://github.com/gradle/gradle/blob/v8.4.0/subprojects/base-services/src/main/java/org/gradle/internal/io/StreamByteBuffer.java)
+- [Gradle: StreamByteBuffer](https://github.com/gradle/gradle/blob/master/platforms/core-runtime/io/src/main/java/org/gradle/internal/io/StreamByteBuffer.java)
 
 ## Features
 
