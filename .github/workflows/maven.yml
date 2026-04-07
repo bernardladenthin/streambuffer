@@ -12,9 +12,8 @@ jobs:
 
     strategy:
       matrix:
-        # JDK 8 and 11 both support compiling with -source 1.6 -target 1.6.
-        # JDK 17+ dropped support for source/target 1.6, so they are excluded.
-        java-version: [ '8', '11' ]
+        # Java 1.8 source/target is supported by JDK 8 through 21+.
+        java-version: [ '8', '11', '17', '21' ]
 
     name: Build with JDK ${{ matrix.java-version }}
 

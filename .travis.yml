@@ -1,8 +1,6 @@
 language: java
 install: mvn install -Dgpg.skip=true -Dmaven.javadoc.skip=true
 
-# JDK 8 and 11 both support compiling with -source 1.6 -target 1.6.
-# JDK 17+ dropped support for source/target 1.6.
 jdk:
   - openjdk8
   - openjdk11

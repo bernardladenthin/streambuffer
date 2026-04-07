@@ -206,7 +206,7 @@ Write operations never block, regardless of how much data is already buffered.
 
 ## Build
 
-Requires Java 1.6+ and Maven 3.3.9+. The CI pipeline compiles with source/target 1.6 using JDK 8 or JDK 11 (JDK 17+ dropped support for `-source 1.6`).
+Requires Java 8 and Maven 3.3.9+.
 
 ```bash
 mvn compile          # Compile
