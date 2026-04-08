@@ -192,6 +192,12 @@
                         <param>net.ladenthin.streambuffer.*</param>
                     </targetTests>
                     <mutationThreshold>100</mutationThreshold>
+                    <excludedMethods>
+                        <!-- available() has an equivalent ConditionalsBoundary mutation:
+                             availableBytes > MAX_VALUE vs >= MAX_VALUE produces identical results
+                             because (int) MAX_VALUE == MAX_VALUE either way. -->
+                        <param>available</param>
+                    </excludedMethods>
                 </configuration>
              </plugin>
         </plugins>

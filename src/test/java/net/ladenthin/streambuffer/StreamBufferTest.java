@@ -2066,6 +2066,29 @@ public class StreamBufferTest {
     }
     // </editor-fold>
 
+    // <editor-fold defaultstate="collapsed" desc="read if-branch: exact full-entry consumption">
+    @Test
+    public void read_exactFullEntryConsumption_availableAndBufferSizeAreZero() throws IOException {
+        // arrange — write 3 bytes as a single entry; after the internal read() call consumes byte 0,
+        // positionAtCurrentBufferEntry=1, missingBytes=2, maximumBytesToCopy=3-1=2 → exactly equal.
+        // This hits the if-branch boundary: missingBytes >= maximumBytesToCopy (both == 2).
+        StreamBuffer sb = new StreamBuffer();
+        sb.getOutputStream().write(new byte[]{1, 2, 3});
+
+        // act
+        byte[] dest = new byte[3];
+        int bytesRead = sb.getInputStream().read(dest, 0, 3);
+
+        // assert
+        assertThat(bytesRead, is(3));
+        assertThat(dest, is(new byte[]{1, 2, 3}));
+        // ConditionalsBoundary mutant (>= → >): routes to else-branch → entry NOT removed → bufferSize = 1
+        assertThat(sb.getBufferSize(), is(0));
+        // MathMutator on availableBytes in if-branch: availableBytes += 2 → available() = 4, not 0
+        assertThat(sb.getInputStream().available(), is(0));
+    }
+    // </editor-fold>
+
     // <editor-fold defaultstate="collapsed" desc="isTrimShouldBeExecuted size-two boundary">
     @Test
     public void getBufferSize_twoEntriesWithMaxBufferElementsOne_trimCalled() throws IOException {
