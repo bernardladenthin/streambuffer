@@ -27,6 +27,7 @@ import java.util.LinkedList;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Semaphore;
 
+
 /**
  * A stream buffer is a class to buffer data that has been written to an
  * {@link OutputStream} and provide the data in an {@link InputStream}. There is
@@ -37,31 +38,6 @@ import java.util.concurrent.Semaphore;
  * @author Bernard Ladenthin bernard.ladenthin@gmail.com
  */
 public class StreamBuffer implements Closeable {
-
-    /**
-     * Event type for listener notifications.
-     */
-    public enum StreamBufferEvent {
-        /**
-         * Data has been written to the buffer.
-         */
-        DATA_WRITTEN,
-        /**
-         * The stream has been closed.
-         */
-        STREAM_CLOSED
-    }
-
-    /**
-     * Listener interface for modifications to the {@link StreamBuffer}.
-     */
-    public interface StreamBufferListener {
-        /**
-         * Called when a modification occurs in the stream buffer.
-         * @param event the type of modification that occurred
-         */
-        void onModification(StreamBufferEvent event);
-    }
 
     final static String EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION = "Invalid offset or length given to correctOffsetAndLengthToWrite.";
 
@@ -84,10 +60,13 @@ public class StreamBuffer implements Closeable {
     private final Semaphore signalModification = new Semaphore(0);
 
     /**
-     * List of listeners to be notified on modifications.
+     * List of external {@link Semaphore} signals to be released on modifications.
      * Uses {@link CopyOnWriteArrayList} for thread-safe iteration without locks.
+     * Each registered semaphore is released using the same "max 1 permit" pattern
+     * as the internal {@link #signalModification} semaphore, enabling thread-decoupled
+     * notification where the observer blocks on its own semaphore in its own thread.
      */
-    private final CopyOnWriteArrayList<StreamBufferListener> listeners = new CopyOnWriteArrayList<>();
+    private final CopyOnWriteArrayList<Semaphore> signals = new CopyOnWriteArrayList<>();
 
     /**
      * A variable for the current position of the current element in the
@@ -187,27 +166,32 @@ public class StreamBuffer implements Closeable {
     }
 
     /**
-     * Add a listener to be notified on stream modifications.
-     * Multiple listeners can be registered. Each listener is notified independently.
+     * Register an external {@link Semaphore} to be released when the buffer is
+     * modified (data written or stream closed). The semaphore uses the same
+     * "max 1 permit" pattern as the internal signaling: a permit is released
+     * only if the semaphore currently has zero permits. This enables
+     * thread-decoupled notification where the observer blocks on its own
+     * semaphore in its own thread.
      *
-     * @param listener the listener to add
-     * @throws NullPointerException if listener is null
+     * @param semaphore the semaphore to register
+     * @throws NullPointerException if semaphore is null
      */
-    public void addListener(StreamBufferListener listener) {
-        if (listener == null) {
-            throw new NullPointerException("Listener cannot be null");
+    public void addSignal(Semaphore semaphore) {
+        if (semaphore == null) {
+            throw new NullPointerException("Semaphore cannot be null");
         }
-        listeners.add(listener);
+        signals.add(semaphore);
     }
 
     /**
-     * Remove a listener from the notification list.
+     * Remove a previously registered external {@link Semaphore} from the
+     * signal list.
      *
-     * @param listener the listener to remove
-     * @return <code>true</code> if the listener was found and removed, otherwise <code>false</code>
+     * @param semaphore the semaphore to remove
+     * @return <code>true</code> if the semaphore was found and removed, otherwise <code>false</code>
      */
-    public boolean removeListener(StreamBufferListener listener) {
-        return listeners.remove(listener);
+    public boolean removeSignal(Semaphore semaphore) {
+        return signals.remove(semaphore);
     }
 
     /**
@@ -255,21 +239,17 @@ public class StreamBuffer implements Closeable {
 
     /**
      * Call this method always after all changes are synchronized. This method
-     * signals a modification. It cloud be a write on the stream or a close.
-     *
-     * @param event the type of modification that occurred
+     * signals a modification. It could be a write on the stream or a close.
      */
-    private void signalModification(StreamBufferEvent event) {
+    private void signalModification() {
         // hold up the permits to a maximum of one
         if (signalModification.availablePermits() == 0) {
             signalModification.release();
         }
-        // notify all external listeners
-        for (StreamBufferListener listener : listeners) {
-            try {
-                listener.onModification(event);
-            } catch (Exception e) {
-                // ignore exceptions from listeners to prevent affecting stream operations
+        // release all registered external signals using the same max 1 permit pattern
+        for (Semaphore signal : signals) {
+            if (signal.availablePermits() == 0) {
+                signal.release();
             }
         }
     }
@@ -580,7 +560,7 @@ public class StreamBuffer implements Closeable {
                 trim();
             }
             // always at least, signal bytes are written to the buffer
-            signalModification(StreamBufferEvent.DATA_WRITTEN);
+            signalModification();
         }
     }
 
@@ -593,7 +573,7 @@ public class StreamBuffer implements Closeable {
      */
     private void closeAll() {
         streamClosed = true;
-        signalModification(StreamBufferEvent.STREAM_CLOSED);
+        signalModification();
     }
 
     /**
