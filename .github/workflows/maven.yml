@@ -52,4 +52,4 @@ jobs:
           cache: maven
 
       - name: Run mutation tests with PIT
-        run: mvn -B org.pitest:pitest-maven:mutationCoverage -Dmaven.javadoc.skip=true --file pom.xml
+        run: mvn -B test-compile org.pitest:pitest-maven:mutationCoverage -Dmaven.javadoc.skip=true --file pom.xml
