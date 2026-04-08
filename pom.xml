@@ -191,6 +191,7 @@
                     <targetTests>
                         <param>net.ladenthin.streambuffer.*</param>
                     </targetTests>
+                    <mutationThreshold>100</mutationThreshold>
                 </configuration>
              </plugin>
         </plugins>
