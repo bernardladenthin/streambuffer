@@ -119,6 +119,7 @@ public class StreamBuffer implements Closeable {
      * Construct a new {@link StreamBuffer}.
      */
     public StreamBuffer() {
+        signals.add(signalModification);
     }
 
     /**
@@ -242,11 +243,7 @@ public class StreamBuffer implements Closeable {
      * signals a modification. It could be a write on the stream or a close.
      */
     private void signalModification() {
-        // hold up the permits to a maximum of one
-        if (signalModification.availablePermits() == 0) {
-            signalModification.release();
-        }
-        // release all registered external signals using the same max 1 permit pattern
+        // release all registered signals (including the internal one) using the max 1 permit pattern
         for (Semaphore signal : signals) {
             if (signal.availablePermits() == 0) {
                 signal.release();
