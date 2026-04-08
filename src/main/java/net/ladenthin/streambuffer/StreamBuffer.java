@@ -465,9 +465,7 @@ public class StreamBuffer implements Closeable {
             }
 
             // cap missingBytes to the actually available bytes
-            if (maximumAvailableBytes < missingBytes) {
-                missingBytes = (int) Math.min(maximumAvailableBytes, Integer.MAX_VALUE);
-            }
+            missingBytes = (int) Math.min(maximumAvailableBytes, (long) missingBytes);
 
             // some or enough bytes are available, lock and modify the FIFO
             synchronized (bufferLock) {
