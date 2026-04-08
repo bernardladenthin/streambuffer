@@ -191,25 +191,15 @@
                     <targetTests>
                         <param>net.ladenthin.streambuffer.*</param>
                     </targetTests>
-                    <!-- 97%: two equivalent MathMutator mutations on the local variable
-                         maximumAvailableBytes inside read(byte[],int,int) can never be killed.
-                         That variable is not observable outside the synchronized loop — it is
-                         only modified (not read) after the capping check that precedes the loop.
-                         Excluding the entire read() method would remove too many valid mutations,
-                         so a minimal threshold reduction is the right trade-off here. -->
+                    <!-- 97%: three mutations cannot be killed because they are equivalent.
+                         1. available(): ConditionalsBoundary on availableBytes > MAX_VALUE vs
+                            >= MAX_VALUE — both paths return the same value when availableBytes
+                            equals MAX_VALUE, since (int) MAX_VALUE == MAX_VALUE either way.
+                         2-3. read(byte[],int,int): two MathMutator mutations on the local
+                            variable maximumAvailableBytes (if-branch and else-branch). That
+                            variable is only modified, never re-read, inside the loop body after
+                            the pre-loop capping check, so +=/−= produce identical behavior. -->
                     <mutationThreshold>97</mutationThreshold>
-                    <excludedMethods>
-                        <!-- available() has an equivalent ConditionalsBoundary mutation:
-                             availableBytes > MAX_VALUE vs >= MAX_VALUE produces identical results
-                             because (int) MAX_VALUE == MAX_VALUE either way. -->
-                        <param>available</param>
-                        <!-- isTrimShouldBeExecuted(): the ConditionalsBoundary mutation
-                             buffer.size() >= 2 → > 2 is observable via getBufferSize(), but
-                             PIT 1.6.4 does not link coverage from SBOutputStream.write() through
-                             the outer-class trim() call chain to this private helper, so the
-                             test that targets this boundary is never run against the mutation. -->
-                        <param>isTrimShouldBeExecuted</param>
-                    </excludedMethods>
                 </configuration>
              </plugin>
         </plugins>
