@@ -1377,6 +1377,42 @@ public class StreamBufferTest {
         assertThat(dest[1], is((byte) 2));
         assertThat(dest[2], is((byte) 3));
     }
+
+    @Test(timeout = 5000)
+    public void read_concurrentWriteCloseWithInsufficientBytes_returnsAvailableBytes() throws Exception {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+        final OutputStream os = sb.getOutputStream();
+        final InputStream is = sb.getInputStream();
+        final int[] bytesReadHolder = new int[1];
+        final byte[] dest = new byte[10];
+        final Semaphore readerStarted = new Semaphore(0);
+
+        // reader requests 10 bytes but only 3 will ever be written
+        Thread reader = new Thread(() -> {
+            try {
+                readerStarted.release();
+                bytesReadHolder[0] = is.read(dest, 0, 10);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        });
+
+        // act
+        reader.start();
+        readerStarted.acquire();
+        Thread.sleep(500); // let reader block in tryWaitForEnoughBytes
+        os.write(new byte[]{1, 2, 3});
+        os.close(); // unblocks reader with only 3 bytes available
+
+        reader.join();
+
+        // assert
+        assertThat(bytesReadHolder[0], is(3));
+        assertThat(dest[0], is((byte) 1));
+        assertThat(dest[1], is((byte) 2));
+        assertThat(dest[2], is((byte) 3));
+    }
     // </editor-fold>
 
     @Test(timeout = 10_000)
