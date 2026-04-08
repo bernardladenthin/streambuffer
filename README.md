@@ -80,7 +80,7 @@ The `InputStream` and `OutputStream` can be used concurrently from different thr
 
 - All `Deque` accesses are guarded by a `bufferLock` object.
 - State fields (`streamClosed`, `safeWrite`, `availableBytes`, `positionAtCurrentBufferEntry`, `maxBufferElements`) are `volatile`.
-- A `Semaphore signalModification` blocks reading threads until data is written or the stream is closed, avoiding busy-waiting.
+- A `Semaphore signalModification` blocks reading threads until data is written or the stream is closed, avoiding busy-waiting. External semaphores can be registered via `addSignal` for thread-decoupled notification.
 
 ### No Write Deadlock
 
@@ -117,32 +117,32 @@ Trimming is triggered by writes, not by `setMaxBufferElements`. The trim interna
 
 `available()` returns `Integer.MAX_VALUE` when the number of buffered bytes exceeds `Integer.MAX_VALUE`, correctly handling buffers larger than 2 GB.
 
-### Listener Notifications
+### Signal/Slot Notifications
 
-Register listeners to be notified of stream events:
+Register external `Semaphore` objects to receive thread-decoupled notifications when the buffer is modified (data written or stream closed). Each registered semaphore is released using the same "max 1 permit" pattern as the internal reader/writer semaphore, enabling observers to block in their own threads and wake up when something changes:
 
 ```java
-sb.addListener(event -> {
-    if (event == StreamBuffer.StreamBufferEvent.DATA_WRITTEN) {
-        // new data is available
-    } else if (event == StreamBuffer.StreamBufferEvent.STREAM_CLOSED) {
-        // stream has been closed
+Semaphore mySignal = new Semaphore(0);
+sb.addSignal(mySignal);
+
+// Observer's own thread:
+while (!done) {
+    mySignal.acquire();  // blocks until writer signals
+    // process in MY thread — fully decoupled from writer
+    if (sb.isClosed()) {
+        done = true;
     }
-});
+}
 ```
 
 **API:**
 
 | Method | Description |
 |--------|-------------|
-| `addListener(StreamBufferListener)` | Registers a listener; throws `NullPointerException` if null |
-| `removeListener(StreamBufferListener)` | Removes a listener; returns `false` if not found or null |
+| `addSignal(Semaphore)` | Registers an external semaphore; throws `NullPointerException` if null |
+| `removeSignal(Semaphore)` | Removes a semaphore; returns `false` if not found or null |
 
-Listeners are stored in a `CopyOnWriteArrayList` for thread-safe iteration. Exceptions thrown by listeners are silently ignored to prevent them from affecting stream operations.
-
-`StreamBufferEvent` values:
-- `DATA_WRITTEN` — fired after each successful write
-- `STREAM_CLOSED` — fired when the stream is closed via any close path
+Signals are stored in a `CopyOnWriteArrayList` for thread-safe iteration. The "max 1 permit" pattern means rapid writes collapse into a single wake-up — the observer should check buffer state (e.g., `isClosed()`, `available()`) after waking to determine what changed.
 
 ## API Reference
 
@@ -164,8 +164,8 @@ public class StreamBuffer implements Closeable
 | `getMaxBufferElements()` | Returns the current trim threshold |
 | `setMaxBufferElements(int)` | Sets the trim threshold; `<= 0` disables trimming |
 | `getBufferSize()` | Returns the current number of byte array entries in the FIFO |
-| `addListener(StreamBufferListener)` | Registers an event listener |
-| `removeListener(StreamBufferListener)` | Removes an event listener |
+| `addSignal(Semaphore)` | Registers an external semaphore for thread-decoupled notification |
+| `removeSignal(Semaphore)` | Removes a registered semaphore |
 | `blockDataAvailable()` | **Deprecated.** Blocks until at least one byte is available |
 
 ### Static Validation Methods
@@ -177,22 +177,9 @@ public static boolean correctOffsetAndLengthToWrite(byte[] b, int off, int len)
 
 Both methods mirror the parameter validation performed by `InputStream.read(byte[], int, int)` and `OutputStream.write(byte[], int, int)`. They throw `NullPointerException` for null arrays, `IndexOutOfBoundsException` for invalid offsets or lengths (including integer overflow: `off + len < 0`), and return `false` for zero-length operations.
 
-### `StreamBufferListener` Interface
+### Signal/Slot Pattern
 
-```java
-public interface StreamBufferListener {
-    void onModification(StreamBufferEvent event);
-}
-```
-
-### `StreamBufferEvent` Enum
-
-```java
-public enum StreamBufferEvent {
-    DATA_WRITTEN,
-    STREAM_CLOSED
-}
-```
+External observers register `java.util.concurrent.Semaphore` objects via `addSignal(Semaphore)`. When the buffer is modified (write or close), each registered semaphore is released using the "max 1 permit" pattern — a permit is released only if the semaphore currently has zero permits. The observer blocks on `semaphore.acquire()` in its own thread and wakes up when data is available or the stream is closed. This provides full thread decoupling between writer and observer.
 
 ## Deadlock Behavior
 
@@ -250,9 +237,10 @@ Test coverage includes:
 - Thread interruption during blocked reads (wraps `InterruptedException` in `IOException`)
 - Concurrent read/write stress tests
 - Parallel close without deadlock
-- Listener notification for `DATA_WRITTEN` and `STREAM_CLOSED` across all close paths
-- `removeListener(null)` returning `false` without throwing
-- `addListener(null)` throwing `NullPointerException`
+- Signal/slot notification via external semaphores on write and all close paths
+- `removeSignal(null)` returning `false` without throwing
+- `addSignal(null)` throwing `NullPointerException`
+- Thread-decoupled signal barrier — observer wakes in its own thread
 - `correctOffsetAndLengthToRead` and `correctOffsetAndLengthToWrite` — all branches including integer overflow
 - `getBufferSize()` on an empty buffer
 - `blockDataAvailable()` with data written before and after the call
