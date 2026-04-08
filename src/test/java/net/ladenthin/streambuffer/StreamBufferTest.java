@@ -2065,4 +2065,127 @@ public class StreamBufferTest {
         assertThat(dest[1], is((byte) 20));
     }
     // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="read if-branch: exact full-entry consumption">
+    @Test
+    public void read_exactFullEntryConsumption_availableAndBufferSizeAreZero() throws IOException {
+        // arrange — write 3 bytes as a single entry; after the internal read() call consumes byte 0,
+        // positionAtCurrentBufferEntry=1, missingBytes=2, maximumBytesToCopy=3-1=2 → exactly equal.
+        // This hits the if-branch boundary: missingBytes >= maximumBytesToCopy (both == 2).
+        StreamBuffer sb = new StreamBuffer();
+        sb.getOutputStream().write(new byte[]{1, 2, 3});
+
+        // act
+        byte[] dest = new byte[3];
+        int bytesRead = sb.getInputStream().read(dest, 0, 3);
+
+        // assert
+        assertThat(bytesRead, is(3));
+        assertThat(dest, is(new byte[]{1, 2, 3}));
+        // ConditionalsBoundary mutant (>= → >): routes to else-branch → entry NOT removed → bufferSize = 1
+        assertThat(sb.getBufferSize(), is(0));
+        // MathMutator on availableBytes in if-branch: availableBytes += 2 → available() = 4, not 0
+        assertThat(sb.getInputStream().available(), is(0));
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="isTrimShouldBeExecuted direct">
+    @Test
+    public void isTrimShouldBeExecuted_bufferSizeTwoMaxElementsOne_returnsTrue() throws IOException {
+        // arrange — disable trim while writing so we can control buffer.size() independently
+        StreamBuffer sb = new StreamBuffer();
+        sb.setMaxBufferElements(0);
+        sb.getOutputStream().write(new byte[]{1});
+        sb.getOutputStream().write(new byte[]{2});
+        // buffer.size() == 2; now enable trim condition
+        sb.setMaxBufferElements(1);
+
+        // act + assert — original: (2 >= 2) && (2 > 1) = true
+        //                mutant:   (2 >  2) && (2 > 1) = false  → mutation killed
+        assertThat(sb.isTrimShouldBeExecuted(), is(true));
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="clampToMaxInt direct">
+    @Test
+    public void clampToMaxInt_valueAboveMaxInt_returnsMaxInt() {
+        StreamBuffer sb = new StreamBuffer();
+        assertThat(sb.clampToMaxInt((long) Integer.MAX_VALUE + 1), is(Integer.MAX_VALUE));
+    }
+
+    @Test
+    public void clampToMaxInt_valueEqualToMaxInt_returnsMaxInt() {
+        StreamBuffer sb = new StreamBuffer();
+        assertThat(sb.clampToMaxInt((long) Integer.MAX_VALUE), is(Integer.MAX_VALUE));
+    }
+
+    @Test
+    public void clampToMaxInt_smallValue_returnsValue() {
+        StreamBuffer sb = new StreamBuffer();
+        assertThat(sb.clampToMaxInt(42L), is(42));
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="decrementAvailableBytesBudget direct">
+    @Test
+    public void decrementAvailableBytesBudget_subtractsDecrement() {
+        // original: current - decrement = 9 - 4 = 5
+        // mutant:   current + decrement = 9 + 4 = 13  → mutation killed
+        StreamBuffer sb = new StreamBuffer();
+        assertThat(sb.decrementAvailableBytesBudget(9L, 4L), is(5L));
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="isTrimShouldBeExecuted size-two boundary">
+    @Test
+    public void getBufferSize_twoEntriesWithMaxBufferElementsOne_trimCalled() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        sb.setMaxBufferElements(1);
+
+        // act — exactly two separate entries: buffer.size() == 2 > maxBufferElements == 1
+        // original: buffer.size() >= 2 → true → trim fires
+        // mutant:   buffer.size() >  2 → false → trim skipped → getBufferSize() stays 2
+        sb.getOutputStream().write(new byte[]{1});
+        sb.getOutputStream().write(new byte[]{2});
+
+        // assert
+        assertThat(sb.getBufferSize(), is(1));
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="tryWaitForEnoughBytes open-stream return">
+    @Test
+    public void read_multipleBytesSingleEntryOpenStream_returnsAllRequestedBytes() throws IOException {
+        // arrange — write 5 bytes as one entry; stream left open
+        StreamBuffer sb = new StreamBuffer();
+        sb.getOutputStream().write(new byte[]{1, 2, 3, 4, 5});
+
+        // act — tryWaitForEnoughBytes(4) takes the "already enough" path and must return availableBytes (4)
+        // mutant returns 0 → read(b, 0, 5) short-circuits and returns only 1 (the first byte)
+        byte[] dest = new byte[5];
+        int bytesRead = sb.getInputStream().read(dest, 0, 5);
+
+        // assert
+        assertThat(bytesRead, is(5));
+        assertThat(dest, is(new byte[]{1, 2, 3, 4, 5}));
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="available after partial read from single entry">
+    @Test
+    public void available_afterPartialReadFromSingleEntry_returnsRemainingCount() throws IOException {
+        // arrange — 10 bytes as a single deque entry
+        StreamBuffer sb = new StreamBuffer();
+        sb.getOutputStream().write(new byte[]{1, 2, 3, 4, 5, 6, 7, 8, 9, 10});
+
+        // act — read first 5 bytes (1 via read() then 4 via the partial-copy else branch)
+        byte[] dest = new byte[5];
+        int bytesRead = sb.getInputStream().read(dest, 0, 5);
+
+        // assert — 5 bytes must remain; mutant does availableBytes += 4 instead of -= 4 → reports 13
+        assertThat(bytesRead, is(5));
+        assertThat(sb.getInputStream().available(), is(5));
+    }
+    // </editor-fold>
 }

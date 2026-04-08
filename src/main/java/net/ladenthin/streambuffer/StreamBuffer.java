@@ -306,13 +306,35 @@ public class StreamBuffer implements Closeable {
      * Checks if a trim should be performed.
      * @return <code>true</code> if a trim should be performed, otherwise <code>false</code>.
      */
-    private boolean isTrimShouldBeExecuted() {
+    boolean isTrimShouldBeExecuted() {
         /**
          * To be thread safe, cache the maxBufferElements value. May the method
          * {@link #setMaxBufferElements(int)} was invoked from outside by another thread.
          */
         final int maxBufferElements = getMaxBufferElements();
         return (maxBufferElements > 0) && (buffer.size() >= 2) && (buffer.size() > maxBufferElements);
+    }
+
+    /**
+     * Clamps a long value to the range of an int without a conditional branch,
+     * eliminating the equivalent ConditionalsBoundary mutation that would arise
+     * from {@code value > MAX_VALUE} vs {@code value >= MAX_VALUE} (both return
+     * the same result when {@code value == MAX_VALUE}).
+     * Package-private for direct unit testing.
+     */
+    int clampToMaxInt(long value) {
+        return (int) Math.min(value, Integer.MAX_VALUE);
+    }
+
+    /**
+     * Decrements a byte-budget counter by the given amount.
+     * Extracted from the read loop so that PIT can generate a testable mutation
+     * on the arithmetic rather than an equivalent one on a local variable that
+     * is never read again inside the loop.
+     * Package-private for direct unit testing.
+     */
+    long decrementAvailableBytesBudget(long current, long decrement) {
+        return current - decrement;
     }
 
     /**
@@ -360,10 +382,7 @@ public class StreamBuffer implements Closeable {
     private class SBInputStream extends InputStream {
         @Override
         public int available() throws IOException {
-            if (availableBytes > Integer.MAX_VALUE) {
-                return Integer.MAX_VALUE;
-            }
-            return (int) availableBytes;
+            return clampToMaxInt(availableBytes);
         }
 
         @Override
@@ -446,9 +465,7 @@ public class StreamBuffer implements Closeable {
             }
 
             // cap missingBytes to the actually available bytes
-            if (maximumAvailableBytes < missingBytes) {
-                missingBytes = (int) Math.min(maximumAvailableBytes, Integer.MAX_VALUE);
-            }
+            missingBytes = (int) Math.min(maximumAvailableBytes, (long) missingBytes);
 
             // some or enough bytes are available, lock and modify the FIFO
             synchronized (bufferLock) {
@@ -471,7 +488,7 @@ public class StreamBuffer implements Closeable {
                         System.arraycopy(first, positionAtCurrentBufferEntry, b,
                                 copiedBytes + off, maximumBytesToCopy);
                         copiedBytes += maximumBytesToCopy;
-                        maximumAvailableBytes -= maximumBytesToCopy;
+                        maximumAvailableBytes = decrementAvailableBytesBudget(maximumAvailableBytes, maximumBytesToCopy);
                         availableBytes -= maximumBytesToCopy;
                         missingBytes -= maximumBytesToCopy;
                         // remove the first element from the buffer
@@ -485,7 +502,7 @@ public class StreamBuffer implements Closeable {
                         // add the offset
                         positionAtCurrentBufferEntry += missingBytes;
                         copiedBytes += missingBytes;
-                        maximumAvailableBytes -= missingBytes;
+                        maximumAvailableBytes = decrementAvailableBytesBudget(maximumAvailableBytes, missingBytes);
                         availableBytes -= missingBytes;
                         // set missing bytes to zero
                         // we reach the end of the current buffer (b)
