@@ -2089,6 +2089,53 @@ public class StreamBufferTest {
     }
     // </editor-fold>
 
+    // <editor-fold defaultstate="collapsed" desc="isTrimShouldBeExecuted direct">
+    @Test
+    public void isTrimShouldBeExecuted_bufferSizeTwoMaxElementsOne_returnsTrue() throws IOException {
+        // arrange — disable trim while writing so we can control buffer.size() independently
+        StreamBuffer sb = new StreamBuffer();
+        sb.setMaxBufferElements(0);
+        sb.getOutputStream().write(new byte[]{1});
+        sb.getOutputStream().write(new byte[]{2});
+        // buffer.size() == 2; now enable trim condition
+        sb.setMaxBufferElements(1);
+
+        // act + assert — original: (2 >= 2) && (2 > 1) = true
+        //                mutant:   (2 >  2) && (2 > 1) = false  → mutation killed
+        assertThat(sb.isTrimShouldBeExecuted(), is(true));
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="clampToMaxInt direct">
+    @Test
+    public void clampToMaxInt_valueAboveMaxInt_returnsMaxInt() {
+        StreamBuffer sb = new StreamBuffer();
+        assertThat(sb.clampToMaxInt((long) Integer.MAX_VALUE + 1), is(Integer.MAX_VALUE));
+    }
+
+    @Test
+    public void clampToMaxInt_valueEqualToMaxInt_returnsMaxInt() {
+        StreamBuffer sb = new StreamBuffer();
+        assertThat(sb.clampToMaxInt((long) Integer.MAX_VALUE), is(Integer.MAX_VALUE));
+    }
+
+    @Test
+    public void clampToMaxInt_smallValue_returnsValue() {
+        StreamBuffer sb = new StreamBuffer();
+        assertThat(sb.clampToMaxInt(42L), is(42));
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="decrementAvailableBytesBudget direct">
+    @Test
+    public void decrementAvailableBytesBudget_subtractsDecrement() {
+        // original: current - decrement = 9 - 4 = 5
+        // mutant:   current + decrement = 9 + 4 = 13  → mutation killed
+        StreamBuffer sb = new StreamBuffer();
+        assertThat(sb.decrementAvailableBytesBudget(9L, 4L), is(5L));
+    }
+    // </editor-fold>
+
     // <editor-fold defaultstate="collapsed" desc="isTrimShouldBeExecuted size-two boundary">
     @Test
     public void getBufferSize_twoEntriesWithMaxBufferElementsOne_trimCalled() throws IOException {
