@@ -1359,6 +1359,210 @@ public class StreamBufferTest {
         assertThat(bytesRead, is(1));
         assertThat(dest[0], is(anyValue));
     }
+
+    @Test
+    public void read_requestMoreBytesThanAvailableOnClosedStream_returnsAvailableBytes() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        sb.getOutputStream().write(new byte[]{1, 2, 3});
+        sb.close();
+
+        // act — 3 bytes available but 5 requested; must return 3, not throw NoSuchElementException
+        byte[] dest = new byte[5];
+        int bytesRead = sb.getInputStream().read(dest, 0, 5);
+
+        // assert
+        assertThat(bytesRead, is(3));
+        assertThat(dest[0], is((byte) 1));
+        assertThat(dest[1], is((byte) 2));
+        assertThat(dest[2], is((byte) 3));
+    }
+
+    @Test(timeout = 5000)
+    public void read_concurrentWriteCloseWithInsufficientBytes_returnsAvailableBytes() throws Exception {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+        final OutputStream os = sb.getOutputStream();
+        final InputStream is = sb.getInputStream();
+        final int[] bytesReadHolder = new int[1];
+        final byte[] dest = new byte[10];
+        final Semaphore readerStarted = new Semaphore(0);
+
+        // reader requests 10 bytes but only 3 will ever be written
+        Thread reader = new Thread(() -> {
+            try {
+                readerStarted.release();
+                bytesReadHolder[0] = is.read(dest, 0, 10);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        });
+
+        // act
+        reader.start();
+        readerStarted.acquire();
+        Thread.sleep(500); // let reader block in tryWaitForEnoughBytes
+        os.write(new byte[]{1, 2, 3});
+        os.close(); // unblocks reader with only 3 bytes available
+
+        reader.join();
+
+        // assert
+        assertThat(bytesReadHolder[0], is(3));
+        assertThat(dest[0], is((byte) 1));
+        assertThat(dest[1], is((byte) 2));
+        assertThat(dest[2], is((byte) 3));
+    }
+
+    @Test
+    public void read_multipleDequeEntriesOnClosedStream_returnsAvailableBytes() throws IOException {
+        // arrange — three separate writes create three deque entries
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        InputStream is = sb.getInputStream();
+        os.write(new byte[]{1});
+        os.write(new byte[]{2});
+        os.write(new byte[]{3});
+        sb.close();
+
+        // act — request 10 bytes, only 3 available across 3 entries
+        byte[] dest = new byte[10];
+        int bytesRead = is.read(dest, 0, 10);
+
+        // assert
+        assertThat(bytesRead, is(3));
+        assertThat(dest[0], is((byte) 1));
+        assertThat(dest[1], is((byte) 2));
+        assertThat(dest[2], is((byte) 3));
+    }
+
+    @Test
+    public void read_partialEntryConsumedThenCloseAndOverRead_returnsRemainingBytes() throws IOException {
+        // arrange — write 5 bytes, read 2 to advance positionAtCurrentBufferEntry
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        InputStream is = sb.getInputStream();
+        os.write(new byte[]{1, 2, 3, 4, 5});
+        assertThat(is.read(), is(1));
+        assertThat(is.read(), is(2));
+        sb.close();
+
+        // act — 3 bytes remain, request 8
+        byte[] dest = new byte[8];
+        int bytesRead = is.read(dest, 0, 8);
+
+        // assert
+        assertThat(bytesRead, is(3));
+        assertThat(dest[0], is((byte) 3));
+        assertThat(dest[1], is((byte) 4));
+        assertThat(dest[2], is((byte) 5));
+    }
+
+    @Test
+    public void read_requestExactlyOneMoreThanAvailable_returnsAvailableBytes() throws IOException {
+        // arrange — 4 bytes written, request 5 (after first internal read: 3 remain, missingBytes=4)
+        StreamBuffer sb = new StreamBuffer();
+        sb.getOutputStream().write(new byte[]{10, 20, 30, 40});
+        sb.close();
+
+        // act
+        byte[] dest = new byte[5];
+        int bytesRead = sb.getInputStream().read(dest, 0, 5);
+
+        // assert
+        assertThat(bytesRead, is(4));
+        assertThat(dest[0], is((byte) 10));
+        assertThat(dest[1], is((byte) 20));
+        assertThat(dest[2], is((byte) 30));
+        assertThat(dest[3], is((byte) 40));
+    }
+
+    @Test
+    public void read_nonZeroOffsetWithOverReadOnClosedStream_returnsAvailableBytesAtOffset() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        sb.getOutputStream().write(new byte[]{1, 2, 3});
+        sb.close();
+
+        // act — read into offset 3 of a 10-byte array, requesting 7
+        byte[] dest = new byte[10];
+        int bytesRead = sb.getInputStream().read(dest, 3, 7);
+
+        // assert
+        assertThat(bytesRead, is(3));
+        assertThat(dest[0], is((byte) 0));
+        assertThat(dest[1], is((byte) 0));
+        assertThat(dest[2], is((byte) 0));
+        assertThat(dest[3], is((byte) 1));
+        assertThat(dest[4], is((byte) 2));
+        assertThat(dest[5], is((byte) 3));
+        assertThat(dest[6], is((byte) 0));
+    }
+
+    @Test
+    public void read_trimThenCloseAndOverRead_returnsAvailableBytes() throws IOException {
+        // arrange — low maxBufferElements triggers trim during writes
+        StreamBuffer sb = new StreamBuffer();
+        sb.setMaxBufferElements(1);
+        OutputStream os = sb.getOutputStream();
+        InputStream is = sb.getInputStream();
+        os.write(new byte[]{1});
+        os.write(new byte[]{2});
+        os.write(new byte[]{3});
+        os.write(new byte[]{4, 5});
+        sb.close();
+
+        // act — 5 bytes available (post-trim), request 10
+        byte[] dest = new byte[10];
+        int bytesRead = is.read(dest, 0, 10);
+
+        // assert
+        assertThat(bytesRead, is(5));
+        assertThat(dest[0], is((byte) 1));
+        assertThat(dest[1], is((byte) 2));
+        assertThat(dest[2], is((byte) 3));
+        assertThat(dest[3], is((byte) 4));
+        assertThat(dest[4], is((byte) 5));
+    }
+
+    @Test(timeout = 5000)
+    public void read_concurrentMultipleWritesThenClose_returnsAvailableBytes() throws Exception {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+        final OutputStream os = sb.getOutputStream();
+        final InputStream is = sb.getInputStream();
+        final int[] bytesReadHolder = new int[1];
+        final byte[] dest = new byte[20];
+        final Semaphore readerStarted = new Semaphore(0);
+
+        Thread reader = new Thread(() -> {
+            try {
+                readerStarted.release();
+                bytesReadHolder[0] = is.read(dest, 0, 20);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        });
+
+        // act — reader blocks, writer sends 3 separate chunks then closes
+        reader.start();
+        readerStarted.acquire();
+        Thread.sleep(500); // let reader block
+        os.write(new byte[]{1, 2});
+        os.write(new byte[]{3, 4});
+        os.write(new byte[]{5});
+        os.close();
+
+        reader.join();
+
+        // assert
+        assertThat(bytesReadHolder[0], is(5));
+        assertThat(dest[0], is((byte) 1));
+        assertThat(dest[1], is((byte) 2));
+        assertThat(dest[2], is((byte) 3));
+        assertThat(dest[3], is((byte) 4));
+        assertThat(dest[4], is((byte) 5));
+    }
     // </editor-fold>
 
     @Test(timeout = 10_000)
