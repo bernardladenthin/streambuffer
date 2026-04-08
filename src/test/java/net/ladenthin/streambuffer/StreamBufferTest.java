@@ -2154,4 +2154,40 @@ public class StreamBufferTest {
         assertThat(result, is(0));
     }
     // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="isTrimShouldBeExecuted zero boundary">
+    @Test
+    public void getBufferSize_maxBufferElementsZeroWithMultipleEntries_noTrimExecuted() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        sb.setMaxBufferElements(0);
+
+        // act
+        sb.getOutputStream().write(new byte[]{1});
+        sb.getOutputStream().write(new byte[]{2});
+        sb.getOutputStream().write(new byte[]{3});
+
+        // assert
+        assertThat(sb.getBufferSize(), is(3));
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="tryWaitForEnoughBytes closed stream return">
+    @Test
+    public void read_closedStreamWithTwoBytes_readArrayReturnsBothBytes() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        sb.getOutputStream().write(new byte[]{10, 20});
+        sb.close();
+
+        // act
+        byte[] dest = new byte[4];
+        int bytesRead = sb.getInputStream().read(dest, 0, 4);
+
+        // assert
+        assertThat(bytesRead, is(2));
+        assertThat(dest[0], is((byte) 10));
+        assertThat(dest[1], is((byte) 20));
+    }
+    // </editor-fold>
 }
