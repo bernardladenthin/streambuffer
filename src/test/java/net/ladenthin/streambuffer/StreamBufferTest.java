@@ -1359,6 +1359,24 @@ public class StreamBufferTest {
         assertThat(bytesRead, is(1));
         assertThat(dest[0], is(anyValue));
     }
+
+    @Test
+    public void read_requestMoreBytesThanAvailableOnClosedStream_returnsAvailableBytes() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        sb.getOutputStream().write(new byte[]{1, 2, 3});
+        sb.close();
+
+        // act — 3 bytes available but 5 requested; must return 3, not throw NoSuchElementException
+        byte[] dest = new byte[5];
+        int bytesRead = sb.getInputStream().read(dest, 0, 5);
+
+        // assert
+        assertThat(bytesRead, is(3));
+        assertThat(dest[0], is((byte) 1));
+        assertThat(dest[1], is((byte) 2));
+        assertThat(dest[2], is((byte) 3));
+    }
     // </editor-fold>
 
     @Test(timeout = 10_000)
