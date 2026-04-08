@@ -2188,4 +2188,51 @@ public class StreamBufferTest {
         assertThat(sb.getInputStream().available(), is(5));
     }
     // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="capMissingBytes equivalence: old vs new formula">
+
+    // Extracts the OLD capping formula from the guarded if-block (pre-cb66b68)
+    private static int capMissingBytesOld(long maximumAvailableBytes, int missingBytes) {
+        if (maximumAvailableBytes < missingBytes) {
+            return (int) Math.min(maximumAvailableBytes, Integer.MAX_VALUE);
+        }
+        return missingBytes;
+    }
+
+    // Extracts the NEW capping formula (unconditional Math.min, post-cb66b68)
+    private static int capMissingBytesNew(long maximumAvailableBytes, int missingBytes) {
+        return (int) Math.min(maximumAvailableBytes, (long) missingBytes);
+    }
+
+    @DataProvider
+    public static Object[][] capMissingBytesInputs() {
+        return new Object[][] {
+            // Case A: maxAvail < missingBytes  (old if-branch fires, new Math.min picks maxAvail)
+            { 1L,                                    5                   },  // trivially small
+            { 3L,                                    5                   },  // standard small case
+            { (long) Integer.MAX_VALUE - 1,          Integer.MAX_VALUE   },  // one below INT_MAX
+
+            // Case B: maxAvail == missingBytes  (boundary: old skips if, new Math.min picks either)
+            { 5L,                                    5                   },  // small equality
+            { (long) Integer.MAX_VALUE,              Integer.MAX_VALUE   },  // equality at INT_MAX
+
+            // Case C: maxAvail > missingBytes  (old skips if, new Math.min picks missingBytes)
+            { 9L,                                    3                   },  // standard: more available than needed
+            { (long) Integer.MAX_VALUE + 1L,         Integer.MAX_VALUE   },  // maxAvail just above INT_MAX
+            { (long) Integer.MAX_VALUE + 1L,         5                   },  // maxAvail > INT_MAX, small missing
+            { 3_000_000_000L,                        100                 },  // large long, small int
+            { Long.MAX_VALUE,                        1                   },  // extreme: largest possible long
+        };
+    }
+
+    @Test
+    @UseDataProvider("capMissingBytesInputs")
+    public void capMissingBytes_oldAndNewFormula_returnSameResult(
+            long maximumAvailableBytes, int missingBytes) {
+        int oldResult = capMissingBytesOld(maximumAvailableBytes, missingBytes);
+        int newResult = capMissingBytesNew(maximumAvailableBytes, missingBytes);
+        assertThat(newResult, is(oldResult));
+    }
+
+    // </editor-fold>
 }
