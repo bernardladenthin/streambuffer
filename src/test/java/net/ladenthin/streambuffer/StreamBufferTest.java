@@ -2065,4 +2065,57 @@ public class StreamBufferTest {
         assertThat(dest[1], is((byte) 20));
     }
     // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="isTrimShouldBeExecuted size-two boundary">
+    @Test
+    public void getBufferSize_twoEntriesWithMaxBufferElementsOne_trimCalled() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        sb.setMaxBufferElements(1);
+
+        // act — exactly two separate entries: buffer.size() == 2 > maxBufferElements == 1
+        // original: buffer.size() >= 2 → true → trim fires
+        // mutant:   buffer.size() >  2 → false → trim skipped → getBufferSize() stays 2
+        sb.getOutputStream().write(new byte[]{1});
+        sb.getOutputStream().write(new byte[]{2});
+
+        // assert
+        assertThat(sb.getBufferSize(), is(1));
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="tryWaitForEnoughBytes open-stream return">
+    @Test
+    public void read_multipleBytesSingleEntryOpenStream_returnsAllRequestedBytes() throws IOException {
+        // arrange — write 5 bytes as one entry; stream left open
+        StreamBuffer sb = new StreamBuffer();
+        sb.getOutputStream().write(new byte[]{1, 2, 3, 4, 5});
+
+        // act — tryWaitForEnoughBytes(4) takes the "already enough" path and must return availableBytes (4)
+        // mutant returns 0 → read(b, 0, 5) short-circuits and returns only 1 (the first byte)
+        byte[] dest = new byte[5];
+        int bytesRead = sb.getInputStream().read(dest, 0, 5);
+
+        // assert
+        assertThat(bytesRead, is(5));
+        assertThat(dest, is(new byte[]{1, 2, 3, 4, 5}));
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="available after partial read from single entry">
+    @Test
+    public void available_afterPartialReadFromSingleEntry_returnsRemainingCount() throws IOException {
+        // arrange — 10 bytes as a single deque entry
+        StreamBuffer sb = new StreamBuffer();
+        sb.getOutputStream().write(new byte[]{1, 2, 3, 4, 5, 6, 7, 8, 9, 10});
+
+        // act — read first 5 bytes (1 via read() then 4 via the partial-copy else branch)
+        byte[] dest = new byte[5];
+        int bytesRead = sb.getInputStream().read(dest, 0, 5);
+
+        // assert — 5 bytes must remain; mutant does availableBytes += 4 instead of -= 4 → reports 13
+        assertThat(bytesRead, is(5));
+        assertThat(sb.getInputStream().available(), is(5));
+    }
+    // </editor-fold>
 }
