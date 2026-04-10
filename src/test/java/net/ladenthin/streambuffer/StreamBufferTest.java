@@ -25,6 +25,7 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import java.io.*;
+import java.util.Arrays;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
@@ -72,12 +73,11 @@ public class StreamBufferTest {
         byte[] target = new byte[12];
         is.read(target);
 
-        assertEquals((long) 0, (long) target[0]);
-        assertEquals((long) 0, (long) target[11]);
-
-        for (int i = 1; i < target.length - 1; ++i) {
-            assertEquals(anyValue, (long) target[i]);
+        byte[] expected = new byte[12];
+        for (int i = 1; i < 11; ++i) {
+            expected[i] = anyValue;
         }
+        assertArrayEquals(expected, target);
     }
 
     /**
@@ -117,12 +117,7 @@ public class StreamBufferTest {
         // Ensure the initial values were placed at the correct offset.
         // The first 2 values should be 0 (unwritten).
         // The last 2 values should be the initial value 4.
-        assertAll(
-            () -> assertEquals(0, fromMemory[0]),
-            () -> assertEquals(0, fromMemory[1]),
-            () -> assertEquals(anyNumber, fromMemory[2]),
-            () -> assertEquals(anyNumber, fromMemory[3])
-        );
+        assertArrayEquals(new byte[]{0, 0, anyNumber, anyNumber}, fromMemory);
     }
 
     @Test
@@ -148,21 +143,9 @@ public class StreamBufferTest {
         assertEquals((4 + 5 + 6) - (6 + 6 + 3), is.available());
 
         assertAll(
-            () -> assertEquals(4, t0[0]),
-            () -> assertEquals(4, t0[1]),
-            () -> assertEquals(4, t0[2]),
-            () -> assertEquals(4, t0[3]),
-            () -> assertEquals(5, t0[4]),
-            () -> assertEquals(5, t0[5]),
-            () -> assertEquals(5, t1[0]),
-            () -> assertEquals(5, t1[1]),
-            () -> assertEquals(5, t1[2]),
-            () -> assertEquals(6, t1[3]),
-            () -> assertEquals(6, t1[4]),
-            () -> assertEquals(6, t1[5]),
-            () -> assertEquals(6, t2[0]),
-            () -> assertEquals(6, t2[1]),
-            () -> assertEquals(6, t2[2])
+            () -> assertArrayEquals(new byte[]{4, 4, 4, 4, 5, 5}, t0),
+            () -> assertArrayEquals(new byte[]{5, 5, 5, 6, 6, 6}, t1),
+            () -> assertArrayEquals(new byte[]{6, 6, 6}, t2)
         );
     }
 
@@ -1382,9 +1365,7 @@ public class StreamBufferTest {
         // assert
         assertAll(
             () -> assertThat(bytesRead, is(3)),
-            () -> assertThat(dest[0], is((byte) 1)),
-            () -> assertThat(dest[1], is((byte) 2)),
-            () -> assertThat(dest[2], is((byte) 3))
+            () -> assertArrayEquals(new byte[]{1, 2, 3}, Arrays.copyOf(dest, 3))
         );
     }
 
@@ -1421,9 +1402,7 @@ public class StreamBufferTest {
         // assert
         assertAll(
             () -> assertThat(bytesReadHolder[0], is(3)),
-            () -> assertThat(dest[0], is((byte) 1)),
-            () -> assertThat(dest[1], is((byte) 2)),
-            () -> assertThat(dest[2], is((byte) 3))
+            () -> assertArrayEquals(new byte[]{1, 2, 3}, Arrays.copyOf(dest, 3))
         );
     }
 
@@ -1445,9 +1424,7 @@ public class StreamBufferTest {
         // assert
         assertAll(
             () -> assertThat(bytesRead, is(3)),
-            () -> assertThat(dest[0], is((byte) 1)),
-            () -> assertThat(dest[1], is((byte) 2)),
-            () -> assertThat(dest[2], is((byte) 3))
+            () -> assertArrayEquals(new byte[]{1, 2, 3}, Arrays.copyOf(dest, 3))
         );
     }
 
@@ -1469,9 +1446,7 @@ public class StreamBufferTest {
         // assert
         assertAll(
             () -> assertThat(bytesRead, is(3)),
-            () -> assertThat(dest[0], is((byte) 3)),
-            () -> assertThat(dest[1], is((byte) 4)),
-            () -> assertThat(dest[2], is((byte) 5))
+            () -> assertArrayEquals(new byte[]{3, 4, 5}, Arrays.copyOf(dest, 3))
         );
     }
 
@@ -1489,10 +1464,7 @@ public class StreamBufferTest {
         // assert
         assertAll(
             () -> assertThat(bytesRead, is(4)),
-            () -> assertThat(dest[0], is((byte) 10)),
-            () -> assertThat(dest[1], is((byte) 20)),
-            () -> assertThat(dest[2], is((byte) 30)),
-            () -> assertThat(dest[3], is((byte) 40))
+            () -> assertArrayEquals(new byte[]{10, 20, 30, 40}, Arrays.copyOf(dest, 4))
         );
     }
 
@@ -1507,16 +1479,10 @@ public class StreamBufferTest {
         byte[] dest = new byte[10];
         int bytesRead = sb.getInputStream().read(dest, 3, 7);
 
-        // assert
+        // assert — leading/trailing zeros prove the offset was respected
         assertAll(
             () -> assertThat(bytesRead, is(3)),
-            () -> assertThat(dest[0], is((byte) 0)),
-            () -> assertThat(dest[1], is((byte) 0)),
-            () -> assertThat(dest[2], is((byte) 0)),
-            () -> assertThat(dest[3], is((byte) 1)),
-            () -> assertThat(dest[4], is((byte) 2)),
-            () -> assertThat(dest[5], is((byte) 3)),
-            () -> assertThat(dest[6], is((byte) 0))
+            () -> assertArrayEquals(new byte[]{0, 0, 0, 1, 2, 3, 0, 0, 0, 0}, dest)
         );
     }
 
@@ -1540,11 +1506,7 @@ public class StreamBufferTest {
         // assert
         assertAll(
             () -> assertThat(bytesRead, is(5)),
-            () -> assertThat(dest[0], is((byte) 1)),
-            () -> assertThat(dest[1], is((byte) 2)),
-            () -> assertThat(dest[2], is((byte) 3)),
-            () -> assertThat(dest[3], is((byte) 4)),
-            () -> assertThat(dest[4], is((byte) 5))
+            () -> assertArrayEquals(new byte[]{1, 2, 3, 4, 5}, Arrays.copyOf(dest, 5))
         );
     }
 
@@ -1582,11 +1544,7 @@ public class StreamBufferTest {
         // assert
         assertAll(
             () -> assertThat(bytesReadHolder[0], is(5)),
-            () -> assertThat(dest[0], is((byte) 1)),
-            () -> assertThat(dest[1], is((byte) 2)),
-            () -> assertThat(dest[2], is((byte) 3)),
-            () -> assertThat(dest[3], is((byte) 4)),
-            () -> assertThat(dest[4], is((byte) 5))
+            () -> assertArrayEquals(new byte[]{1, 2, 3, 4, 5}, Arrays.copyOf(dest, 5))
         );
     }
     // </editor-fold>
@@ -2101,8 +2059,7 @@ public class StreamBufferTest {
         // assert
         assertAll(
             () -> assertThat(bytesRead, is(2)),
-            () -> assertThat(dest[0], is((byte) 10)),
-            () -> assertThat(dest[1], is((byte) 20))
+            () -> assertArrayEquals(new byte[]{10, 20}, Arrays.copyOf(dest, 2))
         );
     }
     // </editor-fold>
