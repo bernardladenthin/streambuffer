@@ -18,42 +18,34 @@
 // @formatter:on
 package net.ladenthin.streambuffer;
 
-import com.tngtech.java.junit.dataprovider.DataProvider;
-import com.tngtech.java.junit.dataprovider.DataProviderRunner;
-import com.tngtech.java.junit.dataprovider.UseDataProvider;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.io.*;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.not;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.number.OrderingComparison.greaterThan;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertThat;
-import static org.junit.Assert.assertArrayEquals;
-import org.junit.Ignore;
-import org.junit.Rule;
-import org.junit.rules.ExpectedException;
-import org.junit.runner.RunWith;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
-@RunWith(DataProviderRunner.class)
 public class StreamBufferTest {
-    
-    private final static String DATA_PROVIDER_WRITE_METHODS = "writeMethods";
 
-    @Rule
-    public ExpectedException thrown = ExpectedException.none();
-    
-    @DataProvider
-    public static Object[][] writeMethods() {
-        return new Object[][] {
-            { WriteMethod.ByteArray },
-            { WriteMethod.Int },
-            { WriteMethod.ByteArrayWithParameter },
-        };
+    static Stream<Arguments> writeMethods() {
+        return Stream.of(
+            Arguments.of(WriteMethod.ByteArray),
+            Arguments.of(WriteMethod.Int),
+            Arguments.of(WriteMethod.ByteArrayWithParameter)
+        );
     }
 
     /**
@@ -454,99 +446,98 @@ public class StreamBufferTest {
         assertThat(read, is(-1));
     }
 
-    @Test(expected = NullPointerException.class)
-    public void read_nullDestGiven_throwNullPointerException() throws IOException {
+    @Test
+    public void read_nullDestGiven_throwNullPointerException() {
         StreamBuffer sb = new StreamBuffer();
         InputStream is = sb.getInputStream();
-        is.read(null, 0, 0);
+        assertThrows(NullPointerException.class, () -> is.read(null, 0, 0));
     }
 
-    @Test(expected = IndexOutOfBoundsException.class)
-    public void read_useInvalidOffset_throwIndexOutOfBoundsException() throws IOException {
+    @Test
+    public void read_useInvalidOffset_throwIndexOutOfBoundsException() {
         StreamBuffer sb = new StreamBuffer();
         InputStream is = sb.getInputStream();
 
         byte[] dest = new byte[1];
-        is.read(dest, 3, 1);
+        assertThrows(IndexOutOfBoundsException.class, () -> is.read(dest, 3, 1));
     }
 
-    @Test(expected = IndexOutOfBoundsException.class)
-    public void read_lengthGreaterThanDestination_throwIndexOutOfBoundsException() throws IOException {
+    @Test
+    public void read_lengthGreaterThanDestination_throwIndexOutOfBoundsException() {
         StreamBuffer sb = new StreamBuffer();
         InputStream is = sb.getInputStream();
 
         byte[] dest = new byte[1];
-        is.read(dest, 0, 2);
+        assertThrows(IndexOutOfBoundsException.class, () -> is.read(dest, 0, 2));
     }
 
-    @Test(expected = IndexOutOfBoundsException.class)
-    public void read_negativeLength_throwIndexOutOfBoundsException() throws IOException {
+    @Test
+    public void read_negativeLength_throwIndexOutOfBoundsException() {
         StreamBuffer sb = new StreamBuffer();
         InputStream is = sb.getInputStream();
 
         byte[] dest = new byte[1];
-        is.read(dest, 0, -1);
+        assertThrows(IndexOutOfBoundsException.class, () -> is.read(dest, 0, -1));
     }
 
-    @Test(expected = IndexOutOfBoundsException.class)
-    public void read_negativeOffset_throwIndexOutOfBoundsException() throws IOException {
+    @Test
+    public void read_negativeOffset_throwIndexOutOfBoundsException() {
         StreamBuffer sb = new StreamBuffer();
         InputStream is = sb.getInputStream();
 
         byte[] dest = new byte[1];
-        is.read(dest, -1, 1);
-    }
-
-    @Test(expected = NullPointerException.class)
-    public void write_nullDestGiven_throwNullPointerException() throws IOException {
-        StreamBuffer sb = new StreamBuffer();
-        OutputStream os = sb.getOutputStream();
-        os.write(null, 0, 0);
+        assertThrows(IndexOutOfBoundsException.class, () -> is.read(dest, -1, 1));
     }
 
     @Test
-    public void write_useInvalidOffset_throwIndexOutOfBoundsException() throws IOException {
-        thrown.expect(IndexOutOfBoundsException.class);
-        thrown.expectMessage(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION);
+    public void write_nullDestGiven_throwNullPointerException() {
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        assertThrows(NullPointerException.class, () -> os.write(null, 0, 0));
+    }
+
+    @Test
+    public void write_useInvalidOffset_throwIndexOutOfBoundsException() {
         StreamBuffer sb = new StreamBuffer();
         OutputStream os = sb.getOutputStream();
 
         byte[] from = new byte[1];
-        os.write(from, 3, 1);
+        IndexOutOfBoundsException ex = assertThrows(IndexOutOfBoundsException.class,
+            () -> os.write(from, 3, 1));
+        assertThat(ex.getMessage(), is(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
     }
 
     @Test
-    public void write_lengthGreaterThanDestination_throwIndexOutOfBoundsException() throws IOException {
-        thrown.expect(IndexOutOfBoundsException.class);
-        thrown.expectMessage(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION);
+    public void write_lengthGreaterThanDestination_throwIndexOutOfBoundsException() {
         StreamBuffer sb = new StreamBuffer();
         OutputStream os = sb.getOutputStream();
 
         byte[] from = new byte[1];
-        os.write(from, 0, 2);
+        IndexOutOfBoundsException ex = assertThrows(IndexOutOfBoundsException.class,
+            () -> os.write(from, 0, 2));
+        assertThat(ex.getMessage(), is(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
     }
 
     @Test
-    public void write_negativeLength_throwIndexOutOfBoundsException() throws IOException {
-        thrown.expect(IndexOutOfBoundsException.class);
-        thrown.expectMessage(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION);
+    public void write_negativeLength_throwIndexOutOfBoundsException() {
         StreamBuffer sb = new StreamBuffer();
         OutputStream os = sb.getOutputStream();
 
         byte[] from = new byte[1];
-        os.write(from, 0, -1);
+        IndexOutOfBoundsException ex = assertThrows(IndexOutOfBoundsException.class,
+            () -> os.write(from, 0, -1));
+        assertThat(ex.getMessage(), is(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
     }
 
     @Test
-    public void write_negativeOffset_throwIndexOutOfBoundsException() throws IOException {
-        thrown.expect(IndexOutOfBoundsException.class);
-        thrown.expectMessage(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION);
-        
+    public void write_negativeOffset_throwIndexOutOfBoundsException() {
         StreamBuffer sb = new StreamBuffer();
         OutputStream os = sb.getOutputStream();
 
         byte[] from = new byte[1];
-        os.write(from, -1, 1);
+        IndexOutOfBoundsException ex = assertThrows(IndexOutOfBoundsException.class,
+            () -> os.write(from, -1, 1));
+        assertThat(ex.getMessage(), is(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
     }
 
     @Test
@@ -577,13 +568,15 @@ public class StreamBufferTest {
         }
     }
 
-    @Test(expected = IOException.class)
-    @UseDataProvider( DATA_PROVIDER_WRITE_METHODS )
-    public void write_closedStream_throwIOException(WriteMethod writeMethod) throws IOException {
+    @ParameterizedTest
+    @MethodSource("writeMethods")
+    public void write_closedStream_throwIOException(WriteMethod writeMethod) {
         StreamBuffer sb = new StreamBuffer();
         OutputStream os = sb.getOutputStream();
-        os.close();
-        writeAnyValue(writeMethod, os);
+        assertThrows(IOException.class, () -> {
+            os.close();
+            writeAnyValue(writeMethod, os);
+        });
     }
     
     @Test
@@ -628,8 +621,8 @@ public class StreamBufferTest {
         assertThat(is.available(), is(Integer.MAX_VALUE));
     }
     
-    @Test
-    @UseDataProvider( DATA_PROVIDER_WRITE_METHODS )
+    @ParameterizedTest
+    @MethodSource("writeMethods")
     public void blockDataAvailable_dataWrittenBefore_noWaiting(WriteMethod writeMethod) throws IOException, InterruptedException {
         final StreamBuffer sb = new StreamBuffer();
         OutputStream os = sb.getOutputStream();
@@ -699,8 +692,8 @@ public class StreamBufferTest {
         assertThat(after.tryAcquire(10, TimeUnit.SECONDS), is(false));
     }
     
-    @Test
-    @UseDataProvider( DATA_PROVIDER_WRITE_METHODS )
+    @ParameterizedTest
+    @MethodSource("writeMethods")
     public void blockDataAvailable_writeToStream_return(WriteMethod writeMethod) throws IOException, InterruptedException {
         final StreamBuffer sb = new StreamBuffer();
         OutputStream os = sb.getOutputStream();
@@ -892,7 +885,7 @@ public class StreamBufferTest {
         writer.join();
         reader.join();
 
-        assertArrayEquals("Read data should match written data", written, read);
+        assertArrayEquals(written, read, "Read data should match written data");
     }
     
     @Test
@@ -921,7 +914,7 @@ public class StreamBufferTest {
         byte[] output = new byte[10];
         sb.getInputStream().read(output);
 
-        assertArrayEquals("Trimmed buffer should preserve all byte order", input, output);
+        assertArrayEquals(input, output, "Trimmed buffer should preserve all byte order");
     }
     
     @Test
@@ -962,13 +955,14 @@ public class StreamBufferTest {
         assertThat(sb.getInputStream().read(), is(-1));
     }
 
-    @Test(expected = NullPointerException.class)
-    public void write_nullArrayWithOffset_throwsNPE() throws IOException {
+    @Test
+    public void write_nullArrayWithOffset_throwsNPE() {
         StreamBuffer sb = new StreamBuffer();
-        sb.getOutputStream().write(null, 0, 1);
+        assertThrows(NullPointerException.class, () -> sb.getOutputStream().write(null, 0, 1));
     }
-    
-    @Test(timeout = 3000)
+
+    @Test
+    @Timeout(3)
     public void read_parallelClose_noDeadlock() throws Exception {
         final StreamBuffer sb = new StreamBuffer();
         final InputStream is = sb.getInputStream();
@@ -1055,41 +1049,45 @@ public class StreamBufferTest {
         InputStream first = sb.getInputStream();
         InputStream second = sb.getInputStream();
 
-        assertSame("StreamBuffer should return the same InputStream instance", first, second);
+        assertSame(first, second, "StreamBuffer should return the same InputStream instance");
     }
     
     // <editor-fold defaultstate="collapsed" desc="correctOffsetAndLengthToRead">
-    @Test(expected = NullPointerException.class)
+    @Test
     public void correctOffsetAndLengthToRead_nullArray_throwsNullPointerException() {
         // act
-        StreamBuffer.correctOffsetAndLengthToRead(null, 0, 1);
+        assertThrows(NullPointerException.class,
+            () -> StreamBuffer.correctOffsetAndLengthToRead(null, 0, 1));
     }
 
-    @Test(expected = IndexOutOfBoundsException.class)
+    @Test
     public void correctOffsetAndLengthToRead_negativeOffset_throwsIndexOutOfBoundsException() {
         // arrange
         byte[] b = new byte[5];
 
         // act
-        StreamBuffer.correctOffsetAndLengthToRead(b, -1, 1);
+        assertThrows(IndexOutOfBoundsException.class,
+            () -> StreamBuffer.correctOffsetAndLengthToRead(b, -1, 1));
     }
 
-    @Test(expected = IndexOutOfBoundsException.class)
+    @Test
     public void correctOffsetAndLengthToRead_negativeLength_throwsIndexOutOfBoundsException() {
         // arrange
         byte[] b = new byte[5];
 
         // act
-        StreamBuffer.correctOffsetAndLengthToRead(b, 0, -1);
+        assertThrows(IndexOutOfBoundsException.class,
+            () -> StreamBuffer.correctOffsetAndLengthToRead(b, 0, -1));
     }
 
-    @Test(expected = IndexOutOfBoundsException.class)
+    @Test
     public void correctOffsetAndLengthToRead_lengthExceedsRemainingArray_throwsIndexOutOfBoundsException() {
         // arrange
         byte[] b = new byte[5];
 
         // act
-        StreamBuffer.correctOffsetAndLengthToRead(b, 3, 3);
+        assertThrows(IndexOutOfBoundsException.class,
+            () -> StreamBuffer.correctOffsetAndLengthToRead(b, 3, 3));
     }
 
     @Test
@@ -1118,54 +1116,55 @@ public class StreamBufferTest {
     // </editor-fold>
 
     // <editor-fold defaultstate="collapsed" desc="correctOffsetAndLengthToWrite">
-    @Test(expected = NullPointerException.class)
+    @Test
     public void correctOffsetAndLengthToWrite_nullArray_throwsNullPointerException() {
         // act
-        StreamBuffer.correctOffsetAndLengthToWrite(null, 0, 1);
+        assertThrows(NullPointerException.class,
+            () -> StreamBuffer.correctOffsetAndLengthToWrite(null, 0, 1));
     }
 
     @Test
     public void correctOffsetAndLengthToWrite_negativeOffset_throwsIndexOutOfBoundsException() {
         // arrange
-        thrown.expect(IndexOutOfBoundsException.class);
-        thrown.expectMessage(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION);
         byte[] b = new byte[5];
 
         // act
-        StreamBuffer.correctOffsetAndLengthToWrite(b, -1, 1);
+        IndexOutOfBoundsException ex = assertThrows(IndexOutOfBoundsException.class,
+            () -> StreamBuffer.correctOffsetAndLengthToWrite(b, -1, 1));
+        assertThat(ex.getMessage(), is(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
     }
 
     @Test
     public void correctOffsetAndLengthToWrite_negativeLength_throwsIndexOutOfBoundsException() {
         // arrange
-        thrown.expect(IndexOutOfBoundsException.class);
-        thrown.expectMessage(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION);
         byte[] b = new byte[5];
 
         // act
-        StreamBuffer.correctOffsetAndLengthToWrite(b, 0, -1);
+        IndexOutOfBoundsException ex = assertThrows(IndexOutOfBoundsException.class,
+            () -> StreamBuffer.correctOffsetAndLengthToWrite(b, 0, -1));
+        assertThat(ex.getMessage(), is(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
     }
 
     @Test
     public void correctOffsetAndLengthToWrite_offsetExceedsArrayLength_throwsIndexOutOfBoundsException() {
         // arrange
-        thrown.expect(IndexOutOfBoundsException.class);
-        thrown.expectMessage(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION);
         byte[] b = new byte[1];
 
         // act
-        StreamBuffer.correctOffsetAndLengthToWrite(b, 2, 1);
+        IndexOutOfBoundsException ex = assertThrows(IndexOutOfBoundsException.class,
+            () -> StreamBuffer.correctOffsetAndLengthToWrite(b, 2, 1));
+        assertThat(ex.getMessage(), is(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
     }
 
     @Test
     public void correctOffsetAndLengthToWrite_lengthExceedsRemainingArray_throwsIndexOutOfBoundsException() {
         // arrange
-        thrown.expect(IndexOutOfBoundsException.class);
-        thrown.expectMessage(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION);
         byte[] b = new byte[5];
 
         // act
-        StreamBuffer.correctOffsetAndLengthToWrite(b, 3, 3);
+        IndexOutOfBoundsException ex = assertThrows(IndexOutOfBoundsException.class,
+            () -> StreamBuffer.correctOffsetAndLengthToWrite(b, 3, 3));
+        assertThat(ex.getMessage(), is(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
     }
 
     @Test
@@ -1235,7 +1234,7 @@ public class StreamBufferTest {
         OutputStream second = sb.getOutputStream();
 
         // assert
-        assertSame("StreamBuffer should return the same OutputStream instance", first, second);
+        assertSame(first, second, "StreamBuffer should return the same OutputStream instance");
     }
     // </editor-fold>
 
@@ -1243,13 +1242,13 @@ public class StreamBufferTest {
     @Test
     public void write_closedStream_throwIOExceptionWithStreamClosedMessage() throws IOException {
         // arrange
-        thrown.expect(IOException.class);
-        thrown.expectMessage("Stream closed.");
         StreamBuffer sb = new StreamBuffer();
         sb.close();
 
         // act
-        sb.getOutputStream().write(new byte[]{anyValue}, 0, 1);
+        IOException ex = assertThrows(IOException.class,
+            () -> sb.getOutputStream().write(new byte[]{anyValue}, 0, 1));
+        assertThat(ex.getMessage(), is("Stream closed."));
     }
     // </editor-fold>
 
@@ -1378,7 +1377,8 @@ public class StreamBufferTest {
         assertThat(dest[2], is((byte) 3));
     }
 
-    @Test(timeout = 5000)
+    @Test
+    @Timeout(5)
     public void read_concurrentWriteCloseWithInsufficientBytes_returnsAvailableBytes() throws Exception {
         // arrange
         final StreamBuffer sb = new StreamBuffer();
@@ -1525,7 +1525,8 @@ public class StreamBufferTest {
         assertThat(dest[4], is((byte) 5));
     }
 
-    @Test(timeout = 5000)
+    @Test
+    @Timeout(5)
     public void read_concurrentMultipleWritesThenClose_returnsAvailableBytes() throws Exception {
         // arrange
         final StreamBuffer sb = new StreamBuffer();
@@ -1565,7 +1566,8 @@ public class StreamBufferTest {
     }
     // </editor-fold>
 
-    @Test(timeout = 10_000)
+    @Test
+    @Timeout(10)
     public void concurrentTrimAndWrite_noCrashOrCorruption() throws Exception {
         final StreamBuffer sb = new StreamBuffer();
         final OutputStream os = sb.getOutputStream();
@@ -1680,8 +1682,7 @@ public class StreamBufferTest {
     public void signal_addNullSignal_throwsNullPointerException() {
         final StreamBuffer sb = new StreamBuffer();
 
-        thrown.expect(NullPointerException.class);
-        sb.addSignal(null);
+        assertThrows(NullPointerException.class, () -> sb.addSignal(null));
     }
 
     @Test
@@ -1814,24 +1815,24 @@ public class StreamBufferTest {
     @Test
     public void correctOffsetAndLengthToWrite_integerOverflow_throwsIndexOutOfBoundsException() {
         // arrange
-        thrown.expect(IndexOutOfBoundsException.class);
-        thrown.expectMessage(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION);
         byte[] b = new byte[10];
 
         // act — Integer.MAX_VALUE + 1 overflows to negative
-        StreamBuffer.correctOffsetAndLengthToWrite(b, Integer.MAX_VALUE, 1);
+        IndexOutOfBoundsException ex = assertThrows(IndexOutOfBoundsException.class,
+            () -> StreamBuffer.correctOffsetAndLengthToWrite(b, Integer.MAX_VALUE, 1));
+        assertThat(ex.getMessage(), is(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
     }
     // </editor-fold>
 
     // <editor-fold defaultstate="collapsed" desc="close via InputStream">
-    @Test(expected = IOException.class)
+    @Test
     public void write_closedViaInputStream_throwsIOException() throws IOException {
         // arrange
         StreamBuffer sb = new StreamBuffer();
         sb.getInputStream().close();
 
         // act
-        sb.getOutputStream().write(anyValue);
+        assertThrows(IOException.class, () -> sb.getOutputStream().write(anyValue));
     }
 
     @Test
@@ -1933,7 +1934,8 @@ public class StreamBufferTest {
     // </editor-fold>
 
     // <editor-fold defaultstate="collapsed" desc="thread interruption during read">
-    @Test(timeout = 5000)
+    @Test
+    @Timeout(5)
     public void read_threadInterrupted_throwsIOException() throws Exception {
         // arrange
         final StreamBuffer sb = new StreamBuffer();
@@ -1962,7 +1964,8 @@ public class StreamBufferTest {
                 caught[0] instanceof IOException, is(true));
     }
 
-    @Test(timeout = 5000)
+    @Test
+    @Timeout(5)
     public void read_arrayThreadInterruptedWhileWaitingForSecondByte_throwsIOException() throws Exception {
         // arrange
         final StreamBuffer sb = new StreamBuffer();
@@ -1998,10 +2001,11 @@ public class StreamBufferTest {
     // </editor-fold>
 
     // <editor-fold defaultstate="collapsed" desc="correctOffsetAndLengthToRead empty array">
-    @Test(expected = IndexOutOfBoundsException.class)
+    @Test
     public void correctOffsetAndLengthToRead_emptyArrayWithPositiveLength_throwsIndexOutOfBoundsException() {
         // act
-        StreamBuffer.correctOffsetAndLengthToRead(new byte[0], 0, 1);
+        assertThrows(IndexOutOfBoundsException.class,
+            () -> StreamBuffer.correctOffsetAndLengthToRead(new byte[0], 0, 1));
     }
     // </editor-fold>
 
@@ -2204,29 +2208,28 @@ public class StreamBufferTest {
         return (int) Math.min(maximumAvailableBytes, (long) missingBytes);
     }
 
-    @DataProvider
-    public static Object[][] capMissingBytesInputs() {
-        return new Object[][] {
+    static Stream<Arguments> capMissingBytesInputs() {
+        return Stream.of(
             // Case A: maxAvail < missingBytes  (old if-branch fires, new Math.min picks maxAvail)
-            { 1L,                                    5                   },  // trivially small
-            { 3L,                                    5                   },  // standard small case
-            { (long) Integer.MAX_VALUE - 1,          Integer.MAX_VALUE   },  // one below INT_MAX
+            Arguments.of(1L,                                    5                   ),  // trivially small
+            Arguments.of(3L,                                    5                   ),  // standard small case
+            Arguments.of((long) Integer.MAX_VALUE - 1,          Integer.MAX_VALUE   ),  // one below INT_MAX
 
             // Case B: maxAvail == missingBytes  (boundary: old skips if, new Math.min picks either)
-            { 5L,                                    5                   },  // small equality
-            { (long) Integer.MAX_VALUE,              Integer.MAX_VALUE   },  // equality at INT_MAX
+            Arguments.of(5L,                                    5                   ),  // small equality
+            Arguments.of((long) Integer.MAX_VALUE,              Integer.MAX_VALUE   ),  // equality at INT_MAX
 
             // Case C: maxAvail > missingBytes  (old skips if, new Math.min picks missingBytes)
-            { 9L,                                    3                   },  // standard: more available than needed
-            { (long) Integer.MAX_VALUE + 1L,         Integer.MAX_VALUE   },  // maxAvail just above INT_MAX
-            { (long) Integer.MAX_VALUE + 1L,         5                   },  // maxAvail > INT_MAX, small missing
-            { 3_000_000_000L,                        100                 },  // large long, small int
-            { Long.MAX_VALUE,                        1                   },  // extreme: largest possible long
-        };
+            Arguments.of(9L,                                    3                   ),  // standard: more available than needed
+            Arguments.of((long) Integer.MAX_VALUE + 1L,         Integer.MAX_VALUE   ),  // maxAvail just above INT_MAX
+            Arguments.of((long) Integer.MAX_VALUE + 1L,         5                   ),  // maxAvail > INT_MAX, small missing
+            Arguments.of(3_000_000_000L,                        100                 ),  // large long, small int
+            Arguments.of(Long.MAX_VALUE,                        1                   )   // extreme: largest possible long
+        );
     }
 
-    @Test
-    @UseDataProvider("capMissingBytesInputs")
+    @ParameterizedTest
+    @MethodSource("capMissingBytesInputs")
     public void capMissingBytes_oldAndNewFormula_returnSameResult(
             long maximumAvailableBytes, int missingBytes) {
         int oldResult = capMissingBytesOld(maximumAvailableBytes, missingBytes);
