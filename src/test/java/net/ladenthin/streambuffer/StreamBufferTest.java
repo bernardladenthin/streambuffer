@@ -105,19 +105,15 @@ public class StreamBufferTest {
         // A buffer to read the content from the stream.
         final byte[] fromMemory = new byte[4];
 
-        // Read 2 bytes at an offset of 2 bytes.
+        // act — read 2 bytes at an offset of 2 bytes
         final int read = is.read(fromMemory, 2, 2);
 
-        // Ensure only 2 values have been read.
-        assertEquals(2, read);
-
-        // Ensure 1 value is remaining in the stream.
-        assertEquals(1, is.available());
-
-        // Ensure the initial values were placed at the correct offset.
-        // The first 2 values should be 0 (unwritten).
-        // The last 2 values should be the initial value 4.
-        assertArrayEquals(new byte[]{0, 0, anyNumber, anyNumber}, fromMemory);
+        // assert — first 2 slots unwritten (0), last 2 slots filled with anyNumber
+        assertAll(
+            () -> assertEquals(2, read, "should have read 2 values"),
+            () -> assertEquals(1, is.available(), "1 value should remain in the stream"),
+            () -> assertArrayEquals(new byte[]{0, 0, anyNumber, anyNumber}, fromMemory, "first 2 values unwritten, last 2 filled at the given offset")
+        );
     }
 
     @Test
@@ -185,14 +181,15 @@ public class StreamBufferTest {
             baosReadFromTwist.write(array);
         }
 
-        assertEquals(size, readBytes);
-
-        assertEquals(0, is.available());
-
+        final long finalReadBytes = readBytes;
         byte[] byteChain = baosReadFromTwist.toByteArray();
-        
-        assertEquals(size, byteChain.length);
-        assertArrayEquals(originalData, byteChain);
+
+        assertAll(
+            () -> assertEquals(size, finalReadBytes, "total bytes read should equal size"),
+            () -> assertEquals(0, is.available(), "stream should be empty after reading all bytes"),
+            () -> assertEquals(size, byteChain.length, "reconstructed byte chain length should match size"),
+            () -> assertArrayEquals(originalData, byteChain, "reconstructed byte chain should match original data")
+        );
     }
 
     @Test
@@ -905,18 +902,22 @@ public class StreamBufferTest {
     
     @Test
     public void read_afterTrimAndClose_returnsRemainingBytesThenEOF() throws Exception {
+        // arrange
         StreamBuffer sb = new StreamBuffer();
         sb.setMaxBufferElements(1);
-
         sb.getOutputStream().write(new byte[]{1, 2, 3});
         sb.getOutputStream().write(new byte[]{4, 5, 6});
         sb.close();
 
+        // act
         byte[] buffer = new byte[6];
         int read = sb.getInputStream().read(buffer);
 
-        assertThat("Should read all bytes", read, is(6));
-        assertThat("Should return EOF", sb.getInputStream().read(), is(-1));
+        // assert
+        assertAll(
+            () -> assertThat("Should read all bytes", read, is(6)),
+            () -> assertThat("Should return EOF", sb.getInputStream().read(), is(-1))
+        );
     }
     
     @Test
