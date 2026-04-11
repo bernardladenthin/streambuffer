@@ -25,6 +25,7 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import java.io.*;
+import java.util.Arrays;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
@@ -33,6 +34,7 @@ import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.not;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.number.OrderingComparison.greaterThan;
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -71,12 +73,11 @@ public class StreamBufferTest {
         byte[] target = new byte[12];
         is.read(target);
 
-        assertEquals((long) 0, (long) target[0]);
-        assertEquals((long) 0, (long) target[11]);
-
-        for (int i = 1; i < target.length - 1; ++i) {
-            assertEquals(anyValue, (long) target[i]);
+        byte[] expected = new byte[12];
+        for (int i = 1; i < 11; ++i) {
+            expected[i] = anyValue;
         }
+        assertArrayEquals(expected, target);
     }
 
     /**
@@ -116,10 +117,7 @@ public class StreamBufferTest {
         // Ensure the initial values were placed at the correct offset.
         // The first 2 values should be 0 (unwritten).
         // The last 2 values should be the initial value 4.
-        assertEquals(0, fromMemory[0]);
-        assertEquals(0, fromMemory[1]);
-        assertEquals(anyNumber, fromMemory[2]);
-        assertEquals(anyNumber, fromMemory[3]);
+        assertArrayEquals(new byte[]{0, 0, anyNumber, anyNumber}, fromMemory);
     }
 
     @Test
@@ -144,23 +142,11 @@ public class StreamBufferTest {
 
         assertEquals((4 + 5 + 6) - (6 + 6 + 3), is.available());
 
-        assertEquals(t0[0], 4);
-        assertEquals(t0[1], 4);
-        assertEquals(t0[2], 4);
-        assertEquals(t0[3], 4);
-        assertEquals(t0[4], 5);
-        assertEquals(t0[5], 5);
-
-        assertEquals(t1[0], 5);
-        assertEquals(t1[1], 5);
-        assertEquals(t1[2], 5);
-        assertEquals(t1[3], 6);
-        assertEquals(t1[4], 6);
-        assertEquals(t1[5], 6);
-
-        assertEquals(t2[0], 6);
-        assertEquals(t2[1], 6);
-        assertEquals(t2[2], 6);
+        assertAll(
+            () -> assertArrayEquals(new byte[]{4, 4, 4, 4, 5, 5}, t0),
+            () -> assertArrayEquals(new byte[]{5, 5, 5, 6, 6, 6}, t1),
+            () -> assertArrayEquals(new byte[]{6, 6, 6}, t2)
+        );
     }
 
     @Test
@@ -1283,8 +1269,10 @@ public class StreamBufferTest {
         int bytesRead = sb.getInputStream().read(dest);
 
         // assert
-        assertThat(bytesRead, is(3));
-        assertThat(dest, is(new byte[]{1, 2, 3}));
+        assertAll(
+            () -> assertThat(bytesRead, is(3)),
+            () -> assertThat(dest, is(new byte[]{1, 2, 3}))
+        );
     }
     // </editor-fold>
 
@@ -1304,8 +1292,10 @@ public class StreamBufferTest {
         // assert — remaining 5 bytes should be 2,3,4,5,6 in order
         byte[] dest = new byte[5];
         int bytesRead = sb.getInputStream().read(dest);
-        assertThat(bytesRead, is(5));
-        assertThat(dest, is(new byte[]{2, 3, 4, 5, 6}));
+        assertAll(
+            () -> assertThat(bytesRead, is(5)),
+            () -> assertThat(dest, is(new byte[]{2, 3, 4, 5, 6}))
+        );
     }
     // </editor-fold>
 
@@ -1355,8 +1345,10 @@ public class StreamBufferTest {
         int bytesRead = sb.getInputStream().read(dest, 0, 2);
 
         // assert
-        assertThat(bytesRead, is(1));
-        assertThat(dest[0], is(anyValue));
+        assertAll(
+            () -> assertThat(bytesRead, is(1)),
+            () -> assertThat(dest[0], is(anyValue))
+        );
     }
 
     @Test
@@ -1371,10 +1363,10 @@ public class StreamBufferTest {
         int bytesRead = sb.getInputStream().read(dest, 0, 5);
 
         // assert
-        assertThat(bytesRead, is(3));
-        assertThat(dest[0], is((byte) 1));
-        assertThat(dest[1], is((byte) 2));
-        assertThat(dest[2], is((byte) 3));
+        assertAll(
+            () -> assertThat(bytesRead, is(3)),
+            () -> assertArrayEquals(new byte[]{1, 2, 3}, Arrays.copyOf(dest, 3))
+        );
     }
 
     @Test
@@ -1408,10 +1400,10 @@ public class StreamBufferTest {
         reader.join();
 
         // assert
-        assertThat(bytesReadHolder[0], is(3));
-        assertThat(dest[0], is((byte) 1));
-        assertThat(dest[1], is((byte) 2));
-        assertThat(dest[2], is((byte) 3));
+        assertAll(
+            () -> assertThat(bytesReadHolder[0], is(3)),
+            () -> assertArrayEquals(new byte[]{1, 2, 3}, Arrays.copyOf(dest, 3))
+        );
     }
 
     @Test
@@ -1430,10 +1422,10 @@ public class StreamBufferTest {
         int bytesRead = is.read(dest, 0, 10);
 
         // assert
-        assertThat(bytesRead, is(3));
-        assertThat(dest[0], is((byte) 1));
-        assertThat(dest[1], is((byte) 2));
-        assertThat(dest[2], is((byte) 3));
+        assertAll(
+            () -> assertThat(bytesRead, is(3)),
+            () -> assertArrayEquals(new byte[]{1, 2, 3}, Arrays.copyOf(dest, 3))
+        );
     }
 
     @Test
@@ -1452,10 +1444,10 @@ public class StreamBufferTest {
         int bytesRead = is.read(dest, 0, 8);
 
         // assert
-        assertThat(bytesRead, is(3));
-        assertThat(dest[0], is((byte) 3));
-        assertThat(dest[1], is((byte) 4));
-        assertThat(dest[2], is((byte) 5));
+        assertAll(
+            () -> assertThat(bytesRead, is(3)),
+            () -> assertArrayEquals(new byte[]{3, 4, 5}, Arrays.copyOf(dest, 3))
+        );
     }
 
     @Test
@@ -1470,11 +1462,10 @@ public class StreamBufferTest {
         int bytesRead = sb.getInputStream().read(dest, 0, 5);
 
         // assert
-        assertThat(bytesRead, is(4));
-        assertThat(dest[0], is((byte) 10));
-        assertThat(dest[1], is((byte) 20));
-        assertThat(dest[2], is((byte) 30));
-        assertThat(dest[3], is((byte) 40));
+        assertAll(
+            () -> assertThat(bytesRead, is(4)),
+            () -> assertArrayEquals(new byte[]{10, 20, 30, 40}, Arrays.copyOf(dest, 4))
+        );
     }
 
     @Test
@@ -1488,15 +1479,11 @@ public class StreamBufferTest {
         byte[] dest = new byte[10];
         int bytesRead = sb.getInputStream().read(dest, 3, 7);
 
-        // assert
-        assertThat(bytesRead, is(3));
-        assertThat(dest[0], is((byte) 0));
-        assertThat(dest[1], is((byte) 0));
-        assertThat(dest[2], is((byte) 0));
-        assertThat(dest[3], is((byte) 1));
-        assertThat(dest[4], is((byte) 2));
-        assertThat(dest[5], is((byte) 3));
-        assertThat(dest[6], is((byte) 0));
+        // assert — leading/trailing zeros prove the offset was respected
+        assertAll(
+            () -> assertThat(bytesRead, is(3)),
+            () -> assertArrayEquals(new byte[]{0, 0, 0, 1, 2, 3, 0, 0, 0, 0}, dest)
+        );
     }
 
     @Test
@@ -1517,12 +1504,10 @@ public class StreamBufferTest {
         int bytesRead = is.read(dest, 0, 10);
 
         // assert
-        assertThat(bytesRead, is(5));
-        assertThat(dest[0], is((byte) 1));
-        assertThat(dest[1], is((byte) 2));
-        assertThat(dest[2], is((byte) 3));
-        assertThat(dest[3], is((byte) 4));
-        assertThat(dest[4], is((byte) 5));
+        assertAll(
+            () -> assertThat(bytesRead, is(5)),
+            () -> assertArrayEquals(new byte[]{1, 2, 3, 4, 5}, Arrays.copyOf(dest, 5))
+        );
     }
 
     @Test
@@ -1557,12 +1542,10 @@ public class StreamBufferTest {
         reader.join();
 
         // assert
-        assertThat(bytesReadHolder[0], is(5));
-        assertThat(dest[0], is((byte) 1));
-        assertThat(dest[1], is((byte) 2));
-        assertThat(dest[2], is((byte) 3));
-        assertThat(dest[3], is((byte) 4));
-        assertThat(dest[4], is((byte) 5));
+        assertAll(
+            () -> assertThat(bytesReadHolder[0], is(5)),
+            () -> assertArrayEquals(new byte[]{1, 2, 3, 4, 5}, Arrays.copyOf(dest, 5))
+        );
     }
     // </editor-fold>
 
@@ -1651,9 +1634,11 @@ public class StreamBufferTest {
         sb.addSignal(signal3);
         sb.getOutputStream().write(anyValue);
 
-        assertThat(signal1.tryAcquire(5, TimeUnit.SECONDS), is(true));
-        assertThat(signal2.tryAcquire(5, TimeUnit.SECONDS), is(true));
-        assertThat(signal3.tryAcquire(5, TimeUnit.SECONDS), is(true));
+        assertAll(
+            () -> assertThat(signal1.tryAcquire(5, TimeUnit.SECONDS), is(true)),
+            () -> assertThat(signal2.tryAcquire(5, TimeUnit.SECONDS), is(true)),
+            () -> assertThat(signal3.tryAcquire(5, TimeUnit.SECONDS), is(true))
+        );
     }
 
     @Test
@@ -1665,8 +1650,10 @@ public class StreamBufferTest {
         boolean removed = sb.removeSignal(signal);
         sb.getOutputStream().write(anyValue);
 
-        assertThat(removed, is(true));
-        assertThat(signal.tryAcquire(1, TimeUnit.SECONDS), is(false));
+        assertAll(
+            () -> assertThat(removed, is(true)),
+            () -> assertThat(signal.tryAcquire(1, TimeUnit.SECONDS), is(false))
+        );
     }
 
     @Test
@@ -1713,9 +1700,11 @@ public class StreamBufferTest {
         sb.getOutputStream().write(anyValue);
 
         // observer should wake up in its own thread
-        assertThat(observerDone.tryAcquire(5, TimeUnit.SECONDS), is(true));
-        assertThat(observerThreadHolder[0], is(observer));
-        assertThat(observerThreadHolder[0], is(not(Thread.currentThread())));
+        assertAll(
+            () -> assertThat(observerDone.tryAcquire(5, TimeUnit.SECONDS), is(true)),
+            () -> assertThat(observerThreadHolder[0], is(observer)),
+            () -> assertThat(observerThreadHolder[0], is(not(Thread.currentThread())))
+        );
 
         observer.join(5000);
     }
@@ -1877,8 +1866,10 @@ public class StreamBufferTest {
         // assert — all bytes preserved in correct order after trim
         byte[] dest = new byte[6];
         int bytesRead = sb.getInputStream().read(dest);
-        assertThat(bytesRead, is(6));
-        assertThat(dest, is(new byte[]{1, 2, 3, 4, 5, 6}));
+        assertAll(
+            () -> assertThat(bytesRead, is(6)),
+            () -> assertThat(dest, is(new byte[]{1, 2, 3, 4, 5, 6}))
+        );
     }
     // </editor-fold>
 
@@ -1912,8 +1903,10 @@ public class StreamBufferTest {
         int bytesRead = sb.getInputStream().read(dest, 0, 1);
 
         // assert
-        assertThat(bytesRead, is(1));
-        assertThat(dest[0], is(anyValue));
+        assertAll(
+            () -> assertThat(bytesRead, is(1)),
+            () -> assertThat(dest[0], is(anyValue))
+        );
     }
     // </editor-fold>
 
@@ -2064,9 +2057,10 @@ public class StreamBufferTest {
         int bytesRead = sb.getInputStream().read(dest, 0, 4);
 
         // assert
-        assertThat(bytesRead, is(2));
-        assertThat(dest[0], is((byte) 10));
-        assertThat(dest[1], is((byte) 20));
+        assertAll(
+            () -> assertThat(bytesRead, is(2)),
+            () -> assertArrayEquals(new byte[]{10, 20}, Arrays.copyOf(dest, 2))
+        );
     }
     // </editor-fold>
 
@@ -2084,12 +2078,14 @@ public class StreamBufferTest {
         int bytesRead = sb.getInputStream().read(dest, 0, 3);
 
         // assert
-        assertThat(bytesRead, is(3));
-        assertThat(dest, is(new byte[]{1, 2, 3}));
         // ConditionalsBoundary mutant (>= → >): routes to else-branch → entry NOT removed → bufferSize = 1
-        assertThat(sb.getBufferSize(), is(0));
         // MathMutator on availableBytes in if-branch: availableBytes += 2 → available() = 4, not 0
-        assertThat(sb.getInputStream().available(), is(0));
+        assertAll(
+            () -> assertThat(bytesRead, is(3)),
+            () -> assertThat(dest, is(new byte[]{1, 2, 3})),
+            () -> assertThat(sb.getBufferSize(), is(0)),
+            () -> assertThat(sb.getInputStream().available(), is(0))
+        );
     }
     // </editor-fold>
 
@@ -2171,8 +2167,10 @@ public class StreamBufferTest {
         int bytesRead = sb.getInputStream().read(dest, 0, 5);
 
         // assert
-        assertThat(bytesRead, is(5));
-        assertThat(dest, is(new byte[]{1, 2, 3, 4, 5}));
+        assertAll(
+            () -> assertThat(bytesRead, is(5)),
+            () -> assertThat(dest, is(new byte[]{1, 2, 3, 4, 5}))
+        );
     }
     // </editor-fold>
 
@@ -2188,8 +2186,10 @@ public class StreamBufferTest {
         int bytesRead = sb.getInputStream().read(dest, 0, 5);
 
         // assert — 5 bytes must remain; mutant does availableBytes += 4 instead of -= 4 → reports 13
-        assertThat(bytesRead, is(5));
-        assertThat(sb.getInputStream().available(), is(5));
+        assertAll(
+            () -> assertThat(bytesRead, is(5)),
+            () -> assertThat(sb.getInputStream().available(), is(5))
+        );
     }
     // </editor-fold>
 
