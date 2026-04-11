@@ -55,8 +55,10 @@ public class StreamBufferTest {
      */
     private final static byte anyValue = 42;
 
+    // <editor-fold defaultstate="collapsed" desc="roundtrip">
     @Test
     public void testSimpleRoundTrip() throws IOException {
+        // arrange
         StreamBuffer sb = new StreamBuffer();
         InputStream is = sb.getInputStream();
         OutputStream os = sb.getOutputStream();
@@ -70,9 +72,11 @@ public class StreamBufferTest {
 
         assertEquals(12, is.available());
 
+        // act
         byte[] target = new byte[12];
         is.read(target);
 
+        // assert
         byte[] expected = new byte[12];
         for (int i = 1; i < 11; ++i) {
             expected[i] = anyValue;
@@ -82,10 +86,11 @@ public class StreamBufferTest {
 
     /**
      * This test verifies that the input stream's read method places bytes at a specific offset.
-     * @throws IOException 
+     * @throws IOException
      */
     @Test
     public void testSafeWriteSimpleOffset() throws IOException {
+        // arrange
         final StreamBuffer sb = new StreamBuffer();
         InputStream is = sb.getInputStream();
         OutputStream os = sb.getOutputStream();
@@ -118,6 +123,7 @@ public class StreamBufferTest {
 
     @Test
     public void testMultipleArray() throws IOException {
+        // arrange
         StreamBuffer sb = new StreamBuffer();
         InputStream is = sb.getInputStream();
         OutputStream os = sb.getOutputStream();
@@ -129,6 +135,7 @@ public class StreamBufferTest {
         os.write(b6);
         assertEquals(4 + 5 + 6, is.available());
 
+        // act
         byte[] t0 = new byte[6];
         byte[] t1 = new byte[6];
         byte[] t2 = new byte[3];
@@ -136,6 +143,7 @@ public class StreamBufferTest {
         is.read(t1);
         is.read(t2);
 
+        // assert
         assertEquals((4 + 5 + 6) - (6 + 6 + 3), is.available());
 
         assertAll(
@@ -147,6 +155,7 @@ public class StreamBufferTest {
 
     @Test
     public void testLoopedRoundtrip() throws IOException {
+        // arrange
         final int size = 32640; //255/2*(255+1)
         ByteArrayOutputStream baosOriginalData = new ByteArrayOutputStream(size);
         StreamBuffer sb = new StreamBuffer();
@@ -170,6 +179,7 @@ public class StreamBufferTest {
 
         assertEquals(size, is.available());
 
+        // act
         ByteArrayOutputStream baosReadFromTwist = new ByteArrayOutputStream(size);
         long readBytes = 0;
         for (int i = 255; i >= 1; --i) {
@@ -184,6 +194,7 @@ public class StreamBufferTest {
         final long finalReadBytes = readBytes;
         byte[] byteChain = baosReadFromTwist.toByteArray();
 
+        // assert
         assertAll(
             () -> assertEquals(size, finalReadBytes, "total bytes read should equal size"),
             () -> assertEquals(0, is.available(), "stream should be empty after reading all bytes"),
@@ -194,6 +205,7 @@ public class StreamBufferTest {
 
     @Test
     public void testDataInputOutput() throws IOException {
+        // arrange
         StreamBuffer sb = new StreamBuffer();
         InputStream is = sb.getInputStream();
         OutputStream os = sb.getOutputStream();
@@ -203,54 +215,127 @@ public class StreamBufferTest {
         final String testString = "test string";
 
         dout.writeUTF(testString);
+
+        // act
         String readUTF = din.readUTF();
+
+        // assert
         assertEquals(testString, readUTF);
     }
+    // </editor-fold>
 
+    // <editor-fold defaultstate="collapsed" desc="constructor">
     @Test
     public void constructor_noArguments_NoExceptionThrown() {
+        // arrange
+        // act
         new StreamBuffer();
+        // assert — no exception thrown
     }
+    // </editor-fold>
 
+    // <editor-fold defaultstate="collapsed" desc="getMaxBufferElements">
     @Test
     public void getMaxBufferElements_initialValue_GreaterZero() {
+        // arrange
         StreamBuffer sb = new StreamBuffer();
+        // act
+        // assert
         assertThat(sb.getMaxBufferElements(), is(greaterThan(0)));
     }
 
     @Test
     public void getMaxBufferElements_afterSet_Zero() {
+        // arrange
         StreamBuffer sb = new StreamBuffer();
+
+        // act
         sb.setMaxBufferElements(0);
+
+        // assert
         assertThat(sb.getMaxBufferElements(), is(0));
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="setMaxBufferElements">
+    @Test
+    public void setMaxBufferElements_writeNegativeValue_equalsToGetter() throws Exception {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+
+        // act
+        sb.setMaxBufferElements(-1);
+
+        // assert
+        assertThat(-1, is(sb.getMaxBufferElements()));
     }
 
     @Test
-    public void isSafeWrite_initialValue_false() {
+    public void setMaxBufferElements_useNegativeValue_trimNotCalled() throws Exception {
+        // arrange
         StreamBuffer sb = new StreamBuffer();
+
+        // act
+        sb.setMaxBufferElements(-1);
+
+        // Write fewer than four elements to the stream.
+        // The trim method should not be called.
+        sb.getOutputStream().write(anyValue);
+        sb.getOutputStream().write(anyValue);
+        sb.getOutputStream().write(anyValue);
+
+        // assert
+        assertThat(sb.getBufferSize(), is(3));
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="isSafeWrite">
+    @Test
+    public void isSafeWrite_initialValue_false() {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        // act
+        // assert
         assertThat(sb.isSafeWrite(), is(false));
     }
 
     @Test
     public void isSafeWrite_afterSet_true() {
+        // arrange
         StreamBuffer sb = new StreamBuffer();
+
+        // act
         sb.setSafeWrite(true);
+
+        // assert
         assertThat(sb.isSafeWrite(), is(true));
     }
+    // </editor-fold>
 
+    // <editor-fold defaultstate="collapsed" desc="isClosed">
     @Test
     public void isClosed_afterConstruct_false() {
+        // arrange
         StreamBuffer sb = new StreamBuffer();
+        // act
+        // assert
         assertThat(sb.isClosed(), is(false));
     }
 
     @Test
     public void isClosed_afterClose_true() throws IOException {
+        // arrange
         StreamBuffer sb = new StreamBuffer();
+
+        // act
         sb.close();
+
+        // assert
         assertThat(sb.isClosed(), is(true));
     }
+    // </editor-fold>
 
+    // <editor-fold defaultstate="collapsed" desc="read_changeBufferFromOutside">
     /**
      * This test verifies that when the option safeWrite is disabled, the buffer
      * can be modified externally (the write method does not create clones of the
@@ -260,6 +345,7 @@ public class StreamBufferTest {
      */
     @Test
     public void read_changeBufferFromOutside_hasChanged() throws IOException {
+        // arrange
         StreamBuffer sb = new StreamBuffer();
         // Disable the safe write option.
         sb.setSafeWrite(false);
@@ -271,9 +357,12 @@ public class StreamBufferTest {
         notImmutable[0]++;
         // A new byte array for the read method.
         byte[] fromStream = new byte[1];
+
+        // act
         // Read the content out of the stream.
         sb.getInputStream().read(fromStream);
 
+        // assert
         assertThat(fromStream[0], is(not((byte) anyValue)));
     }
 
@@ -286,6 +375,7 @@ public class StreamBufferTest {
      */
     @Test
     public void read_changeBufferFromOutside_notChanged() throws IOException {
+        // arrange
         StreamBuffer sb = new StreamBuffer();
         // Disable the safe write option.
         sb.setSafeWrite(true);
@@ -297,93 +387,89 @@ public class StreamBufferTest {
         notImmutable[0]++;
         // A new byte array for the read method.
         byte[] fromStream = new byte[1];
+
+        // act
         // Read the content out of the stream.
         sb.getInputStream().read(fromStream);
 
+        // assert
         assertThat(fromStream[0], is((byte) anyValue));
     }
+    // </editor-fold>
 
+    // <editor-fold defaultstate="collapsed" desc="getBufferSize">
     @Test
     public void getBufferSize_reachMaxBufferElements_trimCalled() throws Exception {
+        // arrange
         StreamBuffer sb = new StreamBuffer();
-
         sb.setMaxBufferElements(1);
 
+        // act
         // Write more than one element to the stream to force a trim call.
         sb.getOutputStream().write(anyValue);
         sb.getOutputStream().write(anyValue);
         sb.getOutputStream().write(anyValue);
-        int result = sb.getBufferSize();
 
+        // assert
+        int result = sb.getBufferSize();
         assertThat(result, is(1));
     }
 
     @Test
     public void getBufferSize_reachMaxBufferElements_trimBufferRightValues() throws Exception {
+        // arrange
         StreamBuffer sb = new StreamBuffer();
         InputStream is = sb.getInputStream();
-
         sb.setMaxBufferElements(2);
 
+        // act
         // Write more than one element to the stream to force a trim call.
         sb.getOutputStream().write(1);
         sb.getOutputStream().write(new byte[]{2, 3});
         sb.getOutputStream().write(new byte[]{4, 5, 6});
 
+        // assert
         byte[] read = new byte[is.available()];
         is.read(read);
-
         assertThat(read, is(new byte[]{1, 2, 3, 4, 5, 6}));
     }
 
     @Test
     public void getBufferSize_writeSomeElements_trimNotCalled() throws Exception {
+        // arrange
         StreamBuffer sb = new StreamBuffer();
-
         sb.setMaxBufferElements(4);
 
+        // act
         // Write fewer than four elements to the stream.
         // The trim method should not be called.
         sb.getOutputStream().write(anyValue);
         sb.getOutputStream().write(anyValue);
         sb.getOutputStream().write(anyValue);
 
+        // assert
         assertThat(sb.getBufferSize(), is(3));
     }
+    // </editor-fold>
 
-    @Test
-    public void setMaxBufferElements_writeNegativeValue_equalsToGetter() throws Exception {
-        StreamBuffer sb = new StreamBuffer();
-        sb.setMaxBufferElements(-1);
-        assertThat(-1, is(sb.getMaxBufferElements()));
-    }
-
-    @Test
-    public void setMaxBufferElements_useNegativeValue_trimNotCalled() throws Exception {
-        StreamBuffer sb = new StreamBuffer();
-
-        sb.setMaxBufferElements(-1);
-
-        // Write fewer than four elements to the stream.
-        // The trim method should not be called.
-        sb.getOutputStream().write(anyValue);
-        sb.getOutputStream().write(anyValue);
-        sb.getOutputStream().write(anyValue);
-
-        assertThat(sb.getBufferSize(), is(3));
-    }
-
+    // <editor-fold defaultstate="collapsed" desc="read">
     @Test
     public void read_closedStreamBeforeWrite_ReturnMinusOne() throws Exception {
+        // arrange
         StreamBuffer sb = new StreamBuffer();
         InputStream is = sb.getInputStream();
         OutputStream os = sb.getOutputStream();
+
+        // act
         os.close();
+
+        // assert
         assertThat(is.read(), is(-1));
     }
 
     @Test
     public void read_closedStreamAfterWrite_ReturnMinusOne() throws Exception {
+        // arrange
         StreamBuffer sb = new StreamBuffer();
         InputStream is = sb.getInputStream();
         OutputStream os = sb.getOutputStream();
@@ -391,356 +477,117 @@ public class StreamBufferTest {
         os.close();
         // Read the previously written value from the buffer.
         is.read();
+
+        // act
+        // assert
         assertThat(is.read(), is(-1));
     }
 
     @Test
     public void read_readWithOffset_useOffset() throws IOException {
+        // arrange
         StreamBuffer sb = new StreamBuffer();
         InputStream is = sb.getInputStream();
         OutputStream os = sb.getOutputStream();
         os.write(new byte[]{anyValue, anyValue, anyValue});
 
+        // act
         byte[] dest = new byte[9];
         is.read(dest, 3, 3);
+
+        // assert
         assertThat(dest, is(new byte[]{0, 0, 0, anyValue, anyValue, anyValue, 0, 0, 0}));
     }
 
     @Test
     public void read_zeroLength_unmodifiedByteArray() throws IOException {
+        // arrange
         StreamBuffer sb = new StreamBuffer();
         InputStream is = sb.getInputStream();
         OutputStream os = sb.getOutputStream();
         os.write(new byte[]{anyValue, anyValue, anyValue});
 
+        // act
         byte[] dest = new byte[1];
         is.read(dest, 0, 0);
+
+        // assert
         assertThat(dest, is(new byte[]{0}));
     }
 
     @Test
     public void read_nothingWritten_returnMinusOne() throws IOException {
+        // arrange
         StreamBuffer sb = new StreamBuffer();
         InputStream is = sb.getInputStream();
         OutputStream os = sb.getOutputStream();
         os.close();
+
+        // act
         byte[] dest = new byte[1];
         int read = is.read(dest, 0, 1);
+
+        // assert
         assertThat(read, is(-1));
     }
 
     @Test
     public void read_nullDestGiven_throwNullPointerException() {
+        // arrange
         StreamBuffer sb = new StreamBuffer();
         InputStream is = sb.getInputStream();
+        // act
+        // assert
         assertThrows(NullPointerException.class, () -> is.read(null, 0, 0));
     }
 
     @Test
     public void read_useInvalidOffset_throwIndexOutOfBoundsException() {
+        // arrange
         StreamBuffer sb = new StreamBuffer();
         InputStream is = sb.getInputStream();
-
         byte[] dest = new byte[1];
+        // act
+        // assert
         assertThrows(IndexOutOfBoundsException.class, () -> is.read(dest, 3, 1));
     }
 
     @Test
     public void read_lengthGreaterThanDestination_throwIndexOutOfBoundsException() {
+        // arrange
         StreamBuffer sb = new StreamBuffer();
         InputStream is = sb.getInputStream();
-
         byte[] dest = new byte[1];
+        // act
+        // assert
         assertThrows(IndexOutOfBoundsException.class, () -> is.read(dest, 0, 2));
     }
 
     @Test
     public void read_negativeLength_throwIndexOutOfBoundsException() {
+        // arrange
         StreamBuffer sb = new StreamBuffer();
         InputStream is = sb.getInputStream();
-
         byte[] dest = new byte[1];
+        // act
+        // assert
         assertThrows(IndexOutOfBoundsException.class, () -> is.read(dest, 0, -1));
     }
 
     @Test
     public void read_negativeOffset_throwIndexOutOfBoundsException() {
+        // arrange
         StreamBuffer sb = new StreamBuffer();
         InputStream is = sb.getInputStream();
-
         byte[] dest = new byte[1];
+        // act
+        // assert
         assertThrows(IndexOutOfBoundsException.class, () -> is.read(dest, -1, 1));
     }
 
     @Test
-    public void write_nullDestGiven_throwNullPointerException() {
-        StreamBuffer sb = new StreamBuffer();
-        OutputStream os = sb.getOutputStream();
-        assertThrows(NullPointerException.class, () -> os.write(null, 0, 0));
-    }
-
-    @Test
-    public void write_useInvalidOffset_throwIndexOutOfBoundsException() {
-        StreamBuffer sb = new StreamBuffer();
-        OutputStream os = sb.getOutputStream();
-
-        byte[] from = new byte[1];
-        IndexOutOfBoundsException ex = assertThrows(IndexOutOfBoundsException.class,
-            () -> os.write(from, 3, 1));
-        assertThat(ex.getMessage(), is(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
-    }
-
-    @Test
-    public void write_lengthGreaterThanDestination_throwIndexOutOfBoundsException() {
-        StreamBuffer sb = new StreamBuffer();
-        OutputStream os = sb.getOutputStream();
-
-        byte[] from = new byte[1];
-        IndexOutOfBoundsException ex = assertThrows(IndexOutOfBoundsException.class,
-            () -> os.write(from, 0, 2));
-        assertThat(ex.getMessage(), is(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
-    }
-
-    @Test
-    public void write_negativeLength_throwIndexOutOfBoundsException() {
-        StreamBuffer sb = new StreamBuffer();
-        OutputStream os = sb.getOutputStream();
-
-        byte[] from = new byte[1];
-        IndexOutOfBoundsException ex = assertThrows(IndexOutOfBoundsException.class,
-            () -> os.write(from, 0, -1));
-        assertThat(ex.getMessage(), is(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
-    }
-
-    @Test
-    public void write_negativeOffset_throwIndexOutOfBoundsException() {
-        StreamBuffer sb = new StreamBuffer();
-        OutputStream os = sb.getOutputStream();
-
-        byte[] from = new byte[1];
-        IndexOutOfBoundsException ex = assertThrows(IndexOutOfBoundsException.class,
-            () -> os.write(from, -1, 1));
-        assertThat(ex.getMessage(), is(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
-    }
-
-    @Test
-    public void write_withValidOffset_partialWriteSuccessful() throws IOException {
-        StreamBuffer sb = new StreamBuffer();
-        InputStream is = sb.getInputStream();
-        OutputStream os = sb.getOutputStream();
-
-        byte[] from = new byte[]{anyValue, anyValue};
-        os.write(from, 1, 1);
-
-        assertThat(is.available(), is(1));
-    }
-    
-    private void writeAnyValue(WriteMethod writeMethod, OutputStream os) throws IOException {
-        switch(writeMethod) {
-            case ByteArray:
-                os.write(new byte[]{anyValue});
-                break;
-            case Int:
-                os.write(anyValue);
-                break;
-            case ByteArrayWithParameter:
-                os.write(new byte[]{anyValue, 0, 1});
-                break;
-            default:
-                throw new IllegalArgumentException("Unknown WriteMethod: " + writeMethod);
-        }
-    }
-
-    @ParameterizedTest
-    @MethodSource("writeMethods")
-    public void write_closedStream_throwIOException(WriteMethod writeMethod) {
-        StreamBuffer sb = new StreamBuffer();
-        OutputStream os = sb.getOutputStream();
-        assertThrows(IOException.class, () -> {
-            os.close();
-            writeAnyValue(writeMethod, os);
-        });
-    }
-    
-    @Test
-    public void write_invalidOffset_notWritten() throws IOException {
-        StreamBuffer sb = new StreamBuffer();
-        OutputStream os = sb.getOutputStream();
-        int invalidOffset = 1;
-        os.write(new byte[]{anyValue}, invalidOffset, 0);
-        
-        assertThat( sb.getBufferSize(), is(0));
-    }
-    
-    @Test
-    public void write_invalidLength_notWritten() throws IOException {
-        StreamBuffer sb = new StreamBuffer();
-        OutputStream os = sb.getOutputStream();
-        int invalidLength = 0;
-        os.write(new byte[]{anyValue}, 0, invalidLength);
-        
-        assertThat( sb.getBufferSize(), is(0));
-    }
-
-    @Test
-    public void available_bufferContainsMoreBytesAsMaxInt_returnMaxValue() throws IOException {
-        StreamBuffer sb = new StreamBuffer();
-        InputStream is = sb.getInputStream();
-        OutputStream os = sb.getOutputStream();
-        
-        int chunks = 16;
-
-         // It's not a good idea to allocate a very big array at once.
-         // Allocate a small piece instead and write this again and again to the stream.
-         // I have chosen 16 pieces and written this value 17 times
-         // to trigger an overflow in the available() method.
-        byte[] chunk = new byte[Integer.MAX_VALUE / chunks];
-        for (int i = 0; i < chunks; i++) {
-            os.write(chunk);
-        }
-        // write one additional
-        os.write(chunk);
-
-        assertThat(is.available(), is(Integer.MAX_VALUE));
-    }
-    
-    @ParameterizedTest
-    @MethodSource("writeMethods")
-    public void blockDataAvailable_dataWrittenBefore_noWaiting(WriteMethod writeMethod) throws IOException, InterruptedException {
-        final StreamBuffer sb = new StreamBuffer();
-        OutputStream os = sb.getOutputStream();
-        final Semaphore after = new Semaphore(0);
-        Thread consumer = new Thread(new Runnable() {
-
-            public void run() {
-                try {
-                    sb.blockDataAvailable();
-                    after.release();
-                } catch (InterruptedException ex) {
-                    throw new RuntimeException(ex);
-                }
-            }
-        });
-        writeAnyValue(writeMethod, os);
-        consumer.start();
-        sleepOneSecond();
-
-        assertThat(after.tryAcquire(10, TimeUnit.SECONDS), is(true));
-    }
-    
-    @Test
-    public void blockDataAvailable_dataWrittenBeforeAndReadAfterwards_waiting() throws IOException, InterruptedException {
-        final StreamBuffer sb = new StreamBuffer();
-        InputStream is = sb.getInputStream();
-        OutputStream os = sb.getOutputStream();
-        final Semaphore after = new Semaphore(0);
-        Thread consumer = new Thread(new Runnable() {
-
-            public void run() {
-                try {
-                    sb.blockDataAvailable();
-                    after.release();
-                } catch (InterruptedException ex) {
-                    throw new RuntimeException(ex);
-                }
-            }
-        });
-        writeAnyValue(WriteMethod.Int, os);
-        is.read();
-        consumer.start();
-        sleepOneSecond();
-
-        assertThat(after.tryAcquire(10, TimeUnit.SECONDS), is(false));
-    }
-    
-    @Test
-    public void blockDataAvailable_streamUntouched_waiting() throws IOException, InterruptedException {
-        final StreamBuffer sb = new StreamBuffer();
-        final Semaphore after = new Semaphore(0);
-        Thread consumer = new Thread(new Runnable() {
-
-            public void run() {
-                try {
-                    sb.blockDataAvailable();
-                    after.release();
-                } catch (InterruptedException ex) {
-                    throw new RuntimeException(ex);
-                }
-            }
-        });
-        consumer.start();
-        sleepOneSecond();
-        after.drainPermits();
-
-        assertThat(after.tryAcquire(10, TimeUnit.SECONDS), is(false));
-    }
-    
-    @ParameterizedTest
-    @MethodSource("writeMethods")
-    public void blockDataAvailable_writeToStream_return(WriteMethod writeMethod) throws IOException, InterruptedException {
-        final StreamBuffer sb = new StreamBuffer();
-        OutputStream os = sb.getOutputStream();
-        final Semaphore after = new Semaphore(0);
-        Thread consumer = new Thread(new Runnable() {
-
-            public void run() {
-                try {
-                    sb.blockDataAvailable();
-                    after.release();
-                } catch (InterruptedException ex) {
-                    throw new RuntimeException(ex);
-                }
-            }
-        });
-        consumer.start();
-        sleepOneSecond();
-        after.drainPermits();
-        writeAnyValue(writeMethod, os);
-
-        assertThat(after.tryAcquire(10, TimeUnit.SECONDS), is(true));
-    }
-    
-    /**
-     * Sleep one second to allow the method to block the thread correctly.
-     */
-    private void sleepOneSecond() throws InterruptedException {
-        Thread.sleep(1000);
-    }
-    
-    @Test
-    public void blockDataAvailable_closeStream_return() throws IOException, InterruptedException {
-        final StreamBuffer sb = new StreamBuffer();
-        OutputStream os = sb.getOutputStream();
-        final Semaphore after = new Semaphore(0);
-        Thread consumer = new Thread(new Runnable() {
-
-            public void run() {
-                try {
-                    sb.blockDataAvailable();
-                    after.release();
-                } catch (InterruptedException ex) {
-                    throw new RuntimeException(ex);
-                }
-            }
-        });
-        consumer.start();
-        sleepOneSecond();
-        after.drainPermits();
-        os.close();
-
-        assertThat(after.tryAcquire(10, TimeUnit.SECONDS), is(true));
-    }
-    
-    @Test
-    public void blockDataAvailable_streamAlreadyClosed_return() throws IOException, InterruptedException {
-        final StreamBuffer sb = new StreamBuffer();
-
-        sb.close();
-        sb.blockDataAvailable();
-    }
-
-    @Test
     public void read_closeStream_returnsWrittenBytes() throws IOException, InterruptedException {
+        // arrange
         final StreamBuffer sb = new StreamBuffer();
         final InputStream is = sb.getInputStream();
         final OutputStream os = sb.getOutputStream();
@@ -762,35 +609,450 @@ public class StreamBufferTest {
                 }
             }
         });
+
+        // act
         consumer.start();
         byte[] dest = new byte[3];
         int read = is.read(dest);
 
+        // assert
         assertThat(read, is(1));
     }
 
     @Test
-    public void mark_useBufferedInputStream_resetPosition() throws IOException, InterruptedException {
+    public void read_afterImmediateClose_returnsEOF() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        sb.close();
+        // act
+        // assert
+        assertThat(sb.getInputStream().read(), is(-1));
+    }
+
+    @Test
+    @Timeout(3)
+    public void read_parallelClose_noDeadlock() throws Exception {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+        final InputStream is = sb.getInputStream();
+
+        Thread reader = new Thread(() -> {
+            try {
+                is.read(); // Should block initially, then unblock on close
+            } catch (IOException e) {
+                // Expected when stream is closed
+            }
+        });
+
+        // act
+        reader.start();
+        Thread.sleep(500); // Let the read() call block
+        sb.close();        // Should unblock the reader
+        reader.join();     // Ensure thread completes
+
+        // assert — no deadlock, no exception
+    }
+
+    @Test
+    public void read_afterTrimAndClose_returnsRemainingBytesThenEOF() throws Exception {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        sb.setMaxBufferElements(1);
+        sb.getOutputStream().write(new byte[]{1, 2, 3});
+        sb.getOutputStream().write(new byte[]{4, 5, 6});
+        sb.close();
+
+        // act
+        byte[] buffer = new byte[6];
+        int read = sb.getInputStream().read(buffer);
+
+        // assert
+        assertAll(
+            () -> assertThat("Should read all bytes", read, is(6)),
+            () -> assertThat("Should return EOF", sb.getInputStream().read(), is(-1))
+        );
+    }
+
+    @Test
+    public void alternatingReadWrite_smallChunks_correctOrder() throws Exception {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        InputStream is = sb.getInputStream();
+
+        // act
+        for (int i = 0; i < 100; i++) {
+            os.write(i);
+            assertThat(is.read(), is(i));
+        }
+
+        // assert
+        assertThat("Stream should be empty after balanced writes/reads", is.available(), is(0));
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="write">
+    @Test
+    public void write_nullDestGiven_throwNullPointerException() {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        // act
+        // assert
+        assertThrows(NullPointerException.class, () -> os.write(null, 0, 0));
+    }
+
+    @Test
+    public void write_useInvalidOffset_throwIndexOutOfBoundsException() {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        byte[] from = new byte[1];
+
+        // act
+        IndexOutOfBoundsException ex = assertThrows(IndexOutOfBoundsException.class,
+            () -> os.write(from, 3, 1));
+
+        // assert
+        assertThat(ex.getMessage(), is(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
+    }
+
+    @Test
+    public void write_lengthGreaterThanDestination_throwIndexOutOfBoundsException() {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        byte[] from = new byte[1];
+
+        // act
+        IndexOutOfBoundsException ex = assertThrows(IndexOutOfBoundsException.class,
+            () -> os.write(from, 0, 2));
+
+        // assert
+        assertThat(ex.getMessage(), is(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
+    }
+
+    @Test
+    public void write_negativeLength_throwIndexOutOfBoundsException() {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        byte[] from = new byte[1];
+
+        // act
+        IndexOutOfBoundsException ex = assertThrows(IndexOutOfBoundsException.class,
+            () -> os.write(from, 0, -1));
+
+        // assert
+        assertThat(ex.getMessage(), is(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
+    }
+
+    @Test
+    public void write_negativeOffset_throwIndexOutOfBoundsException() {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        byte[] from = new byte[1];
+
+        // act
+        IndexOutOfBoundsException ex = assertThrows(IndexOutOfBoundsException.class,
+            () -> os.write(from, -1, 1));
+
+        // assert
+        assertThat(ex.getMessage(), is(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
+    }
+
+    @Test
+    public void write_withValidOffset_partialWriteSuccessful() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
+        byte[] from = new byte[]{anyValue, anyValue};
+
+        // act
+        os.write(from, 1, 1);
+
+        // assert
+        assertThat(is.available(), is(1));
+    }
+
+    private void writeAnyValue(WriteMethod writeMethod, OutputStream os) throws IOException {
+        switch(writeMethod) {
+            case ByteArray:
+                os.write(new byte[]{anyValue});
+                break;
+            case Int:
+                os.write(anyValue);
+                break;
+            case ByteArrayWithParameter:
+                os.write(new byte[]{anyValue, 0, 1});
+                break;
+            default:
+                throw new IllegalArgumentException("Unknown WriteMethod: " + writeMethod);
+        }
+    }
+
+    @ParameterizedTest
+    @MethodSource("writeMethods")
+    public void write_closedStream_throwIOException(WriteMethod writeMethod) {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        // act
+        // assert
+        assertThrows(IOException.class, () -> {
+            os.close();
+            writeAnyValue(writeMethod, os);
+        });
+    }
+
+    @Test
+    public void write_invalidOffset_notWritten() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        int invalidOffset = 1;
+
+        // act
+        os.write(new byte[]{anyValue}, invalidOffset, 0);
+
+        // assert
+        assertThat(sb.getBufferSize(), is(0));
+    }
+
+    @Test
+    public void write_invalidLength_notWritten() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        int invalidLength = 0;
+
+        // act
+        os.write(new byte[]{anyValue}, 0, invalidLength);
+
+        // assert
+        assertThat(sb.getBufferSize(), is(0));
+    }
+
+    @Test
+    public void write_nullArrayWithOffset_throwsNPE() {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        // act
+        // assert
+        assertThrows(NullPointerException.class, () -> sb.getOutputStream().write(null, 0, 1));
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="available">
+    @Test
+    public void available_bufferContainsMoreBytesAsMaxInt_returnMaxValue() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
+
+        int chunks = 16;
+
+         // It's not a good idea to allocate a very big array at once.
+         // Allocate a small piece instead and write this again and again to the stream.
+         // I have chosen 16 pieces and written this value 17 times
+         // to trigger an overflow in the available() method.
+        byte[] chunk = new byte[Integer.MAX_VALUE / chunks];
+
+        // act
+        for (int i = 0; i < chunks; i++) {
+            os.write(chunk);
+        }
+        // write one additional
+        os.write(chunk);
+
+        // assert
+        assertThat(is.available(), is(Integer.MAX_VALUE));
+    }
+
+    @Test
+    public void available_afterMultipleWrites_correctCount() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        InputStream is = sb.getInputStream();
+
+        // act
+        // Write 5 chunks, each of 2 bytes
+        for (int i = 0; i < 5; i++) {
+            os.write(new byte[]{1, 2});
+        }
+
+        // assert
+        assertThat("available() should reflect the correct byte count", is.available(), is(10));
+    }
+    // </editor-fold>
+    
+    /**
+     * Sleep one second to allow the method to block the thread correctly.
+     */
+    private void sleepOneSecond() throws InterruptedException {
+        Thread.sleep(1000);
+    }
+
+    // <editor-fold defaultstate="collapsed" desc="blockDataAvailable">
+    @ParameterizedTest
+    @MethodSource("writeMethods")
+    public void blockDataAvailable_dataWrittenBefore_noWaiting(WriteMethod writeMethod) throws IOException, InterruptedException {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        final Semaphore after = new Semaphore(0);
+        Thread consumer = new Thread(new Runnable() {
+
+            public void run() {
+                try {
+                    sb.blockDataAvailable();
+                    after.release();
+                } catch (InterruptedException ex) {
+                    throw new RuntimeException(ex);
+                }
+            }
+        });
+        writeAnyValue(writeMethod, os);
+
+        // act
+        consumer.start();
+        sleepOneSecond();
+
+        // assert
+        assertThat(after.tryAcquire(10, TimeUnit.SECONDS), is(true));
+    }
+
+    @Test
+    public void blockDataAvailable_dataWrittenBeforeAndReadAfterwards_waiting() throws IOException, InterruptedException {
+        // arrange
         final StreamBuffer sb = new StreamBuffer();
         InputStream is = sb.getInputStream();
         OutputStream os = sb.getOutputStream();
-        
-        int size = 3;
-        BufferedInputStream bis = new BufferedInputStream(is, size);
-        for (int i = 0; i < size; i++) {
-            os.write(anyValue);
-        }
-        bis.mark(1);
-        bis.read();
-        bis.reset();
-        
-        int result = bis.available();
-        
-        assertThat(result, is(size));
+        final Semaphore after = new Semaphore(0);
+        Thread consumer = new Thread(new Runnable() {
+
+            public void run() {
+                try {
+                    sb.blockDataAvailable();
+                    after.release();
+                } catch (InterruptedException ex) {
+                    throw new RuntimeException(ex);
+                }
+            }
+        });
+        writeAnyValue(WriteMethod.Int, os);
+        is.read();
+
+        // act
+        consumer.start();
+        sleepOneSecond();
+
+        // assert
+        assertThat(after.tryAcquire(10, TimeUnit.SECONDS), is(false));
     }
-    
+
+    @Test
+    public void blockDataAvailable_streamUntouched_waiting() throws IOException, InterruptedException {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+        final Semaphore after = new Semaphore(0);
+        Thread consumer = new Thread(new Runnable() {
+
+            public void run() {
+                try {
+                    sb.blockDataAvailable();
+                    after.release();
+                } catch (InterruptedException ex) {
+                    throw new RuntimeException(ex);
+                }
+            }
+        });
+
+        // act
+        consumer.start();
+        sleepOneSecond();
+        after.drainPermits();
+
+        // assert
+        assertThat(after.tryAcquire(10, TimeUnit.SECONDS), is(false));
+    }
+
+    @ParameterizedTest
+    @MethodSource("writeMethods")
+    public void blockDataAvailable_writeToStream_return(WriteMethod writeMethod) throws IOException, InterruptedException {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        final Semaphore after = new Semaphore(0);
+        Thread consumer = new Thread(new Runnable() {
+
+            public void run() {
+                try {
+                    sb.blockDataAvailable();
+                    after.release();
+                } catch (InterruptedException ex) {
+                    throw new RuntimeException(ex);
+                }
+            }
+        });
+
+        // act
+        consumer.start();
+        sleepOneSecond();
+        after.drainPermits();
+        writeAnyValue(writeMethod, os);
+
+        // assert
+        assertThat(after.tryAcquire(10, TimeUnit.SECONDS), is(true));
+    }
+
+    @Test
+    public void blockDataAvailable_closeStream_return() throws IOException, InterruptedException {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        final Semaphore after = new Semaphore(0);
+        Thread consumer = new Thread(new Runnable() {
+
+            public void run() {
+                try {
+                    sb.blockDataAvailable();
+                    after.release();
+                } catch (InterruptedException ex) {
+                    throw new RuntimeException(ex);
+                }
+            }
+        });
+
+        // act
+        consumer.start();
+        sleepOneSecond();
+        after.drainPermits();
+        os.close();
+
+        // assert
+        assertThat(after.tryAcquire(10, TimeUnit.SECONDS), is(true));
+    }
+
+    @Test
+    public void blockDataAvailable_streamAlreadyClosed_return() throws IOException, InterruptedException {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+
+        // act
+        sb.close();
+        sb.blockDataAvailable();
+
+        // assert — no exception thrown
+    }
+
     @Test
     public void blockDataAvailable_dataAlreadyAvailable_onlyOneWakeup() throws Exception {
+        // arrange
         final StreamBuffer sb = new StreamBuffer();
         OutputStream os = sb.getOutputStream();
 
@@ -820,6 +1082,7 @@ public class StreamBufferTest {
             }
         });
 
+        // act
         consumer1.start();
         consumer2.start();
         ready.acquire(2); // wait for both threads to be ready
@@ -827,11 +1090,136 @@ public class StreamBufferTest {
         Thread.sleep(100); // give it some time
         int acquired = done.drainPermits(); // number of threads that actually returned
 
+        // assert
         assertThat("Only one thread should proceed due to single permit", acquired, is(1));
     }
-    
+
+    @Test
+    public void blockDataAvailable_multipleWritesBeforeCall_doesNotBlock() throws Exception {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        os.write(anyValue);
+        os.write(anyValue);
+
+        // act
+        // Should not block since data is already written
+        sb.blockDataAvailable();
+
+        // assert — does not block
+    }
+
+    @Test
+    public void blockDataAvailable_afterBytesConsumed_blocksAgain() throws Exception {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        InputStream is = sb.getInputStream();
+
+        os.write(anyValue);
+        is.read(); // consumes byte, availableBytes now 0
+
+        final Semaphore signal = new Semaphore(0);
+        Thread thread = new Thread(() -> {
+            try {
+                sb.blockDataAvailable();
+                signal.release();
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+        });
+
+        // act
+        thread.start();
+
+        Thread.sleep(500); // give thread time to block
+
+        // assert
+        assertThat("Thread should block since no new data was written", signal.tryAcquire(), is(false));
+
+        os.write(anyValue);
+        assertThat("Thread should wake up after new data", signal.tryAcquire(2, TimeUnit.SECONDS), is(true));
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="mark">
+    @Test
+    public void mark_useBufferedInputStream_resetPosition() throws IOException, InterruptedException {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
+
+        int size = 3;
+        BufferedInputStream bis = new BufferedInputStream(is, size);
+        for (int i = 0; i < size; i++) {
+            os.write(anyValue);
+        }
+
+        // act
+        bis.mark(1);
+        bis.read();
+        bis.reset();
+
+        // assert
+        int result = bis.available();
+        assertThat(result, is(size));
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="trim">
+    @Test
+    public void trim_preservesAllBytesInCorrectOrder() throws Exception {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        sb.setMaxBufferElements(2);
+
+        byte[] input = new byte[10];
+        for (int i = 0; i < 10; i++) input[i] = (byte) i;
+        for (int i = 0; i < 10; i++) {
+            sb.getOutputStream().write(new byte[]{input[i]});
+        }
+
+        // act
+        byte[] output = new byte[10];
+        sb.getInputStream().read(output);
+
+        // assert
+        assertArrayEquals(input, output, "Trimmed buffer should preserve all byte order");
+    }
+
+    @Test
+    public void trim_emptyBuffer_noExceptionThrown() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        sb.setMaxBufferElements(1);
+
+        // act
+        // nothing written yet, but trim should not fail
+        sb.getOutputStream().write(new byte[0]);
+
+        // assert — no exception thrown
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="close">
+    @Test
+    public void close_multipleCalls_noExceptionThrown() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+
+        // act
+        sb.close();
+        sb.close(); // Should not throw
+
+        // assert — no exception thrown
+    }
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="concurrentReadWrite">
     @Test
     public void concurrentReadWrite_stressTest_noCrashOrInconsistency() throws Exception {
+        // arrange
         final StreamBuffer sb = new StreamBuffer();
         final OutputStream os = sb.getOutputStream();
         final InputStream is = sb.getInputStream();
@@ -863,186 +1251,44 @@ public class StreamBufferTest {
             }
         });
 
+        // act
         writer.start();
         reader.start();
         writer.join();
         reader.join();
 
+        // assert
         assertArrayEquals(written, read, "Read data should match written data");
     }
-    
-    @Test
-    public void blockDataAvailable_multipleWritesBeforeCall_doesNotBlock() throws Exception {
-        final StreamBuffer sb = new StreamBuffer();
-        OutputStream os = sb.getOutputStream();
+    // </editor-fold>
 
-        os.write(anyValue);
-        os.write(anyValue);
-
-        // Should not block since data is already written
-        sb.blockDataAvailable();
-    }
-    
-    @Test
-    public void trim_preservesAllBytesInCorrectOrder() throws Exception {
-        StreamBuffer sb = new StreamBuffer();
-        sb.setMaxBufferElements(2);
-
-        byte[] input = new byte[10];
-        for (int i = 0; i < 10; i++) input[i] = (byte) i;
-        for (int i = 0; i < 10; i++) {
-            sb.getOutputStream().write(new byte[]{input[i]});
-        }
-
-        byte[] output = new byte[10];
-        sb.getInputStream().read(output);
-
-        assertArrayEquals(input, output, "Trimmed buffer should preserve all byte order");
-    }
-    
-    @Test
-    public void read_afterTrimAndClose_returnsRemainingBytesThenEOF() throws Exception {
-        // arrange
-        StreamBuffer sb = new StreamBuffer();
-        sb.setMaxBufferElements(1);
-        sb.getOutputStream().write(new byte[]{1, 2, 3});
-        sb.getOutputStream().write(new byte[]{4, 5, 6});
-        sb.close();
-
-        // act
-        byte[] buffer = new byte[6];
-        int read = sb.getInputStream().read(buffer);
-
-        // assert
-        assertAll(
-            () -> assertThat("Should read all bytes", read, is(6)),
-            () -> assertThat("Should return EOF", sb.getInputStream().read(), is(-1))
-        );
-    }
-    
-    @Test
-    public void close_multipleCalls_noExceptionThrown() throws IOException {
-        StreamBuffer sb = new StreamBuffer();
-        sb.close();
-        sb.close(); // Should not throw
-    }
-    
-    @Test
-    public void trim_emptyBuffer_noExceptionThrown() throws IOException {
-        StreamBuffer sb = new StreamBuffer();
-        sb.setMaxBufferElements(1);
-        // nothing written yet, but trim should not fail
-        sb.getOutputStream().write(new byte[0]);
-    }
-    
-    @Test
-    public void read_afterImmediateClose_returnsEOF() throws IOException {
-        StreamBuffer sb = new StreamBuffer();
-        sb.close();
-        assertThat(sb.getInputStream().read(), is(-1));
-    }
-
-    @Test
-    public void write_nullArrayWithOffset_throwsNPE() {
-        StreamBuffer sb = new StreamBuffer();
-        assertThrows(NullPointerException.class, () -> sb.getOutputStream().write(null, 0, 1));
-    }
-
-    @Test
-    @Timeout(3)
-    public void read_parallelClose_noDeadlock() throws Exception {
-        final StreamBuffer sb = new StreamBuffer();
-        final InputStream is = sb.getInputStream();
-
-        Thread reader = new Thread(() -> {
-            try {
-                is.read(); // Should block initially, then unblock on close
-            } catch (IOException e) {
-                // Expected when stream is closed
-            }
-        });
-
-        reader.start();
-        Thread.sleep(500); // Let the read() call block
-        sb.close();        // Should unblock the reader
-        reader.join();     // Ensure thread completes
-    }
-    
-    @Test
-    public void available_afterMultipleWrites_correctCount() throws IOException {
-        StreamBuffer sb = new StreamBuffer();
-        OutputStream os = sb.getOutputStream();
-        InputStream is = sb.getInputStream();
-
-        // Write 5 chunks, each of 2 bytes
-        for (int i = 0; i < 5; i++) {
-            os.write(new byte[]{1, 2});
-        }
-
-        assertThat("available() should reflect the correct byte count", is.available(), is(10));
-    }
-    
-    @Test
-    public void alternatingReadWrite_smallChunks_correctOrder() throws Exception {
-        StreamBuffer sb = new StreamBuffer();
-        OutputStream os = sb.getOutputStream();
-        InputStream is = sb.getInputStream();
-
-        for (int i = 0; i < 100; i++) {
-            os.write(i);
-            assertThat(is.read(), is(i));
-        }
-
-        assertThat("Stream should be empty after balanced writes/reads", is.available(), is(0));
-    }
-    
-    @Test
-    public void blockDataAvailable_afterBytesConsumed_blocksAgain() throws Exception {
-        final StreamBuffer sb = new StreamBuffer();
-        OutputStream os = sb.getOutputStream();
-        InputStream is = sb.getInputStream();
-
-        os.write(anyValue);
-        is.read(); // consumes byte, availableBytes now 0
-
-        final Semaphore signal = new Semaphore(0);
-        Thread thread = new Thread(() -> {
-            try {
-                sb.blockDataAvailable();
-                signal.release();
-            } catch (InterruptedException e) {
-                throw new RuntimeException(e);
-            }
-        });
-        thread.start();
-
-        Thread.sleep(500); // give thread time to block
-        assertThat("Thread should block since no new data was written", signal.tryAcquire(), is(false));
-
-        os.write(anyValue);
-        assertThat("Thread should wake up after new data", signal.tryAcquire(2, TimeUnit.SECONDS), is(true));
-    }
-    
+    // <editor-fold defaultstate="collapsed" desc="getInputStream">
     /**
      * This test documents that multiple calls to getInputStream()
      * return the same shared InputStream instance.
-     * 
-     * Note: StreamBuffer is designed to support a single consumer. 
+     *
+     * Note: StreamBuffer is designed to support a single consumer.
      * Repeated calls return the same instance; independent parallel reads are not supported.
      */
     @Test
     public void multipleInputStream_returnsSameInstance_eachCall() {
+        // arrange
         StreamBuffer sb = new StreamBuffer();
         InputStream first = sb.getInputStream();
         InputStream second = sb.getInputStream();
 
+        // act
+        // assert
         assertSame(first, second, "StreamBuffer should return the same InputStream instance");
     }
+    // </editor-fold>
     
     // <editor-fold defaultstate="collapsed" desc="correctOffsetAndLengthToRead">
     @Test
     public void correctOffsetAndLengthToRead_nullArray_throwsNullPointerException() {
+        // arrange
         // act
+        // assert — exception thrown is the assertion
         assertThrows(NullPointerException.class,
             () -> StreamBuffer.correctOffsetAndLengthToRead(null, 0, 1));
     }
@@ -1055,6 +1301,7 @@ public class StreamBufferTest {
         // act
         assertThrows(IndexOutOfBoundsException.class,
             () -> StreamBuffer.correctOffsetAndLengthToRead(b, -1, 1));
+        // assert — exception thrown is the assertion
     }
 
     @Test
@@ -1065,6 +1312,7 @@ public class StreamBufferTest {
         // act
         assertThrows(IndexOutOfBoundsException.class,
             () -> StreamBuffer.correctOffsetAndLengthToRead(b, 0, -1));
+        // assert — exception thrown is the assertion
     }
 
     @Test
@@ -1075,6 +1323,7 @@ public class StreamBufferTest {
         // act
         assertThrows(IndexOutOfBoundsException.class,
             () -> StreamBuffer.correctOffsetAndLengthToRead(b, 3, 3));
+        // assert — exception thrown is the assertion
     }
 
     @Test
@@ -1105,7 +1354,9 @@ public class StreamBufferTest {
     // <editor-fold defaultstate="collapsed" desc="correctOffsetAndLengthToWrite">
     @Test
     public void correctOffsetAndLengthToWrite_nullArray_throwsNullPointerException() {
+        // arrange
         // act
+        // assert — exception thrown is the assertion
         assertThrows(NullPointerException.class,
             () -> StreamBuffer.correctOffsetAndLengthToWrite(null, 0, 1));
     }
@@ -1118,6 +1369,7 @@ public class StreamBufferTest {
         // act
         IndexOutOfBoundsException ex = assertThrows(IndexOutOfBoundsException.class,
             () -> StreamBuffer.correctOffsetAndLengthToWrite(b, -1, 1));
+        // assert
         assertThat(ex.getMessage(), is(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
     }
 
@@ -1129,6 +1381,7 @@ public class StreamBufferTest {
         // act
         IndexOutOfBoundsException ex = assertThrows(IndexOutOfBoundsException.class,
             () -> StreamBuffer.correctOffsetAndLengthToWrite(b, 0, -1));
+        // assert
         assertThat(ex.getMessage(), is(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
     }
 
@@ -1140,6 +1393,7 @@ public class StreamBufferTest {
         // act
         IndexOutOfBoundsException ex = assertThrows(IndexOutOfBoundsException.class,
             () -> StreamBuffer.correctOffsetAndLengthToWrite(b, 2, 1));
+        // assert
         assertThat(ex.getMessage(), is(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
     }
 
@@ -1151,6 +1405,7 @@ public class StreamBufferTest {
         // act
         IndexOutOfBoundsException ex = assertThrows(IndexOutOfBoundsException.class,
             () -> StreamBuffer.correctOffsetAndLengthToWrite(b, 3, 3));
+        // assert
         assertThat(ex.getMessage(), is(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
     }
 
@@ -1550,9 +1805,11 @@ public class StreamBufferTest {
     }
     // </editor-fold>
 
+    // <editor-fold defaultstate="collapsed" desc="concurrent trim and write">
     @Test
     @Timeout(10)
     public void concurrentTrimAndWrite_noCrashOrCorruption() throws Exception {
+        // arrange
         final StreamBuffer sb = new StreamBuffer();
         final OutputStream os = sb.getOutputStream();
         final InputStream is = sb.getInputStream();
@@ -1590,6 +1847,7 @@ public class StreamBufferTest {
             }
         });
 
+        // act
         writer.start();
         trimmer.start();
         reader.start();
@@ -1598,43 +1856,55 @@ public class StreamBufferTest {
         os.close(); // gracefully signal end of writing
         trimmer.join();
         reader.join();
+
+        // assert — no crash or data corruption
     }
+    // </editor-fold>
 
     // <editor-fold defaultstate="collapsed" desc="signal/slot">
     @Test
     public void signal_addSignalAndWrite_signalReleased() throws IOException, InterruptedException {
+        // arrange
         final StreamBuffer sb = new StreamBuffer();
         final Semaphore signal = new Semaphore(0);
-
         sb.addSignal(signal);
+
+        // act
         sb.getOutputStream().write(anyValue);
 
+        // assert
         assertThat(signal.tryAcquire(5, TimeUnit.SECONDS), is(true));
     }
 
     @Test
     public void signal_addSignalAndClose_signalReleased() throws IOException, InterruptedException {
+        // arrange
         final StreamBuffer sb = new StreamBuffer();
         final Semaphore signal = new Semaphore(0);
-
         sb.addSignal(signal);
+
+        // act
         sb.close();
 
+        // assert
         assertThat(signal.tryAcquire(5, TimeUnit.SECONDS), is(true));
     }
 
     @Test
     public void signal_multipleSignals_allReleased() throws IOException, InterruptedException {
+        // arrange
         final StreamBuffer sb = new StreamBuffer();
         final Semaphore signal1 = new Semaphore(0);
         final Semaphore signal2 = new Semaphore(0);
         final Semaphore signal3 = new Semaphore(0);
-
         sb.addSignal(signal1);
         sb.addSignal(signal2);
         sb.addSignal(signal3);
+
+        // act
         sb.getOutputStream().write(anyValue);
 
+        // assert
         assertAll(
             () -> assertThat(signal1.tryAcquire(5, TimeUnit.SECONDS), is(true)),
             () -> assertThat(signal2.tryAcquire(5, TimeUnit.SECONDS), is(true)),
@@ -1644,13 +1914,16 @@ public class StreamBufferTest {
 
     @Test
     public void signal_removeSignal_notReleased() throws IOException, InterruptedException {
+        // arrange
         final StreamBuffer sb = new StreamBuffer();
         final Semaphore signal = new Semaphore(0);
-
         sb.addSignal(signal);
+
+        // act
         boolean removed = sb.removeSignal(signal);
         sb.getOutputStream().write(anyValue);
 
+        // assert
         assertAll(
             () -> assertThat(removed, is(true)),
             () -> assertThat(signal.tryAcquire(1, TimeUnit.SECONDS), is(false))
@@ -1659,27 +1932,34 @@ public class StreamBufferTest {
 
     @Test
     public void signal_removeNonExistentSignal_returnsFalse() {
+        // arrange
         final StreamBuffer sb = new StreamBuffer();
         final Semaphore signal = new Semaphore(0);
 
+        // act
         boolean removed = sb.removeSignal(signal);
+
+        // assert
         assertThat(removed, is(false));
     }
 
     @Test
     public void signal_addNullSignal_throwsNullPointerException() {
+        // arrange
         final StreamBuffer sb = new StreamBuffer();
 
+        // act
+        // assert
         assertThrows(NullPointerException.class, () -> sb.addSignal(null));
     }
 
     @Test
     public void signal_threadBarrier_observerWakesInOwnThread() throws IOException, InterruptedException {
+        // arrange
         final StreamBuffer sb = new StreamBuffer();
         final Semaphore signal = new Semaphore(0);
         final Semaphore observerDone = new Semaphore(0);
         final Thread[] observerThreadHolder = new Thread[1];
-
         sb.addSignal(signal);
 
         // observer runs in its own thread, blocked on the signal
@@ -1697,9 +1977,11 @@ public class StreamBufferTest {
         });
         observer.start();
 
+        // act
         // writer writes from the main thread
         sb.getOutputStream().write(anyValue);
 
+        // assert
         // observer should wake up in its own thread
         assertAll(
             () -> assertThat(observerDone.tryAcquire(5, TimeUnit.SECONDS), is(true)),
@@ -1712,23 +1994,29 @@ public class StreamBufferTest {
 
     @Test
     public void signal_closeViaOutputStream_signalReleased() throws IOException, InterruptedException {
+        // arrange
         final StreamBuffer sb = new StreamBuffer();
         final Semaphore signal = new Semaphore(0);
-
         sb.addSignal(signal);
+
+        // act
         sb.getOutputStream().close();
 
+        // assert
         assertThat(signal.tryAcquire(5, TimeUnit.SECONDS), is(true));
     }
 
     @Test
     public void signal_closeViaInputStream_signalReleased() throws IOException, InterruptedException {
+        // arrange
         final StreamBuffer sb = new StreamBuffer();
         final Semaphore signal = new Semaphore(0);
-
         sb.addSignal(signal);
+
+        // act
         sb.getInputStream().close();
 
+        // assert
         assertThat(signal.tryAcquire(5, TimeUnit.SECONDS), is(true));
     }
 
@@ -1997,7 +2285,9 @@ public class StreamBufferTest {
     // <editor-fold defaultstate="collapsed" desc="correctOffsetAndLengthToRead empty array">
     @Test
     public void correctOffsetAndLengthToRead_emptyArrayWithPositiveLength_throwsIndexOutOfBoundsException() {
+        // arrange
         // act
+        // assert — exception thrown is the assertion
         assertThrows(IndexOutOfBoundsException.class,
             () -> StreamBuffer.correctOffsetAndLengthToRead(new byte[0], 0, 1));
     }
@@ -2006,6 +2296,7 @@ public class StreamBufferTest {
     // <editor-fold defaultstate="collapsed" desc="correctOffsetAndLengthToWrite empty array">
     @Test
     public void correctOffsetAndLengthToWrite_emptyArrayZeroLength_returnsFalse() {
+        // arrange
         // act
         boolean result = StreamBuffer.correctOffsetAndLengthToWrite(new byte[0], 0, 0);
 
@@ -2110,19 +2401,28 @@ public class StreamBufferTest {
     // <editor-fold defaultstate="collapsed" desc="clampToMaxInt direct">
     @Test
     public void clampToMaxInt_valueAboveMaxInt_returnsMaxInt() {
+        // arrange
         StreamBuffer sb = new StreamBuffer();
+        // act
+        // assert
         assertThat(sb.clampToMaxInt((long) Integer.MAX_VALUE + 1), is(Integer.MAX_VALUE));
     }
 
     @Test
     public void clampToMaxInt_valueEqualToMaxInt_returnsMaxInt() {
+        // arrange
         StreamBuffer sb = new StreamBuffer();
+        // act
+        // assert
         assertThat(sb.clampToMaxInt((long) Integer.MAX_VALUE), is(Integer.MAX_VALUE));
     }
 
     @Test
     public void clampToMaxInt_smallValue_returnsValue() {
+        // arrange
         StreamBuffer sb = new StreamBuffer();
+        // act
+        // assert
         assertThat(sb.clampToMaxInt(42L), is(42));
     }
     // </editor-fold>
@@ -2132,7 +2432,10 @@ public class StreamBufferTest {
     public void decrementAvailableBytesBudget_subtractsDecrement() {
         // original: current - decrement = 9 - 4 = 5
         // mutant:   current + decrement = 9 + 4 = 13  → mutation killed
+        // arrange
         StreamBuffer sb = new StreamBuffer();
+        // act
+        // assert
         assertThat(sb.decrementAvailableBytesBudget(9L, 4L), is(5L));
     }
     // </editor-fold>
@@ -2233,8 +2536,11 @@ public class StreamBufferTest {
     @MethodSource("capMissingBytesInputs")
     public void capMissingBytes_oldAndNewFormula_returnSameResult(
             long maximumAvailableBytes, int missingBytes) {
+        // arrange
+        // act
         int oldResult = capMissingBytesOld(maximumAvailableBytes, missingBytes);
         int newResult = capMissingBytesNew(maximumAvailableBytes, missingBytes);
+        // assert
         assertThat(newResult, is(oldResult));
     }
 
