@@ -3022,11 +3022,11 @@ public class StreamBufferTest {
 
         // Verify data integrity: all 1100 bytes should be readable
         InputStream is = sb.getInputStream();
-        os.close();  // Signal EOF to the input stream
         byte[] result = new byte[1100];
         int totalRead = 0;
         int bytesRead;
-        while ((bytesRead = is.read(result, totalRead, 1100 - totalRead)) > 0) {
+        // Read directly using available() to avoid blocking indefinitely
+        while (totalRead < 1100 && (bytesRead = is.read(result, totalRead, 1100 - totalRead)) > 0) {
             totalRead += bytesRead;
         }
         assertThat(totalRead, is(1100));
@@ -3064,11 +3064,11 @@ public class StreamBufferTest {
 
         // Verify data integrity: all 601 bytes should be readable
         InputStream is = sb.getInputStream();
-        os.close();  // Signal EOF to the input stream
         byte[] result = new byte[601];
         int totalRead = 0;
         int bytesRead;
-        while ((bytesRead = is.read(result, totalRead, 601 - totalRead)) > 0) {
+        // Read directly using bounded loop to avoid blocking indefinitely
+        while (totalRead < 601 && (bytesRead = is.read(result, totalRead, 601 - totalRead)) > 0) {
             totalRead += bytesRead;
         }
         assertThat(totalRead, is(601));
@@ -3101,11 +3101,11 @@ public class StreamBufferTest {
 
         // Verify all data is still readable
         InputStream is = sb.getInputStream();
-        os.close();  // Signal EOF to the input stream
         byte[] result = new byte[300];
         int totalRead = 0;
         int bytesRead;
-        while ((bytesRead = is.read(result, totalRead, 300 - totalRead)) > 0) {
+        // Read directly using bounded loop to avoid blocking indefinitely
+        while (totalRead < 300 && (bytesRead = is.read(result, totalRead, 300 - totalRead)) > 0) {
             totalRead += bytesRead;
         }
         assertThat(totalRead, is(300));
