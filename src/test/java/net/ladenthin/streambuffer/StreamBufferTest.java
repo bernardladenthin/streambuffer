@@ -2970,17 +2970,17 @@ public class StreamBufferTest {
         InputStream is = sb.getInputStream();
         byte[] original = new byte[10_000];
         Arrays.fill(original, anyValue);
-        sb.setMaxAllocationSize(100);  // small chunks
-        sb.setMaxBufferElements(50);   // low threshold → second trim may trigger
+        sb.setMaxAllocationSize(100);  // chunks of 100 bytes → 10,000 / 100 = 100 chunks
+        sb.setMaxBufferElements(50);   // low threshold → triggers recursive trim
 
         // act
-        os.write(original);  // triggers first trim, chunks into ~100 pieces
+        os.write(original);  // triggers first trim, chunks into 100 pieces
         Thread.sleep(200);   // allow any recursive trim to complete
 
-        // assert — buffer should be consolidated after recursive trims
+        // assert — after trim with maxAllocationSize=100, should have 100 elements (10KB / 100 bytes per chunk)
         assertAll(
             () -> assertThat(sb.isTrimRunning(), is(false)),  // trim should be complete
-            () -> assertThat(sb.getBufferElementCount(), greaterThan(0))  // should have at least one element
+            () -> assertThat(sb.getBufferElementCount(), is(100))  // 10,000 bytes / 100 bytes per chunk = 100 elements
         );
 
         // all 10KB should be readable
