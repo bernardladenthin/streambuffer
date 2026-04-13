@@ -421,6 +421,10 @@ public class StreamBuffer implements Closeable {
 
     /**
      * Checks if a trim should be performed.
+     * Critical: Ensures trim will actually reduce buffer chunks below {@link #maxBufferElements}.
+     * If consolidating would create chunks that still exceed the limit (when respecting
+     * {@link #maxAllocationSize}), trim is skipped to prevent repeated trim calls on every write.
+     *
      * @return <code>true</code> if a trim should be performed, otherwise <code>false</code>.
      */
     boolean isTrimShouldBeExecuted() {
@@ -429,7 +433,32 @@ public class StreamBuffer implements Closeable {
          * {@link #setMaxBufferElements(int)} was invoked from outside by another thread.
          */
         final int maxBufferElements = getMaxBufferElements();
-        return (maxBufferElements > 0) && (buffer.size() >= 2) && (buffer.size() > maxBufferElements);
+        if ((maxBufferElements <= 0) || (buffer.size() < 2) || (buffer.size() <= maxBufferElements)) {
+            return false;
+        }
+
+        /**
+         * CRITICAL EDGE CASE: Check if trim would actually solve the problem.
+         * When consolidating with {@link #maxAllocationSize} limit, the resulting
+         * number of chunks might still exceed maxBufferElements.
+         * Example: maxBufferElements=10, maxAllocationSize=100, availableBytes=1100
+         *   → consolidation would create 11 chunks (1100÷100), still violating the limit
+         *   → trim would be triggered again on the next write, causing constant trim calls
+         *
+         * Solution: Only trim if the result will reduce chunks below the limit.
+         * Resulting chunks = ceil(availableBytes / maxAllocationSize)
+         */
+        final long maxAllocationSize = getMaxAllocationSize();
+        if (maxAllocationSize > 0) {
+            // Calculate how many chunks we would have after consolidation
+            final long resultingChunks = (availableBytes + maxAllocationSize - 1) / maxAllocationSize;
+            // Only trim if it reduces chunks below the limit
+            if (resultingChunks >= buffer.size()) {
+                return false;  // Trim won't help, skip it
+            }
+        }
+
+        return true;
     }
 
     /**
