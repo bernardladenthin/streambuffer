@@ -3054,7 +3054,7 @@ public class StreamBufferTest {
         assertAll(
             () -> assertThat(beforeTrim, is(6)),
             () -> assertThat(afterTrim, is(greaterThan(0))),
-            () -> assertThat(afterTrim, is(lessThanOrEqualTo(beforeTrim)))  // trim should reduce or maintain
+            () -> assertThat(afterTrim, not(greaterThan(beforeTrim)))  // trim should reduce or maintain (not greater than before)
         );
 
         // Verify data integrity: all 601 bytes should be readable
