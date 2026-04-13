@@ -140,6 +140,16 @@ public class StreamBuffer implements Closeable {
      */
     private volatile boolean isTrimRunning = false;
 
+    /**
+     * Debug counter for trim() method calls. Throws exception if exceeded 10000.
+     */
+    private volatile long trimCallCount = 0;
+
+    /**
+     * Debug counter for isTrimShouldBeExecuted() method calls. Throws exception if exceeded 10000.
+     */
+    private volatile long trimShouldCheckCount = 0;
+
     private final SBInputStream is = new SBInputStream();
     private final SBOutputStream os = new SBOutputStream();
 
@@ -375,7 +385,14 @@ public class StreamBuffer implements Closeable {
      * Respects {@link #maxAllocationSize} limit when allocating byte arrays.
      */
     private void trim() throws IOException {
+        trimCallCount++;
+        if (trimCallCount > 10000) {
+            throw new RuntimeException("[DEBUG] trim() called more than 10000 times! trimCallCount=" + trimCallCount);
+        }
+        System.out.println("[DEBUG] trim() #" + trimCallCount + " called, buffer.size=" + buffer.size() + ", availableBytes=" + availableBytes);
+
         if (isTrimShouldBeExecuted()) {
+            System.out.println("[DEBUG] trim() #" + trimCallCount + " EXECUTING trim, buffer.size=" + buffer.size());
             isTrimRunning = true;
             try {
 
@@ -389,33 +406,44 @@ public class StreamBuffer implements Closeable {
 
                 int available;
                 // empty the current buffer, read out all bytes
+                System.out.println("[DEBUG] trim() #" + trimCallCount + " starting to read from is.available()=" + is.available());
                 while ((available = is.available()) > 0) {
+                    System.out.println("[DEBUG] trim() #" + trimCallCount + " reading " + available + " bytes");
                     // Limit each allocation to maxAllocationSize
                     final int toAllocate = (int) Math.min(available, maxAllocationSize);
                     final byte[] buf = new byte[toAllocate];
                     // read out of the buffer
                     // and store the result to the tmpBuffer
                     int read = is.read(buf);
+                    System.out.println("[DEBUG] trim() #" + trimCallCount + " read " + read + " bytes");
                     // should never happen
                     assert read == toAllocate : "Read not enough bytes from buffer.";
                     tmpBuffer.add(buf);
                 }
+                System.out.println("[DEBUG] trim() #" + trimCallCount + " finished reading, tmpBuffer.size=" + tmpBuffer.size());
                 /**
                  * Write all previously read parts back to the buffer. The buffer is
                  * clean and contains no elements because all parts are read out.
                  */
                 try {
                     ignoreSafeWrite = true;
+                    int writeCount = 0;
                     while (!tmpBuffer.isEmpty()) {
+                        writeCount++;
+                        System.out.println("[DEBUG] trim() #" + trimCallCount + " writing chunk #" + writeCount);
                         // pollFirst returns always a non null value, tmpBuffer is only filled with non null values
                         os.write(tmpBuffer.pollFirst());
                     }
+                    System.out.println("[DEBUG] trim() #" + trimCallCount + " finished writing, wrote " + writeCount + " chunks");
                 } finally {
                     ignoreSafeWrite = false;
                 }
             } finally {
+                System.out.println("[DEBUG] trim() #" + trimCallCount + " setting isTrimRunning=false");
                 isTrimRunning = false;
             }
+        } else {
+            System.out.println("[DEBUG] trim() #" + trimCallCount + " SKIPPING trim (isTrimShouldBeExecuted returned false)");
         }
     }
 
@@ -428,13 +456,21 @@ public class StreamBuffer implements Closeable {
      * @return <code>true</code> if a trim should be performed, otherwise <code>false</code>.
      */
     boolean isTrimShouldBeExecuted() {
+        trimShouldCheckCount++;
+        if (trimShouldCheckCount > 10000) {
+            throw new RuntimeException("[DEBUG] isTrimShouldBeExecuted() called more than 10000 times! trimShouldCheckCount=" + trimShouldCheckCount);
+        }
+
         /**
          * To be thread safe, cache the maxBufferElements value. May the method
          * {@link #setMaxBufferElements(int)} was invoked from outside by another thread.
          */
         final int maxBufferElements = getMaxBufferElements();
+        System.out.println("[DEBUG] isTrimShouldBeExecuted #" + trimShouldCheckCount + ": maxBufferElements=" + maxBufferElements +
+            ", buffer.size=" + buffer.size() + ", availableBytes=" + availableBytes);
 
         if ((maxBufferElements <= 0) || (buffer.size() < 2) || (buffer.size() <= maxBufferElements)) {
+            System.out.println("[DEBUG] isTrimShouldBeExecuted #" + trimShouldCheckCount + ": returning false (basic checks)");
             return false;
         }
 
@@ -450,17 +486,22 @@ public class StreamBuffer implements Closeable {
          * Resulting chunks = ceil(availableBytes / maxAllocationSize)
          */
         final long maxAllocationSize = getMaxAllocationSize();
+        System.out.println("[DEBUG] isTrimShouldBeExecuted #" + trimShouldCheckCount + ": maxAllocationSize=" + maxAllocationSize);
 
         if (maxAllocationSize > 0) {
             // Calculate how many chunks we would have after consolidation
             final long resultingChunks = (availableBytes + maxAllocationSize - 1) / maxAllocationSize;
+            System.out.println("[DEBUG] isTrimShouldBeExecuted #" + trimShouldCheckCount + ": resultingChunks=" + resultingChunks +
+                ", buffer.size=" + buffer.size());
 
             // Only trim if it reduces chunks below the limit
             if (resultingChunks >= buffer.size()) {
+                System.out.println("[DEBUG] isTrimShouldBeExecuted #" + trimShouldCheckCount + ": returning false (edge case: resultingChunks >= buffer.size)");
                 return false;  // Trim won't help, skip it
             }
         }
 
+        System.out.println("[DEBUG] isTrimShouldBeExecuted #" + trimShouldCheckCount + ": returning true (trim should execute)");
         return true;
     }
 
