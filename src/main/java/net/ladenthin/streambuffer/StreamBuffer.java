@@ -128,7 +128,7 @@ public class StreamBuffer implements Closeable {
     private volatile long totalBytesRead = 0;
 
     /**
-     * Maximum size of a single byte array during consolidation. Default Integer.MAX_VALUE.
+     * Maximum size of a single byte array during consolidation. Default {@link Integer#MAX_VALUE}.
      */
     private volatile long maxAllocationSize = Integer.MAX_VALUE;
 
@@ -196,7 +196,7 @@ public class StreamBuffer implements Closeable {
 
     /**
      * Returns the cumulative number of bytes written by user I/O operations.
-     * Excludes bytes read/written during internal trim operations.
+     * Excludes bytes read/written during internal {@link #trim()} operations.
      *
      * @return total bytes written.
      */
@@ -206,7 +206,7 @@ public class StreamBuffer implements Closeable {
 
     /**
      * Returns the cumulative number of bytes read by user I/O operations.
-     * Excludes bytes read/written during internal trim operations.
+     * Excludes bytes read/written during internal {@link #trim()} operations.
      *
      * @return total bytes read.
      */
@@ -233,9 +233,9 @@ public class StreamBuffer implements Closeable {
     }
 
     /**
-     * Set the maximum size of a single byte array allocated during trim.
+     * Set the maximum size of a single byte array allocated during {@link #trim()}.
      * When trim consolidates the buffer, it splits data into chunks respecting
-     * this limit. Default is Integer.MAX_VALUE.
+     * this limit. Default is {@link Integer#MAX_VALUE}.
      *
      * @param maxSize maximum allocation size in bytes. Must be positive.
      * @throws IllegalArgumentException if maxSize is not positive.
@@ -248,12 +248,12 @@ public class StreamBuffer implements Closeable {
     }
 
     /**
-     * Returns whether trim is currently running.
+     * Returns whether {@link #trim()} is currently running.
      * This can be used to determine if the buffer is in the middle of consolidation.
      * <strong>Note:</strong> This value can change at any time in concurrent scenarios.
      * The caller must not rely on this value remaining constant between method calls.
      *
-     * @return true if trim is currently executing, false otherwise.
+     * @return {@code true} if trim is currently executing, {@code false} otherwise.
      */
     public boolean isTrimRunning() {
         return isTrimRunning;
@@ -262,8 +262,8 @@ public class StreamBuffer implements Closeable {
     /**
      * Returns the current number of byte arrays in the internal queue.
      * <strong>Note:</strong> This value can change at any time in concurrent scenarios
-     * due to read/write operations or trim consolidation. The caller must not rely on
-     * this value remaining constant between method calls.
+     * due to {@link #write(int)} / {@link #read()} operations or {@link #trim()} consolidation.
+     * The caller must not rely on this value remaining constant between method calls.
      *
      * @return the number of byte arrays currently in the queue.
      */
@@ -370,8 +370,9 @@ public class StreamBuffer implements Closeable {
      * This method trims the buffer. This method can be invoked after every
      * write operation. The method checks itself if the buffer should be trimmed
      * or not.
-     * <strong>MUST be called inside synchronized(bufferLock).</strong>
-     * Sets isTrimRunning volatile flag to prevent statistics updates during internal I/O.
+     * <strong>MUST be called inside {@code synchronized(bufferLock)}.</strong>
+     * Sets {@link #isTrimRunning} volatile flag to prevent statistics updates during internal I/O.
+     * Respects {@link #maxAllocationSize} limit when allocating byte arrays.
      */
     private void trim() throws IOException {
         if (isTrimShouldBeExecuted()) {
