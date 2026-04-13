@@ -386,9 +386,6 @@ public class StreamBuffer implements Closeable {
      */
     private void trim() throws IOException {
         trimCallCount++;
-        if (trimCallCount > 500) {
-            throw new RuntimeException("[DEBUG] trim() called more than 500 times! trimCallCount=" + trimCallCount);
-        }
         System.out.println("[DEBUG] trim() #" + trimCallCount + " called, buffer.size=" + buffer.size() + ", availableBytes=" + availableBytes);
 
         if (isTrimShouldBeExecuted()) {
@@ -457,9 +454,6 @@ public class StreamBuffer implements Closeable {
      */
     boolean isTrimShouldBeExecuted() {
         trimShouldCheckCount++;
-        if (trimShouldCheckCount > 500) {
-            throw new RuntimeException("[DEBUG] isTrimShouldBeExecuted() called more than 500 times! trimShouldCheckCount=" + trimShouldCheckCount);
-        }
 
         /**
          * To be thread safe, cache the maxBufferElements value. May the method
