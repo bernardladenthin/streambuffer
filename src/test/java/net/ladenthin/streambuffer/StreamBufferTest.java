@@ -3144,7 +3144,7 @@ public class StreamBufferTest {
         final StreamBuffer sb = new StreamBuffer();
 
         // act & assert — Boundary: maxSize=1 must be accepted (kills maxSize <= 0 vs < 0)
-        assertDoesNotThrow(() -> sb.setMaxAllocationSize(1L));
+        sb.setMaxAllocationSize(1L);
         assertThat(sb.getMaxAllocationSize(), is(1L));
     }
 
