@@ -2765,7 +2765,6 @@ public class StreamBufferTest {
         os.write(new byte[100]);
         long writtenBeforeTrim = sb.getTotalBytesWritten();
         long readBeforeTrim = sb.getTotalBytesRead();
-        int elementsBeforeTrim = sb.getBufferElementCount();
 
         // act — force trim
         sb.setMaxBufferElements(1);
