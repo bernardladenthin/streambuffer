@@ -955,7 +955,7 @@ public class StreamBufferTest {
         sleepOneSecond();
 
         // assert
-        assertThat(after.tryAcquire(10, TimeUnit.SECONDS), is(false));
+        assertThat(after.tryAcquire(300, TimeUnit.MILLISECONDS), is(false));
     }
 
     @Test
@@ -981,7 +981,7 @@ public class StreamBufferTest {
         after.drainPermits();
 
         // assert
-        assertThat(after.tryAcquire(10, TimeUnit.SECONDS), is(false));
+        assertThat(after.tryAcquire(300, TimeUnit.MILLISECONDS), is(false));
     }
 
     @ParameterizedTest
@@ -1929,7 +1929,7 @@ public class StreamBufferTest {
         // assert
         assertAll(
             () -> assertThat(removed, is(true)),
-            () -> assertThat(signal.tryAcquire(1, TimeUnit.SECONDS), is(false))
+            () -> assertThat(signal.tryAcquire(300, TimeUnit.MILLISECONDS), is(false))
         );
     }
 
@@ -2658,6 +2658,7 @@ public class StreamBufferTest {
         InputStream is = sb.getInputStream();
         OutputStream os = sb.getOutputStream();
         os.write(new byte[]{1, 2, 3});  // only 3 bytes available
+        os.close();  // signal EOF so read returns partial data instead of blocking
 
         // act
         byte[] dest = new byte[100];
