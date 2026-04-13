@@ -2989,8 +2989,9 @@ public class StreamBufferTest {
         while ((bytesRead = is.read(result, totalRead, 10_000 - totalRead)) > 0) {
             totalRead += bytesRead;
         }
+        final int finalTotalRead = totalRead;
         assertAll(
-            () -> assertThat(totalRead, is(10_000)),
+            () -> assertThat(finalTotalRead, is(10_000)),
             () -> assertArrayEquals(original, result)
         );
     }
