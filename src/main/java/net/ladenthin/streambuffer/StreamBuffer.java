@@ -486,11 +486,11 @@ public class StreamBuffer implements Closeable {
             // Calculate how many chunks we would have after consolidation
             final long resultingChunks = (availableBytes + maxAllocationSize - 1) / maxAllocationSize;
             System.out.println("[DEBUG] isTrimShouldBeExecuted #" + trimShouldCheckCount + ": resultingChunks=" + resultingChunks +
-                ", buffer.size=" + buffer.size());
+                ", maxBufferElements=" + maxBufferElements);
 
             // Only trim if it reduces chunks below the limit
-            if (resultingChunks >= buffer.size()) {
-                System.out.println("[DEBUG] isTrimShouldBeExecuted #" + trimShouldCheckCount + ": returning false (edge case: resultingChunks >= buffer.size)");
+            if (resultingChunks >= maxBufferElements) {
+                System.out.println("[DEBUG] isTrimShouldBeExecuted #" + trimShouldCheckCount + ": returning false (edge case: resultingChunks >= maxBufferElements)");
                 return false;  // Trim won't help, skip it
             }
         }
