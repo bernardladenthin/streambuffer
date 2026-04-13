@@ -3206,15 +3206,26 @@ public class StreamBufferTest {
     public void trimCondition_allChecksPass_returnsTrue() throws IOException {
         // arrange — Force all conditions in isTrimShouldBeExecuted to pass
         final StreamBuffer sb = new StreamBuffer();
-        sb.setMaxBufferElements(5);
+        sb.setMaxBufferElements(3);
+        sb.setMaxAllocationSize(50);  // Small allocation size to prevent consolidating all chunks
         final OutputStream os = sb.getOutputStream();
 
-        // act — Write enough bytes to create 10+ buffer chunks, exceeding maxBufferElements
-        for (int i = 0; i < 1000; i++) {
-            os.write(anyValue);
+        // act — Write 8 chunks of 100 bytes (800 bytes total)
+        // This creates buffer.size() = 8 > maxBufferElements(3)
+        // When isTrimShouldBeExecuted() is called:
+        // - buffer.size() (8) > maxBufferElements (3)? YES
+        // - availableBytes (800) > 0 && maxAllocSize (50) < availableBytes (800)? YES
+        // - resultingChunks = ceil(800/50) = 16
+        // - 16 >= 8? YES, so trim would be skipped by edge case logic
+        // This test won't work with edge case logic. Let's use a simpler case.
+        for (int i = 0; i < 8; i++) {
+            os.write(new byte[100]);
         }
 
-        // assert — Verify return true path is executed (kills BooleanTrueReturnValsMutator)
+        // assert — Verify buffer is in state where trim would execute
+        // Reset maxAllocationSize to default (large) to allow consolidation
+        sb.setMaxAllocationSize(Integer.MAX_VALUE);
+        // Now with default maxAllocSize, edge case logic is skipped and returns true
         assertThat(sb.isTrimShouldBeExecuted(), is(true));
     }
 
