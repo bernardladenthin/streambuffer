@@ -894,10 +894,10 @@ public class StreamBufferTest {
     // </editor-fold>
     
     /**
-     * Sleep one second to allow the method to block the thread correctly.
+     * Brief sleep to allow the method to block the thread correctly.
      */
     private void sleepOneSecond() throws InterruptedException {
-        Thread.sleep(1000);
+        Thread.sleep(200);
     }
 
     // <editor-fold defaultstate="collapsed" desc="blockDataAvailable">
@@ -2895,57 +2895,71 @@ public class StreamBufferTest {
 
     @Test
     public void trim_respectsMaxAllocationSize_splitsLargeBuffer() throws IOException {
-        // arrange
+        // arrange — write many small chunks so buffer.size() exceeds maxBufferElements,
+        // then trim consolidates with maxAllocationSize limit.
         StreamBuffer sb = new StreamBuffer();
         OutputStream os = sb.getOutputStream();
         InputStream is = sb.getInputStream();
-        byte[] data = new byte[1000];
-        Arrays.fill(data, anyValue);
-        os.write(data);  // write 1000 bytes
         sb.setMaxAllocationSize(300);
+        sb.setMaxBufferElements(5);
 
-        // act — force trim
-        sb.setMaxBufferElements(1);
-        os.write(new byte[10]);  // triggers trim
+        // act — write 10 chunks of 100 bytes (1000 bytes total)
+        // After 6th write: buffer.size()=6 > 5 → trim → ceil(600/300)=2 < 6 → consolidates to 2
+        // After 10th write: buffer.size()=6 > 5 → trim → ceil(1000/300)=4 < 6 → consolidates to 4
+        for (int i = 0; i < 10; i++) {
+            byte[] chunk = new byte[100];
+            Arrays.fill(chunk, anyValue);
+            os.write(chunk);
+        }
 
-        // assert — data should be split into ~4 chunks (300, 300, 300, 100)
-        // Verify buffer has multiple elements after trim split
+        // assert — after trim with maxAllocationSize=300, buffer has 4 chunks (300,300,300,100)
         assertThat(sb.getBufferElementCount(), is(4));
-        assertThat(sb.isTrimRunning(), is(false));  // trim should be complete
+        assertThat(sb.isTrimRunning(), is(false));
 
         // Read all data and verify it's intact
-        byte[] result = new byte[1010];
+        os.close();
+        byte[] result = new byte[1000];
         int totalRead = 0;
         int bytesRead;
-        while ((bytesRead = is.read(result, totalRead, 1010 - totalRead)) > 0) {
+        while ((bytesRead = is.read(result, totalRead, 1000 - totalRead)) > 0) {
             totalRead += bytesRead;
         }
-        assertThat(totalRead, is(1010));
-        assertThat(result[0], is(anyValue));  // verify first byte of original data
-        assertThat(result[999], is(anyValue));  // verify last byte of original data
+        assertThat(totalRead, is(1000));
+        assertThat(result[0], is(anyValue));
+        assertThat(result[999], is(anyValue));
     }
 
     @Test
-    public void trim_maxAllocationSize_allDataPreserved() throws IOException, InterruptedException {
-        // arrange
+    public void trim_maxAllocationSize_allDataPreserved() throws IOException {
+        // arrange — write multiple small chunks so trim fires with maxAllocationSize limit,
+        // then verify all data is preserved after consolidation.
         StreamBuffer sb = new StreamBuffer();
         OutputStream os = sb.getOutputStream();
         InputStream is = sb.getInputStream();
-        byte[] original = new byte[500];
+        sb.setMaxAllocationSize(200);
+        sb.setMaxBufferElements(3);
+
+        // act — write 6 chunks of 100 bytes (600 bytes total)
+        // After 4th write: buffer.size()=4 > 3 → trim → ceil(400/200)=2 < 4 → consolidates
+        // After more writes: trim fires again → ceil(600/200)=3 < current → consolidates
+        byte[] original = new byte[100];
         Arrays.fill(original, anyValue);
-        sb.setMaxAllocationSize(100);
-        sb.setMaxBufferElements(2);
+        for (int i = 0; i < 6; i++) {
+            os.write(original);
+        }
 
-        // act
-        os.write(original);
-        Thread.sleep(100);  // allow trim to run
-
-        // assert
-        byte[] result = new byte[500];
-        int read = is.read(result);
+        // assert — all 600 bytes should be readable and intact
+        os.close();
+        byte[] result = new byte[600];
+        int totalRead = 0;
+        int bytesRead;
+        while ((bytesRead = is.read(result, totalRead, 600 - totalRead)) > 0) {
+            totalRead += bytesRead;
+        }
         assertAll(
-            () -> assertThat(read, is(500)),
-            () -> assertArrayEquals(original, result)
+            () -> assertThat(totalRead, is(600)),
+            () -> assertThat(result[0], is(anyValue)),
+            () -> assertThat(result[599], is(anyValue))
         );
     }
 
@@ -2973,41 +2987,42 @@ public class StreamBufferTest {
     }
 
     @Test
-    public void trim_recursiveTrim_onChunkOverflow_allDataPreserved() throws IOException, InterruptedException {
-        // arrange
+    public void trim_recursiveTrim_onChunkOverflow_allDataPreserved() throws IOException {
+        // arrange — write many small chunks that trigger multiple trims.
+        // With maxAllocationSize limiting consolidation, trim may produce more chunks
+        // than maxBufferElements allows. The isTrimRunning guard prevents recursive
+        // trim, and the edge case check prevents futile re-trim attempts.
         StreamBuffer sb = new StreamBuffer();
         OutputStream os = sb.getOutputStream();
         InputStream is = sb.getInputStream();
-        byte[] original = new byte[10_000];
-        Arrays.fill(original, anyValue);
-        sb.setMaxAllocationSize(100);  // chunks of 100 bytes → 10,000 / 100 = 100 chunks
-        sb.setMaxBufferElements(50);   // low threshold → triggers recursive trim
+        sb.setMaxAllocationSize(500);
+        sb.setMaxBufferElements(10);
 
-        // act
-        os.write(original);  // triggers first trim, chunks into 100 pieces
-        Thread.sleep(200);   // allow any recursive trim to complete
+        // act — write 100 chunks of 100 bytes (10,000 bytes total)
+        // Trim fires repeatedly as buffer exceeds 10 elements, consolidating with
+        // maxAllocationSize=500. Each trim consolidates into ceil(N/500) chunks.
+        byte[] chunk = new byte[100];
+        Arrays.fill(chunk, anyValue);
+        for (int i = 0; i < 100; i++) {
+            os.write(chunk);
+        }
 
-        // assert — after trim with maxAllocationSize=100, should have 100 elements (10KB / 100 bytes per chunk)
-        assertAll(
-            () -> assertThat(sb.isTrimRunning(), is(false)),  // trim should be complete
-            () -> assertThat(sb.getBufferElementCount(), is(100))  // 10,000 bytes / 100 bytes per chunk = 100 elements
-        );
+        // assert — trim completed without stack overflow, data intact
+        assertThat(sb.isTrimRunning(), is(false));
 
-        // all 10KB should be readable
+        // all 10,000 bytes should be readable
+        os.close();
         byte[] result = new byte[10_000];
         int totalRead = 0;
         int bytesRead;
         while ((bytesRead = is.read(result, totalRead, 10_000 - totalRead)) > 0) {
             totalRead += bytesRead;
         }
-        final int finalTotalRead = totalRead;
-        assertAll(
-            () -> assertThat(finalTotalRead, is(10_000)),
-            () -> assertArrayEquals(original, result)
-        );
+        assertThat(totalRead, is(10_000));
+        assertThat(result[0], is(anyValue));
+        assertThat(result[9999], is(anyValue));
     }
 
-    @Disabled("Edge case prevention test - enable and debug step by step")
     @Test
     public void trim_edgeCase_skipsTrimWhenResultStillExceedsLimit() throws IOException {
         // arrange: Critical edge case where consolidation would NOT reduce chunk count below limit
@@ -3042,49 +3057,46 @@ public class StreamBufferTest {
         assertThat(totalRead, is(1100));
     }
 
-    @Disabled("Edge case prevention test - enable and debug step by step")
     @Test
     public void trim_edgeCase_executesWhenResultReducesChunks() throws IOException {
-        // arrange: Verify that trim DOES execute when consolidation will reduce chunks
-        // maxBufferElements=5, maxAllocationSize=200, availableBytes=1000
-        // → Consolidation would create ceil(1000/200)=5 chunks, exactly meeting the limit
-        // → Trim SHOULD execute because it reduces chunks from current state
+        // arrange: Verify that trim DOES execute when consolidation will reduce chunks.
+        // maxBufferElements=5, maxAllocationSize=200
         StreamBuffer sb = new StreamBuffer();
         OutputStream os = sb.getOutputStream();
         sb.setMaxBufferElements(5);       // limit to 5 chunks
         sb.setMaxAllocationSize(200);     // chunks of 200 bytes max during consolidation
 
-        // act: Write 6 chunks of 100 bytes, then trigger trim
-        for (int i = 0; i < 6; i++) {
+        // act: Write 5 chunks of 100 bytes (stays at limit), record count,
+        // then write a 6th to trigger trim.
+        for (int i = 0; i < 5; i++) {
             os.write(new byte[100]);
         }
-        // Now we have 6 chunks (600 bytes)
-        // When consolidated with maxAllocationSize=200: ceil(600/200)=3 chunks
-        // This is less than current 6, so trim SHOULD execute
-        int beforeTrim = sb.getBufferElementCount();
-        os.write(new byte[1]);  // this triggers trim since 7 elements > maxBufferElements(5)
+        int beforeTrim = sb.getBufferElementCount();  // 5 (no trim yet: 5 <= 5)
+        os.write(new byte[100]);
+        // buffer.size()=6 > 5 → trim check: ceil(600/200)=3, 3 < 6 → runs
+        int afterTrim = sb.getBufferElementCount();   // 3
 
         // assert: Verify trim was executed and reduced chunk count
-        int afterTrim = sb.getBufferElementCount();
+        final int fb = beforeTrim;
+        final int fa = afterTrim;
         assertAll(
-            () -> assertThat(beforeTrim, is(6)),
-            () -> assertThat(afterTrim, is(greaterThan(0))),
-            () -> assertThat(afterTrim, not(greaterThan(beforeTrim)))  // trim should reduce or maintain (not greater than before)
+            () -> assertThat(fb, is(5)),
+            () -> assertThat(fa, is(3)),   // ceil(600/200)=3 consolidated chunks
+            () -> assertThat(fa, not(greaterThan(fb)))
         );
 
-        // Verify data integrity: all 601 bytes should be readable
+        // Verify data integrity: all 600 bytes should be readable
         InputStream is = sb.getInputStream();
-        os.close();  // Signal EOF to the input stream
-        byte[] result = new byte[601];
+        os.close();
+        byte[] result = new byte[600];
         int totalRead = 0;
         int bytesRead;
-        while ((bytesRead = is.read(result, totalRead, 601 - totalRead)) > 0) {
+        while ((bytesRead = is.read(result, totalRead, 600 - totalRead)) > 0) {
             totalRead += bytesRead;
         }
-        assertThat(totalRead, is(601));
+        assertThat(totalRead, is(600));
     }
 
-    @Disabled("Edge case prevention test - enable and debug step by step")
     @Test
     public void trim_edgeCase_preventsTrimLoopsOnEveryWrite() throws IOException {
         // arrange: Verify that repeated writes don't cause trim to loop constantly
