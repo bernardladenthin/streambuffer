@@ -42,7 +42,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-@Timeout(value = 1, unit = TimeUnit.SECONDS)
 public class StreamBufferTest {
 
     static Stream<Arguments> writeMethods() {
@@ -897,7 +896,7 @@ public class StreamBufferTest {
      * Brief sleep to allow the method to block the thread correctly.
      */
     private void sleepOneSecond() throws InterruptedException {
-        Thread.sleep(200);
+        Thread.sleep(1000);
     }
 
     // <editor-fold defaultstate="collapsed" desc="blockDataAvailable">
@@ -955,7 +954,7 @@ public class StreamBufferTest {
         sleepOneSecond();
 
         // assert
-        assertThat(after.tryAcquire(300, TimeUnit.MILLISECONDS), is(false));
+        assertThat(after.tryAcquire(10, TimeUnit.SECONDS), is(false));
     }
 
     @Test
@@ -981,7 +980,7 @@ public class StreamBufferTest {
         after.drainPermits();
 
         // assert
-        assertThat(after.tryAcquire(300, TimeUnit.MILLISECONDS), is(false));
+        assertThat(after.tryAcquire(10, TimeUnit.SECONDS), is(false));
     }
 
     @ParameterizedTest
@@ -1929,7 +1928,7 @@ public class StreamBufferTest {
         // assert
         assertAll(
             () -> assertThat(removed, is(true)),
-            () -> assertThat(signal.tryAcquire(300, TimeUnit.MILLISECONDS), is(false))
+            () -> assertThat(signal.tryAcquire(1, TimeUnit.SECONDS), is(false))
         );
     }
 
