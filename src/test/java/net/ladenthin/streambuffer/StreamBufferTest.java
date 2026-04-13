@@ -2920,7 +2920,7 @@ public class StreamBufferTest {
     }
 
     @Test
-    public void trim_maxAllocationSize_allDataPreserved() throws IOException {
+    public void trim_maxAllocationSize_allDataPreserved() throws IOException, InterruptedException {
         // arrange
         StreamBuffer sb = new StreamBuffer();
         OutputStream os = sb.getOutputStream();
@@ -2982,9 +2982,10 @@ public class StreamBufferTest {
         Thread.sleep(200);   // allow any recursive trim to complete
 
         // assert — buffer should be consolidated after recursive trims
-        assertThat(sb.isTrimRunning(), is(false));  // trim should be complete
-        int bufferElements = sb.getBufferElementCount();
-        assertThat(bufferElements, greaterThan(0));  // should have at least one element
+        assertAll(
+            () -> assertThat(sb.isTrimRunning(), is(false)),  // trim should be complete
+            () -> assertThat(sb.getBufferElementCount(), greaterThan(0))  // should have at least one element
+        );
 
         // all 10KB should be readable
         byte[] result = new byte[10_000];
