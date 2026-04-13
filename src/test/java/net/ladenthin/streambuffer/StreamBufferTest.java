@@ -2800,17 +2800,13 @@ public class StreamBufferTest {
         StreamBuffer sb = new StreamBuffer();
         OutputStream os = sb.getOutputStream();
 
-        // act
+        // act & assert first write
         os.write(new byte[10]);
-        int countAfterFirst = sb.getBufferElementCount();
-        os.write(new byte[20]);
-        int countAfterSecond = sb.getBufferElementCount();
+        assertThat(sb.getBufferElementCount(), is(1));
 
-        // assert
-        assertAll(
-            () -> assertThat(countAfterFirst, is(1)),
-            () -> assertThat(countAfterSecond, is(2))
-        );
+        // act & assert second write
+        os.write(new byte[20]);
+        assertThat(sb.getBufferElementCount(), is(2));
     }
 
     @Test
