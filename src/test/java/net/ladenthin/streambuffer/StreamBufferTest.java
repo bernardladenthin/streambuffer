@@ -41,6 +41,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+@Timeout(value = 10, unit = TimeUnit.SECONDS)
 public class StreamBufferTest {
 
     static Stream<Arguments> writeMethods() {
