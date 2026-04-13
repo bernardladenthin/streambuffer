@@ -3020,6 +3020,7 @@ public class StreamBufferTest {
 
         // Verify data integrity: all 1100 bytes should be readable
         InputStream is = sb.getInputStream();
+        os.close();  // Signal EOF to the input stream
         byte[] result = new byte[1100];
         int totalRead = 0;
         int bytesRead;
@@ -3060,6 +3061,7 @@ public class StreamBufferTest {
 
         // Verify data integrity: all 601 bytes should be readable
         InputStream is = sb.getInputStream();
+        os.close();  // Signal EOF to the input stream
         byte[] result = new byte[601];
         int totalRead = 0;
         int bytesRead;
@@ -3095,6 +3097,7 @@ public class StreamBufferTest {
 
         // Verify all data is still readable
         InputStream is = sb.getInputStream();
+        os.close();  // Signal EOF to the input stream
         byte[] result = new byte[300];
         int totalRead = 0;
         int bytesRead;
