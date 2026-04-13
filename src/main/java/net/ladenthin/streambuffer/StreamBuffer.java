@@ -248,6 +248,16 @@ public class StreamBuffer implements Closeable {
     }
 
     /**
+     * Returns whether trim is currently running.
+     * This can be used to determine if the buffer is in the middle of consolidation.
+     *
+     * @return true if trim is currently executing, false otherwise.
+     */
+    public boolean isTrimRunning() {
+        return isTrimRunning;
+    }
+
+    /**
      * Register an external {@link Semaphore} to be released when the buffer is
      * modified (data written or stream closed). The semaphore uses the same
      * "max 1 permit" pattern as the internal signaling: a permit is released
