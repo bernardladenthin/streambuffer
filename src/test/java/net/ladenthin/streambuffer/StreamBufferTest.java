@@ -20,6 +20,7 @@ package net.ladenthin.streambuffer;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -2996,7 +2997,7 @@ public class StreamBufferTest {
         );
     }
 
-    @Ignore("Edge case prevention test - enable and debug step by step")
+    @Disabled("Edge case prevention test - enable and debug step by step")
     @Test
     public void trim_edgeCase_skipsTrimWhenResultStillExceedsLimit() throws IOException {
         // arrange: Critical edge case where consolidation would NOT reduce chunk count below limit
@@ -3031,7 +3032,7 @@ public class StreamBufferTest {
         assertThat(totalRead, is(1100));
     }
 
-    @Ignore("Edge case prevention test - enable and debug step by step")
+    @Disabled("Edge case prevention test - enable and debug step by step")
     @Test
     public void trim_edgeCase_executesWhenResultReducesChunks() throws IOException {
         // arrange: Verify that trim DOES execute when consolidation will reduce chunks
@@ -3073,7 +3074,7 @@ public class StreamBufferTest {
         assertThat(totalRead, is(601));
     }
 
-    @Ignore("Edge case prevention test - enable and debug step by step")
+    @Disabled("Edge case prevention test - enable and debug step by step")
     @Test
     public void trim_edgeCase_preventsTrimLoopsOnEveryWrite() throws IOException {
         // arrange: Verify that repeated writes don't cause trim to loop constantly
