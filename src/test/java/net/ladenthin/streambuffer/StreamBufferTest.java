@@ -35,6 +35,7 @@ import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.not;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.number.OrderingComparison.greaterThan;
+import static org.hamcrest.number.OrderingComparison.greaterThanOrEqualTo;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -2762,7 +2763,7 @@ public class StreamBufferTest {
         assertAll(
             () -> assertThat(sb.getBufferElementCount(), is(1)),  // trim consolidated
             () -> assertThat(sb.isTrimRunning(), is(false)),  // trim complete
-            () -> assertTrue(maxAfterTrim >= maxAfterFirstWrite, "max should only increase from user writes")  // peak only increases from user writes
+            () -> assertThat(maxAfterTrim, greaterThanOrEqualTo(maxAfterFirstWrite))  // peak only increases from user writes
         );
     }
 
