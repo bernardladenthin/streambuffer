@@ -2765,16 +2765,85 @@ public class StreamBufferTest {
         os.write(new byte[100]);
         long writtenBeforeTrim = sb.getTotalBytesWritten();
         long readBeforeTrim = sb.getTotalBytesRead();
+        int elementsBeforeTrim = sb.getBufferElementCount();
 
         // act — force trim
         sb.setMaxBufferElements(1);
         os.write(new byte[50]);
 
         // assert — trim's internal read/write should not affect user counters
+        // and buffer should be consolidated into one element
         assertAll(
             () -> assertThat(sb.getTotalBytesWritten(), is(writtenBeforeTrim + 50)),
-            () -> assertThat(sb.getTotalBytesRead(), is(readBeforeTrim))
+            () -> assertThat(sb.getTotalBytesRead(), is(readBeforeTrim)),
+            () -> assertThat(sb.getBufferElementCount(), is(1)),
+            () -> assertThat(sb.isTrimRunning(), is(false))  // trim should be complete
         );
+    }
+
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="Buffer element count and trim state">
+
+    @Test
+    public void bufferElementCount_initial_isZero() {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+
+        // act & assert
+        assertThat(sb.getBufferElementCount(), is(0));
+    }
+
+    @Test
+    public void bufferElementCount_afterWrites_increasesAccordingly() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+
+        // act
+        os.write(new byte[10]);
+        int countAfterFirst = sb.getBufferElementCount();
+        os.write(new byte[20]);
+        int countAfterSecond = sb.getBufferElementCount();
+
+        // assert
+        assertAll(
+            () -> assertThat(countAfterFirst, is(1)),
+            () -> assertThat(countAfterSecond, is(2))
+        );
+    }
+
+    @Test
+    public void bufferElementCount_afterTrimConsolidation_reducesToOne() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        os.write(new byte[100]);
+        os.write(new byte[100]);
+        os.write(new byte[100]);
+        assertThat(sb.getBufferElementCount(), is(3));
+
+        // act — force trim
+        sb.setMaxBufferElements(1);
+        os.write(new byte[50]);
+
+        // assert
+        assertThat(sb.getBufferElementCount(), is(1));
+    }
+
+    @Test
+    public void isTrimRunning_afterTrimComplete_isFalse() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        os.write(new byte[100]);
+
+        // act — force trim
+        sb.setMaxBufferElements(1);
+        os.write(new byte[50]);
+
+        // assert
+        assertThat(sb.isTrimRunning(), is(false));
     }
 
     // </editor-fold>
@@ -2834,6 +2903,10 @@ public class StreamBufferTest {
         os.write(new byte[10]);  // triggers trim
 
         // assert — data should be split into ~4 chunks (300, 300, 300, 100)
+        // Verify buffer has multiple elements after trim split
+        assertThat(sb.getBufferElementCount(), is(4));
+        assertThat(sb.isTrimRunning(), is(false));  // trim should be complete
+
         // Read all data and verify it's intact
         byte[] result = new byte[1010];
         int totalRead = 0;
@@ -2908,7 +2981,12 @@ public class StreamBufferTest {
         os.write(original);  // triggers first trim, chunks into ~100 pieces
         Thread.sleep(200);   // allow any recursive trim to complete
 
-        // assert — all 10KB should be readable
+        // assert — buffer should be consolidated after recursive trims
+        assertThat(sb.isTrimRunning(), is(false));  // trim should be complete
+        int bufferElements = sb.getBufferElementCount();
+        assertThat(bufferElements, greaterThan(0));  // should have at least one element
+
+        // all 10KB should be readable
         byte[] result = new byte[10_000];
         int totalRead = 0;
         int bytesRead;

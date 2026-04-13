@@ -250,11 +250,27 @@ public class StreamBuffer implements Closeable {
     /**
      * Returns whether trim is currently running.
      * This can be used to determine if the buffer is in the middle of consolidation.
+     * <strong>Note:</strong> This value can change at any time in concurrent scenarios.
+     * The caller must not rely on this value remaining constant between method calls.
      *
      * @return true if trim is currently executing, false otherwise.
      */
     public boolean isTrimRunning() {
         return isTrimRunning;
+    }
+
+    /**
+     * Returns the current number of byte arrays in the internal queue.
+     * <strong>Note:</strong> This value can change at any time in concurrent scenarios
+     * due to read/write operations or trim consolidation. The caller must not rely on
+     * this value remaining constant between method calls.
+     *
+     * @return the number of byte arrays currently in the queue.
+     */
+    public int getBufferElementCount() {
+        synchronized (bufferLock) {
+            return buffer.size();
+        }
     }
 
     /**
