@@ -375,7 +375,9 @@ public class StreamBuffer implements Closeable {
      * Respects {@link #maxAllocationSize} limit when allocating byte arrays.
      */
     private void trim() throws IOException {
+        System.out.println("[DEBUG] trim() called, checking isTrimShouldBeExecuted()");
         if (isTrimShouldBeExecuted()) {
+            System.out.println("[DEBUG] trim: EXECUTING trim");
             isTrimRunning = true;
             try {
 
@@ -389,17 +391,21 @@ public class StreamBuffer implements Closeable {
 
                 int available;
                 // empty the current buffer, read out all bytes
+                System.out.println("[DEBUG] trim: starting to read from buffer, initial is.available()=" + is.available());
                 while ((available = is.available()) > 0) {
+                    System.out.println("[DEBUG] trim: reading " + available + " bytes");
                     // Limit each allocation to maxAllocationSize
                     final int toAllocate = (int) Math.min(available, maxAllocationSize);
                     final byte[] buf = new byte[toAllocate];
                     // read out of the buffer
                     // and store the result to the tmpBuffer
                     int read = is.read(buf);
+                    System.out.println("[DEBUG] trim: read " + read + " bytes");
                     // should never happen
                     assert read == toAllocate : "Read not enough bytes from buffer.";
                     tmpBuffer.add(buf);
                 }
+                System.out.println("[DEBUG] trim: finished reading from buffer, tmpBuffer.size()=" + tmpBuffer.size());
                 /**
                  * Write all previously read parts back to the buffer. The buffer is
                  * clean and contains no elements because all parts are read out.
@@ -407,15 +413,20 @@ public class StreamBuffer implements Closeable {
                 try {
                     ignoreSafeWrite = true;
                     while (!tmpBuffer.isEmpty()) {
+                        System.out.println("[DEBUG] trim: writing chunk back to buffer");
                         // pollFirst returns always a non null value, tmpBuffer is only filled with non null values
                         os.write(tmpBuffer.pollFirst());
                     }
+                    System.out.println("[DEBUG] trim: finished writing all chunks back");
                 } finally {
                     ignoreSafeWrite = false;
                 }
             } finally {
+                System.out.println("[DEBUG] trim: setting isTrimRunning=false");
                 isTrimRunning = false;
             }
+        } else {
+            System.out.println("[DEBUG] trim: SKIPPING trim (isTrimShouldBeExecuted returned false)");
         }
     }
 
@@ -433,7 +444,10 @@ public class StreamBuffer implements Closeable {
          * {@link #setMaxBufferElements(int)} was invoked from outside by another thread.
          */
         final int maxBufferElements = getMaxBufferElements();
+        System.out.println("[DEBUG] isTrimShouldBeExecuted: maxBufferElements=" + maxBufferElements + ", buffer.size=" + buffer.size() + ", availableBytes=" + availableBytes);
+
         if ((maxBufferElements <= 0) || (buffer.size() < 2) || (buffer.size() <= maxBufferElements)) {
+            System.out.println("[DEBUG] isTrimShouldBeExecuted: returning false (basic checks failed)");
             return false;
         }
 
@@ -449,15 +463,21 @@ public class StreamBuffer implements Closeable {
          * Resulting chunks = ceil(availableBytes / maxAllocationSize)
          */
         final long maxAllocationSize = getMaxAllocationSize();
+        System.out.println("[DEBUG] isTrimShouldBeExecuted: maxAllocationSize=" + maxAllocationSize);
+
         if (maxAllocationSize > 0) {
             // Calculate how many chunks we would have after consolidation
             final long resultingChunks = (availableBytes + maxAllocationSize - 1) / maxAllocationSize;
+            System.out.println("[DEBUG] isTrimShouldBeExecuted: resultingChunks=" + resultingChunks + ", buffer.size=" + buffer.size());
+
             // Only trim if it reduces chunks below the limit
             if (resultingChunks >= buffer.size()) {
+                System.out.println("[DEBUG] isTrimShouldBeExecuted: returning false (resultingChunks >= buffer.size)");
                 return false;  // Trim won't help, skip it
             }
         }
 
+        System.out.println("[DEBUG] isTrimShouldBeExecuted: returning true (trim should execute)");
         return true;
     }
 
