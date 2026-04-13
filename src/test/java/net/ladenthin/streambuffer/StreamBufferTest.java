@@ -2762,7 +2762,7 @@ public class StreamBufferTest {
         assertAll(
             () -> assertThat(sb.getBufferElementCount(), is(1)),  // trim consolidated
             () -> assertThat(sb.isTrimRunning(), is(false)),  // trim complete
-            () -> assertThat(maxAfterTrim, is(greaterThanOrEqualTo(maxAfterFirstWrite)))  // peak only increases from user writes
+            () -> assertTrue(maxAfterTrim >= maxAfterFirstWrite, "max should only increase from user writes")  // peak only increases from user writes
         );
     }
 
