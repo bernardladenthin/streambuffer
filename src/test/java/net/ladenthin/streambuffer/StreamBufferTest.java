@@ -2545,4 +2545,381 @@ public class StreamBufferTest {
     }
 
     // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="Statistics: getTotalBytesWritten, getTotalBytesRead, getMaxObservedBytes">
+
+    @Test
+    public void statistics_initial_allCountersZero() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+
+        // act & assert
+        assertAll(
+            () -> assertThat(sb.getTotalBytesWritten(), is(0L)),
+            () -> assertThat(sb.getTotalBytesRead(), is(0L)),
+            () -> assertThat(sb.getMaxObservedBytes(), is(0L))
+        );
+    }
+
+    @Test
+    public void statistics_singleWrite_tracksTotalBytesWritten() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        byte[] data = new byte[]{1, 2, 3};
+
+        // act
+        os.write(data);
+
+        // assert
+        assertThat(sb.getTotalBytesWritten(), is(3L));
+    }
+
+    @Test
+    public void statistics_multipleWrites_accumulate() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+
+        // act
+        os.write(new byte[]{1, 2});
+        os.write(new byte[]{3, 4, 5});
+        os.write(new byte[]{6});
+
+        // assert
+        assertThat(sb.getTotalBytesWritten(), is(6L));
+    }
+
+    @Test
+    public void statistics_writeWithOffset_countsOnlyOffset() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        byte[] data = new byte[]{1, 2, 3, 4, 5};
+
+        // act
+        os.write(data, 2, 3);  // write offset 2, length 3 → writes bytes 3, 4, 5
+
+        // assert
+        assertThat(sb.getTotalBytesWritten(), is(3L));
+    }
+
+    @Test
+    public void statistics_writeInt_countsAsOne() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+
+        // act
+        os.write(42);
+
+        // assert
+        assertThat(sb.getTotalBytesWritten(), is(1L));
+    }
+
+    @Test
+    public void statistics_singleByteRead_tracksTotalBytesRead() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
+        os.write(new byte[]{1, 2, 3});
+
+        // act
+        is.read();
+
+        // assert
+        assertThat(sb.getTotalBytesRead(), is(1L));
+    }
+
+    @Test
+    public void statistics_arrayRead_tracksTotalBytesRead() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
+        os.write(new byte[]{1, 2, 3, 4, 5});
+
+        // act
+        byte[] dest = new byte[5];
+        is.read(dest);
+
+        // assert
+        assertThat(sb.getTotalBytesRead(), is(5L));
+    }
+
+    @Test
+    public void statistics_partialRead_countsActuallyReturned() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
+        os.write(new byte[]{1, 2, 3});  // only 3 bytes available
+
+        // act
+        byte[] dest = new byte[100];
+        int read = is.read(dest, 0, 100);  // request 100, but only 3 available
+
+        // assert
+        assertAll(
+            () -> assertThat(read, is(3)),
+            () -> assertThat(sb.getTotalBytesRead(), is(3L))
+        );
+    }
+
+    @Test
+    @Timeout(value = 5, unit = TimeUnit.SECONDS)
+    public void statistics_concurrentReadsWrites_countersConsistent() throws IOException, InterruptedException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
+        final int N = 100;
+        final byte data = anyValue;
+
+        // act — write N bytes, then read N bytes in concurrent threads
+        Thread writer = new Thread(() -> {
+            try {
+                for (int i = 0; i < N; i++) {
+                    os.write(data);
+                }
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        });
+        Thread reader = new Thread(() -> {
+            try {
+                for (int i = 0; i < N; i++) {
+                    is.read();
+                }
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        });
+        writer.start();
+        reader.start();
+        writer.join();
+        reader.join();
+
+        // assert — written == read == N
+        assertAll(
+            () -> assertThat(sb.getTotalBytesWritten(), is((long) N)),
+            () -> assertThat(sb.getTotalBytesRead(), is((long) N))
+        );
+    }
+
+    @Test
+    public void statistics_maxObservedBytes_tracksHighestAvailable() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
+
+        // act
+        os.write(new byte[100]);  // write 100 bytes → available = 100
+        is.read(new byte[50]);    // read 50 bytes → available = 50
+
+        // assert
+        assertThat(sb.getMaxObservedBytes(), is(100L));
+    }
+
+    @Test
+    public void statistics_maxObservedBytes_preservesPeak() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
+
+        // act
+        os.write(new byte[100]);  // available = 100 (peak)
+        is.read(new byte[100]);   // available = 0
+        os.write(new byte[10]);   // available = 10 (lower than peak)
+
+        // assert
+        assertThat(sb.getMaxObservedBytes(), is(100L));
+    }
+
+    @Test
+    public void statistics_maxObservedBytes_updated_onlyDuringUserWrites() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        os.write(new byte[50]);  // write 50 → max = 50
+        long maxAfterFirstWrite = sb.getMaxObservedBytes();
+
+        // act — trigger trim by writing many small chunks
+        sb.setMaxBufferElements(2);
+        os.write(new byte[40]);  // creates 3 elements, triggers trim
+        long maxAfterTrim = sb.getMaxObservedBytes();
+
+        // assert — max should not have changed due to trim's internal operations
+        assertThat(maxAfterTrim, is(maxAfterFirstWrite));
+    }
+
+    @Test
+    public void statistics_trim_doNotAffectCounters() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        InputStream is = sb.getInputStream();
+        OutputStream os = sb.getOutputStream();
+        os.write(new byte[100]);
+        long writtenBeforeTrim = sb.getTotalBytesWritten();
+        long readBeforeTrim = sb.getTotalBytesRead();
+
+        // act — force trim
+        sb.setMaxBufferElements(1);
+        os.write(new byte[50]);
+
+        // assert — trim's internal read/write should not affect user counters
+        assertAll(
+            () -> assertThat(sb.getTotalBytesWritten(), is(writtenBeforeTrim + 50)),
+            () -> assertThat(sb.getTotalBytesRead(), is(readBeforeTrim))
+        );
+    }
+
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="maxAllocationSize: getter, setter, trim behavior">
+
+    @Test
+    public void maxAllocationSize_defaultValue_isIntegerMaxValue() {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+
+        // act
+        long maxSize = sb.getMaxAllocationSize();
+
+        // assert
+        assertThat(maxSize, is((long) Integer.MAX_VALUE));
+    }
+
+    @Test
+    public void maxAllocationSize_setAndGet_returnsSetValue() {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        long newMax = 1024;
+
+        // act
+        sb.setMaxAllocationSize(newMax);
+
+        // assert
+        assertThat(sb.getMaxAllocationSize(), is(newMax));
+    }
+
+    @Test
+    public void setMaxAllocationSize_invalidValue_throwsException() {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+
+        // act & assert
+        assertAll(
+            () -> assertThrows(IllegalArgumentException.class, () -> sb.setMaxAllocationSize(0)),
+            () -> assertThrows(IllegalArgumentException.class, () -> sb.setMaxAllocationSize(-1))
+        );
+    }
+
+    @Test
+    public void trim_respectsMaxAllocationSize_splitsLargeBuffer() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        InputStream is = sb.getInputStream();
+        byte[] data = new byte[1000];
+        Arrays.fill(data, anyValue);
+        os.write(data);  // write 1000 bytes
+        sb.setMaxAllocationSize(300);
+
+        // act — force trim
+        sb.setMaxBufferElements(1);
+        os.write(new byte[10]);  // triggers trim
+
+        // assert — data should be split into ~4 chunks (300, 300, 300, 100)
+        // Read all data and verify it's intact
+        byte[] result = new byte[1010];
+        int totalRead = 0;
+        int bytesRead;
+        while ((bytesRead = is.read(result, totalRead, 1010 - totalRead)) > 0) {
+            totalRead += bytesRead;
+        }
+        assertThat(totalRead, is(1010));
+        assertThat(result[0], is(anyValue));  // verify first byte of original data
+        assertThat(result[999], is(anyValue));  // verify last byte of original data
+    }
+
+    @Test
+    public void trim_maxAllocationSize_allDataPreserved() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        InputStream is = sb.getInputStream();
+        byte[] original = new byte[500];
+        Arrays.fill(original, anyValue);
+        sb.setMaxAllocationSize(100);
+        sb.setMaxBufferElements(2);
+
+        // act
+        os.write(original);
+        Thread.sleep(100);  // allow trim to run
+
+        // assert
+        byte[] result = new byte[500];
+        int read = is.read(result);
+        assertAll(
+            () -> assertThat(read, is(500)),
+            () -> assertArrayEquals(original, result)
+        );
+    }
+
+    @Test
+    public void trim_maxAllocationSize_withPartialRead() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        InputStream is = sb.getInputStream();
+        byte[] data = new byte[600];
+        Arrays.fill(data, anyValue);
+        os.write(data);
+
+        // act — read 200 bytes, then trigger trim with allocation limit
+        byte[] partial = new byte[200];
+        is.read(partial);
+        sb.setMaxAllocationSize(150);
+        sb.setMaxBufferElements(1);
+        os.write(new byte[10]);  // triggers trim
+
+        // assert — remaining 400 bytes should be readable
+        byte[] remaining = new byte[400];
+        int read = is.read(remaining);
+        assertThat(read, is(400));
+    }
+
+    @Test
+    public void trim_recursiveTrim_onChunkOverflow_allDataPreserved() throws IOException, InterruptedException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        InputStream is = sb.getInputStream();
+        byte[] original = new byte[10_000];
+        Arrays.fill(original, anyValue);
+        sb.setMaxAllocationSize(100);  // small chunks
+        sb.setMaxBufferElements(50);   // low threshold → second trim may trigger
+
+        // act
+        os.write(original);  // triggers first trim, chunks into ~100 pieces
+        Thread.sleep(200);   // allow any recursive trim to complete
+
+        // assert — all 10KB should be readable
+        byte[] result = new byte[10_000];
+        int totalRead = 0;
+        int bytesRead;
+        while ((bytesRead = is.read(result, totalRead, 10_000 - totalRead)) > 0) {
+            totalRead += bytesRead;
+        }
+        assertAll(
+            () -> assertThat(totalRead, is(10_000)),
+            () -> assertArrayEquals(original, result)
+        );
+    }
+
+    // </editor-fold>
 }

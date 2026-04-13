@@ -112,6 +112,34 @@ public class StreamBuffer implements Closeable {
      */
     private volatile int maxBufferElements = 100;
 
+    /**
+     * Peak value of availableBytes ever observed. Updated under bufferLock, read as volatile.
+     */
+    private volatile long maxObservedBytes = 0;
+
+    /**
+     * Cumulative bytes written by the user (excludes internal trim operations).
+     */
+    private volatile long totalBytesWritten = 0;
+
+    /**
+     * Cumulative bytes consumed by user reads and skips (excludes internal trim operations).
+     */
+    private volatile long totalBytesRead = 0;
+
+    /**
+     * Maximum size of a single byte array during consolidation. Default Integer.MAX_VALUE.
+     */
+    private volatile long maxAllocationSize = Integer.MAX_VALUE;
+
+    /**
+     * Flag set to true while trim is rearranging internal buffers.
+     * Volatile so it's visible to all threads — used to skip statistics updates during trim.
+     * Set to true at start of trim body, set to false in finally block.
+     * This ensures totalBytesRead and totalBytesWritten always represent user I/O only.
+     */
+    private volatile boolean isTrimRunning = false;
+
     private final SBInputStream is = new SBInputStream();
     private final SBOutputStream os = new SBOutputStream();
 
@@ -164,6 +192,59 @@ public class StreamBuffer implements Closeable {
      */
     public void setMaxBufferElements(int maxBufferElements) {
         this.maxBufferElements = maxBufferElements;
+    }
+
+    /**
+     * Returns the cumulative number of bytes written by user I/O operations.
+     * Excludes bytes read/written during internal trim operations.
+     *
+     * @return total bytes written.
+     */
+    public long getTotalBytesWritten() {
+        return totalBytesWritten;
+    }
+
+    /**
+     * Returns the cumulative number of bytes read by user I/O operations.
+     * Excludes bytes read/written during internal trim operations.
+     *
+     * @return total bytes read.
+     */
+    public long getTotalBytesRead() {
+        return totalBytesRead;
+    }
+
+    /**
+     * Returns the peak value of available bytes ever observed.
+     *
+     * @return maximum observed available bytes.
+     */
+    public long getMaxObservedBytes() {
+        return maxObservedBytes;
+    }
+
+    /**
+     * Returns the maximum size of a single byte array allocated during trim.
+     *
+     * @return maximum allocation size.
+     */
+    public long getMaxAllocationSize() {
+        return maxAllocationSize;
+    }
+
+    /**
+     * Set the maximum size of a single byte array allocated during trim.
+     * When trim consolidates the buffer, it splits data into chunks respecting
+     * this limit. Default is Integer.MAX_VALUE.
+     *
+     * @param maxSize maximum allocation size in bytes. Must be positive.
+     * @throws IllegalArgumentException if maxSize is not positive.
+     */
+    public void setMaxAllocationSize(final long maxSize) {
+        if (maxSize <= 0) {
+            throw new IllegalArgumentException("maxAllocationSize must be positive");
+        }
+        this.maxAllocationSize = maxSize;
     }
 
     /**
@@ -263,41 +344,50 @@ public class StreamBuffer implements Closeable {
      * This method trims the buffer. This method can be invoked after every
      * write operation. The method checks itself if the buffer should be trimmed
      * or not.
+     * <strong>MUST be called inside synchronized(bufferLock).</strong>
+     * Sets isTrimRunning volatile flag to prevent statistics updates during internal I/O.
      */
     private void trim() throws IOException {
         if (isTrimShouldBeExecuted()) {
-
-            /**
-             * Need to store more bufs, may it is not possible to read out all
-             * data at once. The available method only returns an int value
-             * instead a long value. Store all read parts of the full buffer in
-             * a deque.
-             */
-            final Deque<byte[]> tmpBuffer = new LinkedList<>();
-
-            int available;
-            // empty the current buffer, read out all bytes
-            while ((available = is.available()) > 0) {
-                final byte[] buf = new byte[available];
-                // read out of the buffer
-                // and store the result to the tmpBuffer
-                int read = is.read(buf);
-                // should never happen
-                assert read == available : "Read not enough bytes from buffer.";
-                tmpBuffer.add(buf);
-            }
-            /**
-             * Write all previously read parts back to the buffer. The buffer is
-             * clean and contains no elements because all parts are read out.
-             */
+            isTrimRunning = true;
             try {
-                ignoreSafeWrite = true;
-                while (!tmpBuffer.isEmpty()) {
-                    // pollFirst returns always a non null value, tmpBuffer is only filled with non null values
-                    os.write(tmpBuffer.pollFirst());
+
+                /**
+                 * Need to store more bufs, may it is not possible to read out all
+                 * data at once. The available method only returns an int value
+                 * instead a long value. Store all read parts of the full buffer in
+                 * a deque.
+                 */
+                final Deque<byte[]> tmpBuffer = new LinkedList<>();
+
+                int available;
+                // empty the current buffer, read out all bytes
+                while ((available = is.available()) > 0) {
+                    // Limit each allocation to maxAllocationSize
+                    final int toAllocate = (int) Math.min(available, maxAllocationSize);
+                    final byte[] buf = new byte[toAllocate];
+                    // read out of the buffer
+                    // and store the result to the tmpBuffer
+                    int read = is.read(buf);
+                    // should never happen
+                    assert read == toAllocate : "Read not enough bytes from buffer.";
+                    tmpBuffer.add(buf);
+                }
+                /**
+                 * Write all previously read parts back to the buffer. The buffer is
+                 * clean and contains no elements because all parts are read out.
+                 */
+                try {
+                    ignoreSafeWrite = true;
+                    while (!tmpBuffer.isEmpty()) {
+                        // pollFirst returns always a non null value, tmpBuffer is only filled with non null values
+                        os.write(tmpBuffer.pollFirst());
+                    }
+                } finally {
+                    ignoreSafeWrite = false;
                 }
             } finally {
-                ignoreSafeWrite = false;
+                isTrimRunning = false;
             }
         }
     }
@@ -421,6 +511,9 @@ public class StreamBuffer implements Closeable {
                     buffer.pollFirst();
                 }
                 availableBytes--;
+                if (!isTrimRunning) {
+                    totalBytesRead++;
+                }
                 // returned as int in the range 0 to 255.
                 return value & 0xff;
             }
@@ -490,6 +583,9 @@ public class StreamBuffer implements Closeable {
                         copiedBytes += maximumBytesToCopy;
                         maximumAvailableBytes = decrementAvailableBytesBudget(maximumAvailableBytes, maximumBytesToCopy);
                         availableBytes -= maximumBytesToCopy;
+                        if (!isTrimRunning) {
+                            totalBytesRead += maximumBytesToCopy;
+                        }
                         missingBytes -= maximumBytesToCopy;
                         // remove the first element from the buffer
                         buffer.pollFirst();
@@ -504,6 +600,9 @@ public class StreamBuffer implements Closeable {
                         copiedBytes += missingBytes;
                         maximumAvailableBytes = decrementAvailableBytesBudget(maximumAvailableBytes, missingBytes);
                         availableBytes -= missingBytes;
+                        if (!isTrimRunning) {
+                            totalBytesRead += missingBytes;
+                        }
                         // set missing bytes to zero
                         // we reach the end of the current buffer (b)
                         missingBytes = 0;
@@ -571,6 +670,12 @@ public class StreamBuffer implements Closeable {
                 availableBytes += len;
                 // the count must be positive after any write operation
                 assert availableBytes > 0 : "More memory used as a long can count";
+                if (!isTrimRunning) {
+                    totalBytesWritten += len;
+                    if (availableBytes > maxObservedBytes) {
+                        maxObservedBytes = availableBytes;
+                    }
+                }
                 trim();
             }
             // always at least, signal bytes are written to the buffer
