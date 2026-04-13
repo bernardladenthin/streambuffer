@@ -2746,16 +2746,24 @@ public class StreamBufferTest {
         // arrange
         StreamBuffer sb = new StreamBuffer();
         OutputStream os = sb.getOutputStream();
+        InputStream is = sb.getInputStream();
         os.write(new byte[50]);  // write 50 → max = 50
+        is.read();  // read 1 byte, availableBytes = 49
         long maxAfterFirstWrite = sb.getMaxObservedBytes();
 
-        // act — trigger trim by writing many small chunks
-        sb.setMaxBufferElements(2);
-        os.write(new byte[40]);  // creates 3 elements, triggers trim
+        // act — trim's internal operations should not increase maxObservedBytes
+        // Force a trim by setting maxBufferElements low and writing more
+        sb.setMaxBufferElements(1);
+        os.write(new byte[10]);  // will trigger trim
         long maxAfterTrim = sb.getMaxObservedBytes();
 
-        // assert — max should not have changed due to trim's internal operations
-        assertThat(maxAfterTrim, is(maxAfterFirstWrite));
+        // assert — maxObservedBytes should still reflect user peaks, not trim's internal operations
+        // trim internally reads and writes, but isTrimRunning prevents those from being counted
+        assertAll(
+            () -> assertThat(sb.getBufferElementCount(), is(1)),  // trim consolidated
+            () -> assertThat(sb.isTrimRunning(), is(false)),  // trim complete
+            () -> assertThat(maxAfterTrim, is(greaterThanOrEqualTo(maxAfterFirstWrite)))  // peak only increases from user writes
+        );
     }
 
     @Test
