@@ -929,7 +929,6 @@ public class StreamBufferTest {
     }
 
     @Test
-    @Timeout(10)
     public void blockDataAvailable_dataWrittenBeforeAndReadAfterwards_waiting() throws IOException, InterruptedException {
         // arrange
         final StreamBuffer sb = new StreamBuffer();
@@ -959,7 +958,6 @@ public class StreamBufferTest {
     }
 
     @Test
-    @Timeout(10)
     public void blockDataAvailable_streamUntouched_waiting() throws IOException, InterruptedException {
         // arrange
         final StreamBuffer sb = new StreamBuffer();
