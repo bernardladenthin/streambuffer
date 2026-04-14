@@ -69,6 +69,20 @@ public class StreamBuffer implements Closeable {
     private final CopyOnWriteArrayList<Semaphore> signals = new CopyOnWriteArrayList<>();
 
     /**
+     * Observers notified when trim() starts executing.
+     * Uses {@link CopyOnWriteArrayList} for thread-safe iteration.
+     * Each registered semaphore is released when trim begins.
+     */
+    private final CopyOnWriteArrayList<Semaphore> trimStartSignals = new CopyOnWriteArrayList<>();
+
+    /**
+     * Observers notified when trim() completes executing.
+     * Uses {@link CopyOnWriteArrayList} for thread-safe iteration.
+     * Each registered semaphore is released when trim ends.
+     */
+    private final CopyOnWriteArrayList<Semaphore> trimEndSignals = new CopyOnWriteArrayList<>();
+
+    /**
      * A variable for the current position of the current element in the
      * {@link #buffer}.
      */
@@ -303,6 +317,54 @@ public class StreamBuffer implements Closeable {
     }
 
     /**
+     * Register an external {@link Semaphore} to be released when trim() starts.
+     * The semaphore uses the same "max 1 permit" pattern as modification signals.
+     *
+     * @param semaphore the semaphore to register for trim start events
+     * @throws NullPointerException if semaphore is null
+     */
+    public void addTrimStartSignal(Semaphore semaphore) {
+        if (semaphore == null) {
+            throw new NullPointerException("Semaphore cannot be null");
+        }
+        trimStartSignals.add(semaphore);
+    }
+
+    /**
+     * Remove a previously registered trim start semaphore.
+     *
+     * @param semaphore the semaphore to remove
+     * @return true if the semaphore was found and removed, otherwise false
+     */
+    public boolean removeTrimStartSignal(Semaphore semaphore) {
+        return trimStartSignals.remove(semaphore);
+    }
+
+    /**
+     * Register an external {@link Semaphore} to be released when trim() completes.
+     * The semaphore uses the same "max 1 permit" pattern as modification signals.
+     *
+     * @param semaphore the semaphore to register for trim end events
+     * @throws NullPointerException if semaphore is null
+     */
+    public void addTrimEndSignal(Semaphore semaphore) {
+        if (semaphore == null) {
+            throw new NullPointerException("Semaphore cannot be null");
+        }
+        trimEndSignals.add(semaphore);
+    }
+
+    /**
+     * Remove a previously registered trim end semaphore.
+     *
+     * @param semaphore the semaphore to remove
+     * @return true if the semaphore was found and removed, otherwise false
+     */
+    public boolean removeTrimEndSignal(Semaphore semaphore) {
+        return trimEndSignals.remove(semaphore);
+    }
+
+    /**
      * Security check mostly copied from {@link InputStream#read(byte[], int, int)}.
      * Ensures the parameter are valid.
      * @param b the byte array to copy from
@@ -377,6 +439,7 @@ public class StreamBuffer implements Closeable {
     private void trim() throws IOException {
         if (isTrimShouldBeExecuted()) {
             isTrimRunning = true;
+            releaseTrimStartSignals();
             try {
 
                 /**
@@ -415,6 +478,31 @@ public class StreamBuffer implements Closeable {
                 }
             } finally {
                 isTrimRunning = false;
+                releaseTrimEndSignals();
+            }
+        }
+    }
+
+    /**
+     * Release all registered trim start signals (max 1 permit pattern).
+     * This is called when trim() begins executing.
+     */
+    private void releaseTrimStartSignals() {
+        for (Semaphore semaphore : trimStartSignals) {
+            if (semaphore.availablePermits() == 0) {
+                semaphore.release();
+            }
+        }
+    }
+
+    /**
+     * Release all registered trim end signals (max 1 permit pattern).
+     * This is called when trim() completes executing.
+     */
+    private void releaseTrimEndSignals() {
+        for (Semaphore semaphore : trimEndSignals) {
+            if (semaphore.availablePermits() == 0) {
+                semaphore.release();
             }
         }
     }

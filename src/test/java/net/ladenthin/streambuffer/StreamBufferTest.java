@@ -3688,5 +3688,150 @@ public class StreamBufferTest {
         assertThat(secondMax, is(101L));  // Positive test: both > and >= work here
     }
 
+    @Test
+    public void trimStartSignal_releasedWhenTrimBegins() throws IOException, InterruptedException {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+        final Semaphore trimStarted = new Semaphore(0);
+        sb.addTrimStartSignal(trimStarted);
+
+        sb.setMaxBufferElements(1);
+        final OutputStream os = sb.getOutputStream();
+
+        // act - write data to trigger trim
+        for (int i = 0; i < 200; i++) {
+            os.write(42);
+        }
+
+        // assert - trim start signal was released (has permits available)
+        assertThat(trimStarted.availablePermits(), greaterThanOrEqualTo(1));
+
+        // cleanup
+        sb.removeTrimStartSignal(trimStarted);
+    }
+
+    @Test
+    public void trimEndSignal_releasedWhenTrimCompletes() throws IOException, InterruptedException {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+        final Semaphore trimEnded = new Semaphore(0);
+        sb.addTrimEndSignal(trimEnded);
+
+        sb.setMaxBufferElements(1);
+        final OutputStream os = sb.getOutputStream();
+
+        // act - write data to trigger trim
+        for (int i = 0; i < 200; i++) {
+            os.write(42);
+        }
+
+        // assert - trim end signal was released (has permits available)
+        assertThat(trimEnded.availablePermits(), greaterThanOrEqualTo(1));
+
+        // cleanup
+        sb.removeTrimEndSignal(trimEnded);
+    }
+
+    @Test
+    public void isTrimRunning_trueWhenTrimStartSignalFires() throws IOException, InterruptedException {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+        final AtomicBoolean trimWasRunning = new AtomicBoolean(false);
+
+        // Create custom semaphore to capture state when trim starts
+        final Semaphore trimStartObserver = new Semaphore(0) {
+            @Override
+            public void release() {
+                // Called when trim starts - check flag is true
+                trimWasRunning.set(sb.isTrimRunning());
+                super.release();
+            }
+        };
+
+        sb.addTrimStartSignal(trimStartObserver);
+        sb.setMaxBufferElements(1);
+        final OutputStream os = sb.getOutputStream();
+
+        // act - trigger trim by writing enough data
+        for (int i = 0; i < 200; i++) {
+            os.write(42);
+        }
+
+        // assert - isTrimRunning was true when trim start signal fired
+        assertThat(trimWasRunning.get(), is(true));  // Kills: isTrimRunning returned false
+
+        // cleanup
+        sb.removeTrimStartSignal(trimStartObserver);
+    }
+
+    @Test
+    public void statistics_notUpdatedWhileTrimRunning() throws IOException, InterruptedException {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+        final OutputStream os = sb.getOutputStream();
+
+        // User writes initial data
+        for (int i = 0; i < 100; i++) {
+            os.write(42);
+        }
+        long statsBeforeTrim = sb.getTotalBytesWritten();  // Should be 100
+
+        // Capture stats while trim is running
+        final AtomicLong statsWhileTrimRunning = new AtomicLong(0);
+        final Semaphore trimStartObserver = new Semaphore(0) {
+            @Override
+            public void release() {
+                // Capture stats while trim is running (isTrimRunning == true)
+                statsWhileTrimRunning.set(sb.getTotalBytesWritten());
+                super.release();
+            }
+        };
+
+        sb.addTrimStartSignal(trimStartObserver);
+        sb.setMaxBufferElements(1);
+
+        // act - write more data which triggers trim
+        for (int i = 0; i < 200; i++) {
+            os.write(42);
+        }
+
+        // assert - stats captured during trim should match stats before trim
+        // (because internal trim I/O is excluded by !isTrimRunning check)
+        assertThat(statsWhileTrimRunning.get(), is(statsBeforeTrim));
+        // Kills: if (isTrimRunning) instead of if (!isTrimRunning)
+
+        // cleanup
+        sb.removeTrimStartSignal(trimStartObserver);
+    }
+
+    @Test
+    public void trimSignals_canBeAddedAndRemoved() throws IOException {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+        final Semaphore signal = new Semaphore(0);
+
+        // act & assert - add and remove trim start signal
+        sb.addTrimStartSignal(signal);
+        assertThat(sb.removeTrimStartSignal(signal), is(true));
+        assertThat(sb.removeTrimStartSignal(signal), is(false));
+
+        // act & assert - add and remove trim end signal
+        sb.addTrimEndSignal(signal);
+        assertThat(sb.removeTrimEndSignal(signal), is(true));
+        assertThat(sb.removeTrimEndSignal(signal), is(false));
+    }
+
+    @Test
+    public void trimSignals_nullThrowsException() {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+
+        // act & assert - addTrimStartSignal with null
+        assertThrows(NullPointerException.class, () -> sb.addTrimStartSignal(null));
+
+        // act & assert - addTrimEndSignal with null
+        assertThrows(NullPointerException.class, () -> sb.addTrimEndSignal(null));
+    }
+
     // </editor-fold>
 }
