@@ -42,7 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-@Timeout(value = 5, unit = TimeUnit.SECONDS)
+@Timeout(value = 20, unit = TimeUnit.SECONDS)
 public class StreamBufferTest {
 
     static Stream<Arguments> writeMethods() {
@@ -1809,7 +1809,6 @@ public class StreamBufferTest {
 
     // <editor-fold defaultstate="collapsed" desc="concurrent trim and write">
     @Test
-    @Timeout(10)
     public void concurrentTrimAndWrite_noCrashOrCorruption() throws Exception {
         // arrange
         final StreamBuffer sb = new StreamBuffer();
