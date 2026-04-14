@@ -3474,17 +3474,17 @@ public class StreamBufferTest {
         final StreamBuffer sb = new StreamBuffer();
         final OutputStream os = sb.getOutputStream();
 
-        // Set conditions that make trim necessary:
-        // - maxBufferElements > 0 (already 100 by default)
-        // - buffer.size() >= 2 (need 2+ chunks)
-        // - buffer.size() > maxBufferElements (need to exceed limit)
-        sb.setMaxBufferElements(2);
-        sb.setMaxAllocationSize(Integer.MAX_VALUE);
-
-        // Write enough data to create 3+ chunks (default 100 bytes per chunk)
+        // Write data first with default maxBufferElements (100)
+        // This creates multiple chunks without triggering trim
         for (int i = 0; i < 400; i++) {
             os.write(42);
         }
+
+        // Now lower maxBufferElements to trigger trim condition
+        // Buffer should have ~4 chunks, maxBufferElements is now 2
+        // This makes: buffer.size() (4) > maxBufferElements (2)
+        sb.setMaxBufferElements(2);
+        sb.setMaxAllocationSize(Integer.MAX_VALUE);
 
         // act & assert
         // All conditions pass: isTrimRunning=false, buffer has enough chunks, edge case ok
