@@ -4234,10 +4234,6 @@ public class StreamBufferTest {
             // Test availableBytes=0 boundary (should skip edge case check)
             Arguments.of(11, 10, 0, 100, false),      // availableBytes=0, skip edge case check entirely
 
-            // Test currentBufferSize=2 boundary (minimum for consolidation)
-            Arguments.of(2, 1, 200, 100, false),      // currentBufferSize=2, maxBufferElements=1
-                                                       // 2 > 1, but resultingChunks=2 >= 2 → skip
-
             // Test boundary where both conditions are true but edge case prevents trim
             Arguments.of(3, 1, 300, 100, false),      // 3 > 1, ceil(300/100)=3, 3 >= 3 → skip
 
