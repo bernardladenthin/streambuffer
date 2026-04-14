@@ -3469,8 +3469,6 @@ public class StreamBufferTest {
     }
 
     @Test
-
-    @Test
     public void isTrimShouldBeExecuted_allConditionsPass_returnsTrue() throws IOException {
         // arrange
         final StreamBuffer sb = new StreamBuffer();
