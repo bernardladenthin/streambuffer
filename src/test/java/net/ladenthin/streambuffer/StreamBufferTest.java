@@ -42,6 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+@Timeout(value = 5, unit = TimeUnit.SECONDS)
 public class StreamBufferTest {
 
     static Stream<Arguments> writeMethods() {
@@ -632,7 +633,6 @@ public class StreamBufferTest {
     }
 
     @Test
-    @Timeout(3)
     public void read_parallelClose_noDeadlock() throws Exception {
         // arrange
         final StreamBuffer sb = new StreamBuffer();
@@ -1628,7 +1628,6 @@ public class StreamBufferTest {
     }
 
     @Test
-    @Timeout(5)
     public void read_concurrentWriteCloseWithInsufficientBytes_returnsAvailableBytes() throws Exception {
         // arrange
         final StreamBuffer sb = new StreamBuffer();
@@ -1769,7 +1768,6 @@ public class StreamBufferTest {
     }
 
     @Test
-    @Timeout(5)
     public void read_concurrentMultipleWritesThenClose_returnsAvailableBytes() throws Exception {
         // arrange
         final StreamBuffer sb = new StreamBuffer();
@@ -2219,7 +2217,6 @@ public class StreamBufferTest {
 
     // <editor-fold defaultstate="collapsed" desc="thread interruption during read">
     @Test
-    @Timeout(5)
     public void read_threadInterrupted_throwsIOException() throws Exception {
         // arrange
         final StreamBuffer sb = new StreamBuffer();
@@ -2249,7 +2246,6 @@ public class StreamBufferTest {
     }
 
     @Test
-    @Timeout(5)
     public void read_arrayThreadInterruptedWhileWaitingForSecondByte_throwsIOException() throws Exception {
         // arrange
         final StreamBuffer sb = new StreamBuffer();
@@ -2671,7 +2667,6 @@ public class StreamBufferTest {
     }
 
     @Test
-    @Timeout(value = 5, unit = TimeUnit.SECONDS)
     public void statistics_concurrentReadsWrites_countersConsistent() throws IOException, InterruptedException {
         // arrange
         StreamBuffer sb = new StreamBuffer();
