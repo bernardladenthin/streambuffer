@@ -3468,5 +3468,100 @@ public class StreamBufferTest {
         );
     }
 
+    @Test
+
+    @Test
+    public void isTrimShouldBeExecuted_allConditionsPass_returnsTrue() throws IOException {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+        final OutputStream os = sb.getOutputStream();
+
+        // Set conditions that make trim necessary:
+        // - maxBufferElements > 0 (already 100 by default)
+        // - buffer.size() >= 2 (need 2+ chunks)
+        // - buffer.size() > maxBufferElements (need to exceed limit)
+        sb.setMaxBufferElements(2);
+        sb.setMaxAllocationSize(Integer.MAX_VALUE);
+
+        // Write enough data to create 3+ chunks (default 100 bytes per chunk)
+        for (int i = 0; i < 400; i++) {
+            os.write(42);
+        }
+
+        // act & assert
+        // All conditions pass: isTrimRunning=false, buffer has enough chunks, edge case ok
+        assertThat(sb.isTrimShouldBeExecuted(), is(true));  // Kills mutation of final return true
+    }
+
+    @Test
+    public void isTrimShouldBeExecuted_orConditionFirstCheck_returnsFalse() throws IOException {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+
+        // Set maxBufferElements to 0 (triggers first OR condition)
+        sb.setMaxBufferElements(0);
+
+        // Write some data (would normally trigger trim)
+        final OutputStream os = sb.getOutputStream();
+        for (int i = 0; i < 100; i++) {
+            os.write(42);
+        }
+
+        // act & assert
+        // First OR condition is true: maxBufferElements <= 0
+        assertThat(sb.isTrimShouldBeExecuted(), is(false));  // Kills first return false in OR
+    }
+
+    @Test
+    public void isTrimShouldBeExecuted_edgeCaseReturnsFalse() throws IOException {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+        sb.setMaxBufferElements(3);
+        sb.setMaxAllocationSize(50);
+
+        final OutputStream os = sb.getOutputStream();
+        // Write 200 bytes: with maxAllocSize=50, this creates ceil(200/50)=4 chunks
+        // But buffer.size() should be ~2 initially, then grows to 4
+        // Edge case: resultingChunks (4) >= buffer.size() (2) -> should return false
+        for (int i = 0; i < 200; i++) {
+            os.write(42);
+        }
+
+        // act & assert
+        // Edge case check should trigger and return false
+        assertThat(sb.isTrimShouldBeExecuted(), is(false));  // Kills edge case return false
+    }
+
+    @Test
+    public void isTrimShouldBeExecuted_orConditionSecondCheck_returnsFalse() throws IOException {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+
+        // Write only 1 byte to keep buffer.size() < 2
+        final OutputStream os = sb.getOutputStream();
+        os.write(42);
+
+        // act & assert
+        // Second OR condition is true: buffer.size() < 2
+        assertThat(sb.isTrimShouldBeExecuted(), is(false));  // Kills second return false in OR
+    }
+
+    @Test
+    public void isTrimShouldBeExecuted_orConditionThirdCheck_returnsFalse() throws IOException {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+        sb.setMaxBufferElements(100);  // Set high enough to not trigger trim
+
+        final OutputStream os = sb.getOutputStream();
+        // Write only 2 chunks (low number < maxBufferElements)
+        for (int i = 0; i < 200; i++) {
+            os.write(42);
+        }
+
+        // act & assert
+        // Third OR condition is true: buffer.size() (likely 2) <= maxBufferElements (100)
+        assertThat(sb.isTrimShouldBeExecuted(), is(false));  // Kills third condition return false
+    }
+
     // </editor-fold>
 }
