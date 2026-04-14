@@ -3561,5 +3561,100 @@ public class StreamBufferTest {
         assertThat(sb.isTrimShouldBeExecuted(), is(false));  // Kills third condition return false
     }
 
+    @Test
+    public void shouldCheckEdgeCase_boundaryAvailableBytes_zero() {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+
+        // act - availableBytes == 0, maxAllocSize > 0
+        final boolean result = sb.shouldCheckEdgeCase(0, 1000);
+
+        // assert - should return false when availableBytes == 0 (boundary: > 0)
+        assertThat(result, is(false));
+    }
+
+    @Test
+    public void shouldCheckEdgeCase_boundaryMaxAllocSize_equal() {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+
+        // act - maxAllocSize == availableBytes (both 500)
+        final boolean result = sb.shouldCheckEdgeCase(500, 500);
+
+        // assert - should return false when maxAllocSize == availableBytes (boundary: <)
+        assertThat(result, is(false));
+    }
+
+    @Test
+    public void shouldCheckEdgeCase_bothConditionsTrue() {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+
+        // act - availableBytes > 0 AND maxAllocSize < availableBytes
+        final boolean result = sb.shouldCheckEdgeCase(1000, 500);
+
+        // assert - should return true when both conditions are met
+        assertThat(result, is(true));
+    }
+
+    @Test
+    public void maxObservedBytes_boundaryEqual_notUpdated() throws IOException {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+        final OutputStream os = sb.getOutputStream();
+
+        // Write 100 bytes and read 0 to set maxObservedBytes to 100
+        for (int i = 0; i < 100; i++) {
+            os.write(42);
+        }
+        long firstMax = sb.getMaxObservedBytes();
+        assertThat(firstMax, is(100L));
+
+        // Read 50 bytes to bring availableBytes down to 50
+        final InputStream is = sb.getInputStream();
+        for (int i = 0; i < 50; i++) {
+            is.read();
+        }
+
+        // act - write exactly 50 bytes to bring availableBytes back to 100
+        // This makes availableBytes == maxObservedBytes (100), boundary case
+        for (int i = 0; i < 50; i++) {
+            os.write(42);
+        }
+
+        // assert - maxObservedBytes should stay 100 (not updated on ==)
+        long secondMax = sb.getMaxObservedBytes();
+        assertThat(secondMax, is(100L));
+    }
+
+    @Test
+    public void maxObservedBytes_boundaryGreater_updated() throws IOException {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+        final OutputStream os = sb.getOutputStream();
+
+        // Write 100 bytes to set maxObservedBytes to 100
+        for (int i = 0; i < 100; i++) {
+            os.write(42);
+        }
+        long firstMax = sb.getMaxObservedBytes();
+        assertThat(firstMax, is(100L));
+
+        // Read 50 bytes to bring availableBytes down to 50
+        final InputStream is = sb.getInputStream();
+        for (int i = 0; i < 50; i++) {
+            is.read();
+        }
+
+        // act - write 51 bytes to bring availableBytes to 101 (> maxObservedBytes)
+        for (int i = 0; i < 51; i++) {
+            os.write(42);
+        }
+
+        // assert - maxObservedBytes should be updated to 101
+        long secondMax = sb.getMaxObservedBytes();
+        assertThat(secondMax, is(101L));
+    }
+
     // </editor-fold>
 }
