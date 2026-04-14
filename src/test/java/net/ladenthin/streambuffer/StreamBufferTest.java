@@ -3147,6 +3147,44 @@ public class StreamBufferTest {
     }
 
     @Test
+    public void trim_maxAllocationSize_one_withSubstantialData() throws IOException {
+        // arrange — Verify that trim works correctly even with maxAllocationSize=1 (extreme case)
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        InputStream is = sb.getInputStream();
+
+        // Write 1000 bytes in 100-byte chunks to trigger trim
+        byte[] chunk = new byte[100];
+        Arrays.fill(chunk, anyValue);
+        sb.setMaxAllocationSize(1L);    // Extreme: 1 byte per allocation
+        sb.setMaxBufferElements(5);     // Low threshold to trigger trim
+
+        // act — write 10 chunks (1000 bytes total)
+        // With maxAllocationSize=1, each byte is allocated separately: 1000 chunks after trim
+        for (int i = 0; i < 10; i++) {
+            os.write(chunk);
+        }
+
+        // assert — verify trim completed and all data is readable
+        assertThat(sb.isTrimRunning(), is(false));
+
+        os.close();
+        byte[] result = new byte[1000];
+        int totalRead = 0;
+        int bytesRead;
+        while ((bytesRead = is.read(result, totalRead, 1000 - totalRead)) > 0) {
+            totalRead += bytesRead;
+        }
+
+        // All 1000 bytes should be read and intact
+        assertAll(
+            () -> assertThat(totalRead, is(1000)),
+            () -> assertThat(result[0], is(anyValue)),
+            () -> assertThat(result[999], is(anyValue))
+        );
+    }
+
+    @Test
     public void decrementAvailableBytesBudget_subtracts_notAdds() {
         // arrange
         final StreamBuffer sb = new StreamBuffer();
