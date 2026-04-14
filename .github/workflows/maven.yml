@@ -66,12 +66,26 @@ jobs:
         run: |
           echo "=== PIT Survived Mutations ==="
           echo ""
+          echo "Available PIT report files:"
+          find target/pit-reports -type f -name "*.xml" -o -name "*.html" 2>/dev/null | head -10
+          echo ""
+
+          # Try XML first
           if [ -f target/pit-reports/mutations.xml ]; then
+            echo "Found mutations.xml - extracting survivors..."
+            echo ""
             grep -B 4 -A 2 'status="SURVIVED"' target/pit-reports/mutations.xml
             echo ""
             echo "Total survivors: $(grep -c 'status="SURVIVED"' target/pit-reports/mutations.xml || echo 0)"
+          # Try index.html and extract mutation info
+          elif [ -f target/pit-reports/index.html ]; then
+            echo "Found index.html - extracting from HTML report..."
+            echo ""
+            grep -i "survived\|mutant" target/pit-reports/index.html | head -50
           else
-            echo "No mutations.xml report found"
+            echo "No mutations.xml or index.html report found"
+            echo "Contents of target/pit-reports/:"
+            ls -la target/pit-reports/ 2>/dev/null || echo "Directory not found"
           fi
 
       - name: Upload PIT report
