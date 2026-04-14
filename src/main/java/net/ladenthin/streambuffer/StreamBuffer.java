@@ -626,11 +626,56 @@ public class StreamBuffer implements Closeable {
     }
 
     /**
+     * Check if available bytes is positive (boundary: > 0).
+     * Package-private for direct unit testing of boundary conditions.
+     */
+    boolean isAvailableBytesPositive(long availableBytes) {
+        return availableBytes > 0;
+    }
+
+    /**
+     * Check if max allocation size is less than available bytes (boundary: <).
+     * Package-private for direct unit testing of boundary conditions.
+     */
+    boolean isMaxAllocSizeLessThanAvailable(long maxAllocSize, long availableBytes) {
+        return maxAllocSize < availableBytes;
+    }
+
+    /**
      * Check if edge case check should be performed (available bytes > 0 AND maxAllocSize < availableBytes).
      * Package-private for direct unit testing of boundary conditions.
      */
     boolean shouldCheckEdgeCase(long availableBytes, long maxAllocSize) {
-        return availableBytes > 0 && maxAllocSize < availableBytes;
+        return isAvailableBytesPositive(availableBytes) &&
+               isMaxAllocSizeLessThanAvailable(maxAllocSize, availableBytes);
+    }
+
+    /**
+     * Record bytes read to statistics if trim is not running.
+     * Package-private for direct unit testing.
+     */
+    void recordReadStatistics(long bytesRead) {
+        if (!isTrimRunning) {
+            totalBytesRead += bytesRead;
+        }
+    }
+
+    /**
+     * Check if available bytes exceeds current max observed (boundary: >).
+     * Package-private for direct unit testing of boundary conditions.
+     */
+    boolean shouldUpdateMaxObservedBytes(long availableBytes, long currentMax) {
+        return availableBytes > currentMax;
+    }
+
+    /**
+     * Update max observed bytes if available bytes exceeds current max.
+     * Package-private for direct unit testing.
+     */
+    void updateMaxObservedBytesIfNeeded(long availableBytes) {
+        if (shouldUpdateMaxObservedBytes(availableBytes, maxObservedBytes)) {
+            maxObservedBytes = availableBytes;
+        }
     }
 
     /**
@@ -717,9 +762,7 @@ public class StreamBuffer implements Closeable {
                     buffer.pollFirst();
                 }
                 availableBytes--;
-                if (!isTrimRunning) {
-                    totalBytesRead++;
-                }
+                recordReadStatistics(1);
                 // returned as int in the range 0 to 255.
                 return value & 0xff;
             }
@@ -789,9 +832,7 @@ public class StreamBuffer implements Closeable {
                         copiedBytes += maximumBytesToCopy;
                         maximumAvailableBytes = decrementAvailableBytesBudget(maximumAvailableBytes, maximumBytesToCopy);
                         availableBytes -= maximumBytesToCopy;
-                        if (!isTrimRunning) {
-                            totalBytesRead += maximumBytesToCopy;
-                        }
+                        recordReadStatistics(maximumBytesToCopy);
                         missingBytes -= maximumBytesToCopy;
                         // remove the first element from the buffer
                         buffer.pollFirst();
@@ -806,9 +847,7 @@ public class StreamBuffer implements Closeable {
                         copiedBytes += missingBytes;
                         maximumAvailableBytes = decrementAvailableBytesBudget(maximumAvailableBytes, missingBytes);
                         availableBytes -= missingBytes;
-                        if (!isTrimRunning) {
-                            totalBytesRead += missingBytes;
-                        }
+                        recordReadStatistics(missingBytes);
                         // set missing bytes to zero
                         // we reach the end of the current buffer (b)
                         missingBytes = 0;
@@ -878,9 +917,7 @@ public class StreamBuffer implements Closeable {
                 assert availableBytes > 0 : "More memory used as a long can count";
                 if (!isTrimRunning) {
                     totalBytesWritten += len;
-                    if (availableBytes > maxObservedBytes) {
-                        maxObservedBytes = availableBytes;
-                    }
+                    updateMaxObservedBytesIfNeeded(availableBytes);
                 }
                 trim();
             }
