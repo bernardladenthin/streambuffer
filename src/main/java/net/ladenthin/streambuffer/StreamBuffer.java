@@ -459,8 +459,8 @@ public class StreamBuffer implements Closeable {
          */
         final long maxAllocSize = getMaxAllocationSize();
         if (availableBytes > 0 && maxAllocSize < availableBytes) {
-            final long resultingChunks = (availableBytes + maxAllocSize - 1) / maxAllocSize;
-            if (resultingChunks >= buffer.size()) {
+            final long resultingChunks = calculateResultingChunks(availableBytes, maxAllocSize);
+            if (shouldSkipTrimDueToEdgeCase(resultingChunks, buffer.size())) {
                 return false;
             }
         }
@@ -488,6 +488,27 @@ public class StreamBuffer implements Closeable {
      */
     long decrementAvailableBytesBudget(long current, long decrement) {
         return current - decrement;
+    }
+
+    /**
+     * Calculates the number of chunks needed to hold availableBytes when
+     * consolidating with a size limit of maxAllocSize.
+     * Uses ceiling division: ceil(n/d) = (n + d - 1) / d
+     * Extracted so PIT can generate testable mutations on the arithmetic operators.
+     * Package-private for direct unit testing.
+     */
+    long calculateResultingChunks(long availableBytes, long maxAllocSize) {
+        return (availableBytes + maxAllocSize - 1) / maxAllocSize;
+    }
+
+    /**
+     * Determines if trim should be skipped due to edge case:
+     * when consolidating would NOT reduce chunk count below the current buffer size.
+     * Extracted so PIT can generate testable mutations on the comparison operators.
+     * Package-private for direct unit testing.
+     */
+    boolean shouldSkipTrimDueToEdgeCase(long resultingChunks, int currentBufferSize) {
+        return resultingChunks >= currentBufferSize;
     }
 
     /**

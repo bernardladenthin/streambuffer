@@ -3315,18 +3315,40 @@ public class StreamBufferTest {
         // If mutated to (1001 - 1000 - 1) / 1000 = 0 ✗
         assertAll(
             () -> {
-                // Manually compute what isTrimShouldBeExecuted would calculate
-                long availableBytes = 1001;
-                long maxAllocSize = 1000;
-                long resultingChunks = (availableBytes + maxAllocSize - 1) / maxAllocSize;
+                // Test: ceil(1001 / 1000) = 2
+                long resultingChunks = sb.calculateResultingChunks(1001L, 1000L);
                 assertThat(resultingChunks, is(2L));  // Kills + vs - mutation
             },
             () -> {
-                // Another example: ceil(500 / 100) = 5
-                long availableBytes = 500;
-                long maxAllocSize = 100;
-                long resultingChunks = (availableBytes + maxAllocSize - 1) / maxAllocSize;
+                // Test: ceil(500 / 100) = 5
+                long resultingChunks = sb.calculateResultingChunks(500L, 100L);
                 assertThat(resultingChunks, is(5L));
+            }
+        );
+    }
+
+    @Test
+    public void shouldSkipTrimDueToEdgeCase_boundsComparison() {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+
+        // act & assert
+        // Test >= boundary: when resultingChunks >= currentBufferSize, should skip
+        assertAll(
+            () -> {
+                // When equal: 10 >= 10 → should skip (return true)
+                boolean shouldSkip = sb.shouldSkipTrimDueToEdgeCase(10L, 10);
+                assertThat(shouldSkip, is(true));  // Kills >= vs > mutation
+            },
+            () -> {
+                // When greater: 11 >= 10 → should skip (return true)
+                boolean shouldSkip = sb.shouldSkipTrimDueToEdgeCase(11L, 10);
+                assertThat(shouldSkip, is(true));
+            },
+            () -> {
+                // When less: 9 >= 10 → should not skip (return false)
+                boolean shouldSkip = sb.shouldSkipTrimDueToEdgeCase(9L, 10);
+                assertThat(shouldSkip, is(false));  // Kills >= vs > mutation
             }
         );
     }
