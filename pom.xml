@@ -190,6 +190,7 @@
                         <param>net.ladenthin.streambuffer.*</param>
                     </targetTests>
                     <mutationThreshold>100</mutationThreshold>
+                    <timeoutConstant>30000</timeoutConstant>
                 </configuration>
              </plugin>
         </plugins>
