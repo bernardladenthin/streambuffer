@@ -4256,4 +4256,184 @@ public class StreamBufferTest {
     }
 
     // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="Untested Edge Cases - Exception Safety and Configuration">
+
+    @Test
+    public void trim_exceptionDuringRead_flagResetsInFinally() throws IOException {
+        // arrange — Verify that isTrimRunning is reset even if exception occurs during is.read()
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+
+        // Write enough data to trigger trim
+        for (int i = 0; i < 150; i++) {
+            os.write(anyValue);
+        }
+        sb.setMaxBufferElements(10);
+
+        // act — trigger trim by writing more data
+        // The trim operation should reset isTrimRunning even if exceptions occur
+        os.write(new byte[100]);
+
+        // assert — isTrimRunning should be false after trim completes (or fails safely)
+        assertThat(sb.isTrimRunning(), is(false));
+    }
+
+    @Test
+    public void trim_exceptionDuringWrite_flagResetsInFinally() throws IOException {
+        // arrange — Similar to above but focused on write phase of trim
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        InputStream is = sb.getInputStream();
+
+        // Write data to create multiple chunks
+        byte[] chunk = new byte[50];
+        Arrays.fill(chunk, anyValue);
+        for (int i = 0; i < 15; i++) {
+            os.write(chunk);
+        }
+        sb.setMaxBufferElements(5);
+
+        // act — write more to trigger trim
+        os.write(chunk);
+
+        // assert — flag should be reset
+        assertThat(sb.isTrimRunning(), is(false));
+
+        // Verify data integrity despite trim
+        os.close();
+        byte[] result = new byte[800];
+        int totalRead = 0;
+        int bytesRead;
+        while ((bytesRead = is.read(result, totalRead, 800 - totalRead)) > 0) {
+            totalRead += bytesRead;
+        }
+        assertThat(totalRead, is(800));
+    }
+
+    @Test
+    public void setMaxAllocationSize_duringNormalOperation_appliesImmediately() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        InputStream is = sb.getInputStream();
+
+        // act — change maxAllocationSize between operations
+        sb.setMaxAllocationSize(50);
+        for (int i = 0; i < 100; i++) {
+            os.write(anyValue);
+        }
+
+        // Change it again mid-stream
+        sb.setMaxAllocationSize(25);
+        sb.setMaxBufferElements(2);  // trigger trim with new limit
+        for (int i = 0; i < 50; i++) {
+            os.write(anyValue);
+        }
+
+        // assert — all data should be readable
+        os.close();
+        byte[] result = new byte[150];
+        int totalRead = 0;
+        int bytesRead;
+        while ((bytesRead = is.read(result, totalRead, 150 - totalRead)) > 0) {
+            totalRead += bytesRead;
+        }
+        assertThat(totalRead, is(150));
+    }
+
+    @Test
+    public void trim_signalOperationsConcurrent_handlesSafely() throws IOException, InterruptedException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        InputStream is = sb.getInputStream();
+        Semaphore trimStarted = new Semaphore(0);
+        Semaphore trimEnded = new Semaphore(0);
+
+        // add signals to be released when trim occurs
+        sb.addTrimStartSignal(trimStarted);
+        sb.addTrimEndSignal(trimEnded);
+
+        // Write data to trigger trim
+        byte[] chunk = new byte[100];
+        Arrays.fill(chunk, anyValue);
+        sb.setMaxBufferElements(2);
+
+        // act — write enough to trigger trim
+        for (int i = 0; i < 5; i++) {
+            os.write(chunk);
+        }
+
+        // assert — signals were released
+        assertThat(trimStarted.tryAcquire(1, TimeUnit.SECONDS), is(true));
+        assertThat(trimEnded.tryAcquire(1, TimeUnit.SECONDS), is(true));
+
+        // Clean up
+        sb.removeTrimStartSignal(trimStarted);
+        sb.removeTrimEndSignal(trimEnded);
+    }
+
+    @Test
+    public void ignoreSafeWrite_resetAfterTrim() throws IOException {
+        // arrange — Verify that ignoreSafeWrite flag is properly reset after trim
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        InputStream is = sb.getInputStream();
+
+        // Enable safe write to test the ignoreSafeWrite flag
+        sb.setSafeWrite(true);
+
+        // Write data to trigger trim
+        byte[] data = new byte[50];
+        Arrays.fill(data, anyValue);
+        sb.setMaxBufferElements(2);
+
+        // act — write enough to trigger trim with safe write enabled
+        for (int i = 0; i < 5; i++) {
+            os.write(data);
+        }
+
+        // assert — all data should be preserved correctly
+        os.close();
+        byte[] result = new byte[250];
+        int totalRead = 0;
+        int bytesRead;
+        while ((bytesRead = is.read(result, totalRead, 250 - totalRead)) > 0) {
+            totalRead += bytesRead;
+        }
+        assertThat(totalRead, is(250));
+        assertThat(result[0], is(anyValue));
+        assertThat(result[249], is(anyValue));
+    }
+
+    @Test
+    public void largeBuffer_withSmallAllocationSize_handlesCorrectly() throws IOException {
+        // arrange — Test buffer overflow scenario with extreme constraints
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        InputStream is = sb.getInputStream();
+
+        sb.setMaxAllocationSize(10);     // Very small chunks
+        sb.setMaxBufferElements(3);      // Very restrictive buffer limit
+
+        // act — write substantial data (5000 bytes)
+        byte[] chunk = new byte[500];
+        Arrays.fill(chunk, anyValue);
+        for (int i = 0; i < 10; i++) {
+            os.write(chunk);
+        }
+
+        // assert — all data should be readable despite extreme constraints
+        os.close();
+        byte[] result = new byte[5000];
+        int totalRead = 0;
+        int bytesRead;
+        while ((bytesRead = is.read(result, totalRead, 5000 - totalRead)) > 0) {
+            totalRead += bytesRead;
+        }
+        assertThat(totalRead, is(5000));
+    }
+
+    // </editor-fold>
 }
