@@ -4227,8 +4227,31 @@ public class StreamBufferTest {
 
             // ============ BOUNDARY MUTATIONS: <= vs < in maxBufferElements check ============
             // Test exact equality at maxBufferElements boundary
-            Arguments.of(100, 100, 1000, 100, false) // currentBufferSize=100 <= maxBufferElements=100 → skip
-                                                      // If < instead: 100 < 100 false → continue checks
+            Arguments.of(100, 100, 1000, 100, false), // currentBufferSize=100 <= maxBufferElements=100 → skip
+                                                       // If < instead: 100 < 100 false → continue checks
+
+            // ============ ADDITIONAL BOUNDARY EDGE CASES ============
+            // Test availableBytes=0 boundary (should skip edge case check)
+            Arguments.of(11, 10, 0, 100, false),      // availableBytes=0, skip edge case check entirely
+
+            // Test currentBufferSize=2 boundary (minimum for consolidation)
+            Arguments.of(2, 1, 200, 100, false),      // currentBufferSize=2, maxBufferElements=1
+                                                       // 2 > 1, but resultingChunks=2 >= 2 → skip
+
+            // Test boundary where both conditions are true but edge case prevents trim
+            Arguments.of(3, 1, 300, 100, false),      // 3 > 1, ceil(300/100)=3, 3 >= 3 → skip
+
+            // Test case where only edge case prevents trim (max case)
+            Arguments.of(5, 1, 500, 100, false),      // 5 > 1, ceil(500/100)=5, 5 >= 5 → skip
+
+            // Test case where everything passes and trim executes
+            Arguments.of(6, 1, 500, 100, true),       // 6 > 1, ceil(500/100)=5, 5 < 6 → EXECUTE
+
+            // Test maxBufferElements=1 boundary
+            Arguments.of(3, 1, 300, 200, true),       // ceil(300/200)=2, 2 < 3 → EXECUTE
+                                                       // Check: 3 > 1 ✓, ceil=2 < 3 ✓ → EXECUTE
+            Arguments.of(2, 1, 100, 50, false)        // 2 > 1 ✓, ceil(100/50)=2, 2 >= 2 → SKIP
+                                                       // resultingChunks=2, currentBufferSize=2, 2>=2 true
         );
     }
 
