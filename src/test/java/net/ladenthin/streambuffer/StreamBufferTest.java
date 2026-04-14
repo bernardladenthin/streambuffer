@@ -4215,15 +4215,15 @@ public class StreamBufferTest {
 
             // ============ BOUNDARY MUTATIONS: > vs >= in availableBytes check ============
             // Test the availableBytes > 0 check
-            Arguments.of(11, 10, 1, 100, false),   // availableBytes=1 > 0, maxAllocSize=100 > 1
-                                                    // resultingChunks = ceil(1/100)=1, 1 < 11 → TRIM
-                                                    // If availableBytes check wrong, might skip edge case check
+            Arguments.of(11, 10, 1, 100, true),   // availableBytes=1 > 0, but maxAllocSize=100 > availableBytes=1
+                                                   // So edge case check is skipped (condition false)
+                                                   // 11 > 10, edge case n/a → TRIM EXECUTES
 
             // ============ BOUNDARY MUTATIONS: < vs <= in maxAllocationSize check ============
             // Test the maxAllocationSize < availableBytes check
-            Arguments.of(11, 10, 100, 100, false), // availableBytes=100, maxAllocSize=100
-                                                    // 100 < 100 is false, so skip edge case check
-                                                    // If mutated to <=: would check edge case
+            Arguments.of(11, 10, 100, 100, true), // availableBytes=100, maxAllocSize=100
+                                                   // 100 < 100 is false, so edge case check is skipped
+                                                   // 11 > 10, edge case n/a → TRIM EXECUTES
 
             // ============ BOUNDARY MUTATIONS: <= vs < in maxBufferElements check ============
             // Test exact equality at maxBufferElements boundary
