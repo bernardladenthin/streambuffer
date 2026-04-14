@@ -66,27 +66,23 @@ jobs:
         run: |
           echo "=== PIT Survived Mutations ==="
           echo ""
-          echo "Available PIT report files:"
-          find target/pit-reports -type f -name "*.xml" -o -name "*.html" 2>/dev/null | head -10
-          echo ""
 
-          # Try XML first
-          if [ -f target/pit-reports/mutations.xml ]; then
-            echo "Found mutations.xml - extracting survivors..."
-            echo ""
-            grep -B 4 -A 2 'status="SURVIVED"' target/pit-reports/mutations.xml
-            echo ""
-            echo "Total survivors: $(grep -c 'status="SURVIVED"' target/pit-reports/mutations.xml || echo 0)"
-          # Try index.html and extract mutation info
-          elif [ -f target/pit-reports/index.html ]; then
-            echo "Found index.html - extracting from HTML report..."
-            echo ""
-            grep -i "survived\|mutant" target/pit-reports/index.html | head -50
-          else
-            echo "No mutations.xml or index.html report found"
-            echo "Contents of target/pit-reports/:"
-            ls -la target/pit-reports/ 2>/dev/null || echo "Directory not found"
-          fi
+          # Loop through all HTML files in pit-reports
+          for html_file in $(find target/pit-reports -name "*.html" -type f | sort); do
+            echo "Processing: $html_file"
+
+            # Extract lines containing SURVIVED with context (2 before, 3 after)
+            if grep -q "SURVIVED" "$html_file"; then
+              echo "Found survivors in $html_file:"
+              grep -B 2 -A 3 "SURVIVED" "$html_file"
+              echo ""
+            fi
+          done
+
+          # Summary
+          echo "=== Summary ==="
+          TOTAL_SURVIVED=$(find target/pit-reports -name "*.html" -type f -exec grep -c "SURVIVED" {} + 2>/dev/null | awk '{s+=$1} END {print s}')
+          echo "Total SURVIVED mutations: $TOTAL_SURVIVED"
 
       - name: Upload PIT report
         if: always()
