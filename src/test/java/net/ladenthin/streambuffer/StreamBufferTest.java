@@ -3177,8 +3177,9 @@ public class StreamBufferTest {
         }
 
         // All 1000 bytes should be read and intact
+        final int finalTotalRead = totalRead;
         assertAll(
-            () -> assertThat(totalRead, is(1000)),
+            () -> assertThat(finalTotalRead, is(1000)),
             () -> assertThat(result[0], is(anyValue)),
             () -> assertThat(result[999], is(anyValue))
         );
