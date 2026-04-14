@@ -79,10 +79,8 @@ jobs:
             fi
           done
 
-          # Summary
-          echo "=== Summary ==="
-          TOTAL_SURVIVED=$(find target/pit-reports -name "*.html" -type f -exec grep -c "SURVIVED" {} + 2>/dev/null | awk '{s+=$1} END {print s}')
-          echo "Total SURVIVED mutations: $TOTAL_SURVIVED"
+          echo "=== Count unique survivors ==="
+          echo "Check the 'Found survivors' sections above - each unique location with SURVIVED is one uncovered mutation"
 
       - name: Upload PIT report
         if: always()
