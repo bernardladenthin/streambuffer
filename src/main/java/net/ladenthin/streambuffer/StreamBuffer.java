@@ -515,6 +515,67 @@ public class StreamBuffer implements Closeable {
      *
      * @return <code>true</code> if a trim should be performed, otherwise <code>false</code>.
      */
+    /**
+     * Pure function to decide if trim should execute based on buffer state.
+     * Contains all decision logic for the trim decision tree:
+     * - maxBufferElements validity check (≤ 0 is invalid)
+     * - buffer size constraints (must be ≥ 2)
+     * - current size vs max limit check (must exceed max)
+     * - edge case: consolidation chunk count analysis
+     *
+     * This is a PURE FUNCTION with NO side effects or state access.
+     * All parameters are value-based, not references to mutable state.
+     *
+     * Decision logic:
+     * 1. If maxBufferElements ≤ 0: invalid configuration → return false
+     * 2. If currentBufferSize < 2: buffer too small to consolidate → return false
+     * 3. If currentBufferSize ≤ maxBufferElements: within limit → return false
+     * 4. If edge case applies:
+     *    - Calculate resulting chunks: ceil(availableBytes / maxAllocationSize)
+     *    - If resultingChunks ≥ currentBufferSize: consolidation wouldn't reduce → return false
+     * 5. Otherwise: all conditions met → return true
+     *
+     * @param currentBufferSize number of byte arrays in buffer Deque
+     * @param maxBufferElements maximum allowed elements before trim triggers
+     * @param availableBytes total bytes currently buffered
+     * @param maxAllocationSize maximum size of a single byte array during consolidation
+     * @return true if trim should execute, false if trim should be skipped
+     */
+    boolean decideTrimExecution(
+            final int currentBufferSize,
+            final int maxBufferElements,
+            final long availableBytes,
+            final long maxAllocationSize) {
+
+        // Check 1: Invalid maxBufferElements (≤ 0)
+        if (maxBufferElements <= 0) {
+            return false;
+        }
+
+        // Check 2: Buffer too small to consolidate (< 2 elements)
+        if (currentBufferSize < 2) {
+            return false;
+        }
+
+        // Check 3: Buffer within limit (≤ maxBufferElements)
+        if (currentBufferSize <= maxBufferElements) {
+            return false;
+        }
+
+        // Check 4: Edge case - consolidation wouldn't reduce chunk count
+        if (availableBytes > 0 && maxAllocationSize < availableBytes) {
+            // Calculate resulting chunks using ceiling division: ceil(n/d) = (n + d - 1) / d
+            final long resultingChunks = (availableBytes + maxAllocationSize - 1) / maxAllocationSize;
+            // If consolidation would still exceed current buffer size, trim is pointless
+            if (resultingChunks >= currentBufferSize) {
+                return false;
+            }
+        }
+
+        // All checks passed - trim should execute
+        return true;
+    }
+
     boolean isTrimShouldBeExecuted() {
         /**
          * Prevent recursive trim: if trim is already running, its internal
@@ -530,32 +591,13 @@ public class StreamBuffer implements Closeable {
          */
         final int maxBufferElements = getMaxBufferElements();
 
-        if (shouldSkipTrimDueToInvalidMaxBufferElements(maxBufferElements)
-            || shouldSkipTrimDueToSmallBuffer(buffer.size())
-            || shouldSkipTrimDueToSufficientBuffer(buffer.size(), maxBufferElements)) {
-            return false;
-        }
-
-        /**
-         * EDGE CASE: Check if trim would actually reduce the number of chunks.
-         * When consolidating with {@link #maxAllocationSize} limit, the resulting
-         * number of chunks might still exceed maxBufferElements.
-         * Example: maxBufferElements=10, maxAllocationSize=100, availableBytes=1100
-         *   → consolidation would create 11 chunks (ceil(1100/100) = 11), still over the limit
-         *   → without this check, trim would fire again on the next write, every write
-         *
-         * Solution: Only trim if the resulting chunk count is strictly less than
-         * the current buffer size (i.e. trim actually consolidates something).
-         */
-        final long maxAllocSize = getMaxAllocationSize();
-        if (shouldCheckEdgeCase(availableBytes, maxAllocSize)) {
-            final long resultingChunks = calculateResultingChunks(availableBytes, maxAllocSize);
-            if (shouldSkipTrimDueToEdgeCase(resultingChunks, buffer.size())) {
-                return false;
-            }
-        }
-
-        return true;
+        // Delegate to pure decision function
+        return decideTrimExecution(
+            buffer.size(),
+            maxBufferElements,
+            availableBytes,
+            getMaxAllocationSize()
+        );
     }
 
     /**

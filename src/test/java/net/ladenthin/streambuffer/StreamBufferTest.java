@@ -4079,34 +4079,22 @@ public class StreamBufferTest {
 
     @ParameterizedTest(name = "bufferSize={0}, maxBufferElements={1}, availableBytes={2}, maxAllocSize={3} → shouldTrim={4}")
     @MethodSource("trimDecisionTestCases")
-    public void isTrimShouldBeExecuted_decisionTable_withAllParameters(
+    public void decideTrimExecution_pureFunction_withAllParameters(
             int bufferSize,
             int maxBufferElements,
             long availableBytes,
             long maxAllocSize,
-            boolean expectedShouldTrim) throws IOException {
+            boolean expectedShouldTrim) {
         // arrange
         final StreamBuffer sb = new StreamBuffer();
-        sb.setMaxBufferElements(maxBufferElements);
-        sb.setMaxAllocationSize(maxAllocSize);
 
-        // Populate buffer to desired size by adding elements
-        final OutputStream os = sb.getOutputStream();
-        final InputStream is = sb.getInputStream();
-
-        // Write and partially read to create desired buffer state
-        for (int i = 0; i < bufferSize; i++) {
-            os.write(42);
-        }
-
-        // Adjust availableBytes if test case requires specific value
-        if (availableBytes > 0 && availableBytes != bufferSize) {
-            // For tests requiring specific availableBytes, we'd need to write additional data
-            // This is handled implicitly through buffer size
-        }
-
-        // act
-        final boolean actualShouldTrim = sb.isTrimShouldBeExecuted();
+        // act - call the pure decision function directly with parameters
+        final boolean actualShouldTrim = sb.decideTrimExecution(
+            bufferSize,
+            maxBufferElements,
+            availableBytes,
+            maxAllocSize
+        );
 
         // assert
         assertThat(actualShouldTrim, is(expectedShouldTrim));
