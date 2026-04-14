@@ -61,6 +61,19 @@ jobs:
       - name: Run mutation tests with PIT
         run: mvn -B test-compile org.pitest:pitest-maven:mutationCoverage -Dmaven.javadoc.skip=true --file pom.xml
 
+      - name: Extract Pitest Survivors with Context
+        if: always()
+        run: |
+          echo "=== PIT Survived Mutations ==="
+          echo ""
+          if [ -f target/pit-reports/mutations.xml ]; then
+            grep -B 4 -A 2 'status="SURVIVED"' target/pit-reports/mutations.xml
+            echo ""
+            echo "Total survivors: $(grep -c 'status="SURVIVED"' target/pit-reports/mutations.xml || echo 0)"
+          else
+            echo "No mutations.xml report found"
+          fi
+
       - name: Upload PIT report
         if: always()
         uses: actions/upload-artifact@v4
