@@ -3828,5 +3828,169 @@ public class StreamBufferTest {
         assertThrows(NullPointerException.class, () -> sb.addTrimEndSignal(null));
     }
 
+    // Test extracted boundary checking methods
+
+    @Test
+    public void isAvailableBytesPositive_zero_returnsFalse() {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+
+        // act
+        final boolean result = sb.isAvailableBytesPositive(0);
+
+        // assert - boundary: > 0 means 0 is false
+        assertThat(result, is(false));
+    }
+
+    @Test
+    public void isAvailableBytesPositive_one_returnsTrue() {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+
+        // act
+        final boolean result = sb.isAvailableBytesPositive(1);
+
+        // assert - boundary: > 0 means 1 is true
+        assertThat(result, is(true));
+    }
+
+    @Test
+    public void isAvailableBytesPositive_negative_returnsFalse() {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+
+        // act
+        final boolean result = sb.isAvailableBytesPositive(-100);
+
+        // assert - boundary: > 0 means negative is false
+        assertThat(result, is(false));
+    }
+
+    @Test
+    public void isMaxAllocSizeLessThanAvailable_equal_returnsFalse() {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+
+        // act - when maxAllocSize == availableBytes
+        final boolean result = sb.isMaxAllocSizeLessThanAvailable(100, 100);
+
+        // assert - boundary: < means equal is false
+        assertThat(result, is(false));
+    }
+
+    @Test
+    public void isMaxAllocSizeLessThanAvailable_lessThan_returnsTrue() {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+
+        // act - when maxAllocSize < availableBytes
+        final boolean result = sb.isMaxAllocSizeLessThanAvailable(50, 100);
+
+        // assert - boundary: < means less than is true
+        assertThat(result, is(true));
+    }
+
+    @Test
+    public void isMaxAllocSizeLessThanAvailable_greaterThan_returnsFalse() {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+
+        // act - when maxAllocSize > availableBytes
+        final boolean result = sb.isMaxAllocSizeLessThanAvailable(100, 50);
+
+        // assert - boundary: < means greater than is false
+        assertThat(result, is(false));
+    }
+
+    @Test
+    public void shouldUpdateMaxObservedBytes_equal_returnsFalse() {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+
+        // act - when availableBytes == currentMax
+        final boolean result = sb.shouldUpdateMaxObservedBytes(100, 100);
+
+        // assert - boundary: > means equal is false
+        assertThat(result, is(false));
+    }
+
+    @Test
+    public void shouldUpdateMaxObservedBytes_greaterThan_returnsTrue() {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+
+        // act - when availableBytes > currentMax
+        final boolean result = sb.shouldUpdateMaxObservedBytes(150, 100);
+
+        // assert - boundary: > means greater than is true
+        assertThat(result, is(true));
+    }
+
+    @Test
+    public void shouldUpdateMaxObservedBytes_lessThan_returnsFalse() {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+
+        // act - when availableBytes < currentMax
+        final boolean result = sb.shouldUpdateMaxObservedBytes(50, 100);
+
+        // assert - boundary: > means less than is false
+        assertThat(result, is(false));
+    }
+
+    @Test
+    public void updateMaxObservedBytesIfNeeded_exceedsCurrentMax() throws IOException {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+        assertThat(sb.getMaxObservedBytes(), is(0L));
+
+        // act - update with value exceeding current max
+        sb.updateMaxObservedBytesIfNeeded(100);
+
+        // assert
+        assertThat(sb.getMaxObservedBytes(), is(100L));
+    }
+
+    @Test
+    public void updateMaxObservedBytesIfNeeded_equalToCurrentMax() throws IOException {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+        sb.updateMaxObservedBytesIfNeeded(100);
+        assertThat(sb.getMaxObservedBytes(), is(100L));
+
+        // act - try to update with equal value
+        sb.updateMaxObservedBytesIfNeeded(100);
+
+        // assert - should not change
+        assertThat(sb.getMaxObservedBytes(), is(100L));
+    }
+
+    @Test
+    public void recordReadStatistics_updatesCounterWhenTrimNotRunning() throws IOException {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+        assertThat(sb.getTotalBytesRead(), is(0L));
+
+        // act - record read statistics (trim is not running by default)
+        sb.recordReadStatistics(50);
+
+        // assert
+        assertThat(sb.getTotalBytesRead(), is(50L));
+    }
+
+    @Test
+    public void recordReadStatistics_accumulatesMultipleCalls() throws IOException {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+
+        // act - multiple calls
+        sb.recordReadStatistics(50);
+        sb.recordReadStatistics(30);
+        sb.recordReadStatistics(20);
+
+        // assert
+        assertThat(sb.getTotalBytesRead(), is(100L));
+    }
+
     // </editor-fold>
 }
