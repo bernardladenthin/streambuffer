@@ -3992,5 +3992,87 @@ public class StreamBufferTest {
         assertThat(sb.getTotalBytesRead(), is(100L));
     }
 
+    // Integration tests: Verify statistics are updated during actual read operations
+    // These tests ensure recordReadStatistics() is actually called in the read path
+
+    @Test
+    public void statistics_arrayRead_updatesCounterDuringIntegration() throws IOException {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+        final byte[] writeData = new byte[]{1, 2, 3, 4, 5};
+        final OutputStream os = sb.getOutputStream();
+        final InputStream is = sb.getInputStream();
+
+        // act - write data and read it back
+        os.write(writeData);
+        final byte[] readBuffer = new byte[5];
+        final int bytesRead = is.read(readBuffer);
+
+        // assert - verify statistics were updated by the read operation
+        assertThat(bytesRead, is(5));
+        assertThat(sb.getTotalBytesRead(), is(5L));
+    }
+
+    @Test
+    public void statistics_singleByteRead_updatesCounterDuringIntegration() throws IOException {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+        final OutputStream os = sb.getOutputStream();
+        final InputStream is = sb.getInputStream();
+
+        // act - write and read single bytes
+        os.write(42);
+        os.write(43);
+        final int byte1 = is.read();
+        final int byte2 = is.read();
+
+        // assert - verify statistics were updated by single-byte read operations
+        assertThat(byte1, is(42));
+        assertThat(byte2, is(43));
+        assertThat(sb.getTotalBytesRead(), is(2L));
+    }
+
+    @Test
+    public void statistics_partialArrayRead_updatesCounterCorrectly() throws IOException {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+        final byte[] writeData = new byte[]{10, 20, 30, 40, 50};
+        final OutputStream os = sb.getOutputStream();
+        final InputStream is = sb.getInputStream();
+
+        // act - write data and read with offset and length
+        os.write(writeData);
+        final byte[] readBuffer = new byte[3];
+        final int bytesRead = is.read(readBuffer, 0, 3);
+
+        // assert - verify only the requested bytes are counted
+        assertThat(bytesRead, is(3));
+        assertThat(sb.getTotalBytesRead(), is(3L));
+    }
+
+    @Test
+    public void statistics_multipleReads_accumulateCorrectly() throws IOException {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+        final OutputStream os = sb.getOutputStream();
+        final InputStream is = sb.getInputStream();
+
+        // act - write and perform multiple reads
+        os.write(new byte[]{1, 2, 3, 4, 5, 6, 7, 8});
+        final byte[] buf1 = new byte[3];
+        final byte[] buf2 = new byte[3];
+        final byte[] buf3 = new byte[2];
+
+        final int read1 = is.read(buf1);
+        final int read2 = is.read(buf2);
+        final int read3 = is.read(buf3);
+
+        // assert - verify cumulative count
+        assertThat(read1, is(3));
+        assertThat(read2, is(3));
+        assertThat(read3, is(2));
+        assertThat(sb.getTotalBytesRead(), is(8L));
+    }
+
     // </editor-fold>
 }
