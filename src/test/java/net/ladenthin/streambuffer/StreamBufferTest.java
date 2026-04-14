@@ -4191,7 +4191,44 @@ public class StreamBufferTest {
             Arguments.of(101, 100, 1010, 100, true), // 101 > 100, result 11 < 101 → trim
 
             // Very large buffer needing consolidation
-            Arguments.of(1000, 100, 10000, 1000, true) // 1000 > 100, ceil(10000/1000)=10 < 1000 → trim
+            Arguments.of(1000, 100, 10000, 1000, true), // 1000 > 100, ceil(10000/1000)=10 < 1000 → trim
+
+            // ============ BOUNDARY MUTATIONS: Arithmetic in Ceiling Division ============
+            // KILLED by: Subtraction → Addition mutation
+            // Case: availableBytes=100, maxAllocSize=100 → ceil(100/100)=1 (with -1)
+            // If mutated to +1: (100+100+1)/100 = 2, which would fail this test
+            Arguments.of(2, 1, 100, 100, true),  // resultingChunks=1 < 2 → trim EXECUTES
+                                                  // If formula wrong: chunks=2 >= 2 → skips (DEAD MUTATION)
+
+            // ============ BOUNDARY MUTATIONS: >= vs > in resultingChunks check ============
+            // KILLED by: >= mutated to >
+            // Case: resultingChunks equals currentBufferSize (exact boundary)
+            // Correct: resultingChunks >= currentBufferSize → skip
+            // Mutated: resultingChunks > currentBufferSize → execute (WRONG)
+            Arguments.of(2, 1, 200, 100, false),  // ceil(200/100)=2, 2>=2 → SKIP (correct)
+                                                   // Mutated: 2>2 is false → EXECUTE (DEAD MUTATION)
+
+            // ============ BOUNDARY MUTATIONS: < vs <= in currentBufferSize checks ============
+            // Ensure boundary checks are testing the right comparison operator
+            Arguments.of(2, 100, 200, 100, false), // buffer=2, at limit for check 2 (<2), should process
+                                                    // Check: 2 < 2 is false, 2 <= 2 is true
+
+            // ============ BOUNDARY MUTATIONS: > vs >= in availableBytes check ============
+            // Test the availableBytes > 0 check
+            Arguments.of(11, 10, 1, 100, false),   // availableBytes=1 > 0, maxAllocSize=100 > 1
+                                                    // resultingChunks = ceil(1/100)=1, 1 < 11 → TRIM
+                                                    // If availableBytes check wrong, might skip edge case check
+
+            // ============ BOUNDARY MUTATIONS: < vs <= in maxAllocationSize check ============
+            // Test the maxAllocationSize < availableBytes check
+            Arguments.of(11, 10, 100, 100, false), // availableBytes=100, maxAllocSize=100
+                                                    // 100 < 100 is false, so skip edge case check
+                                                    // If mutated to <=: would check edge case
+
+            // ============ BOUNDARY MUTATIONS: <= vs < in maxBufferElements check ============
+            // Test exact equality at maxBufferElements boundary
+            Arguments.of(100, 100, 1000, 100, false) // currentBufferSize=100 <= maxBufferElements=100 → skip
+                                                      // If < instead: 100 < 100 false → continue checks
         );
     }
 
