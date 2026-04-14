@@ -442,7 +442,9 @@ public class StreamBuffer implements Closeable {
          */
         final int maxBufferElements = getMaxBufferElements();
 
-        if ((maxBufferElements <= 0) || (buffer.size() < 2) || (buffer.size() <= maxBufferElements)) {
+        if (shouldSkipTrimDueToInvalidMaxBufferElements(maxBufferElements)
+            || shouldSkipTrimDueToSmallBuffer(buffer.size())
+            || shouldSkipTrimDueToSufficientBuffer(buffer.size(), maxBufferElements)) {
             return false;
         }
 
@@ -458,7 +460,7 @@ public class StreamBuffer implements Closeable {
          * the current buffer size (i.e. trim actually consolidates something).
          */
         final long maxAllocSize = getMaxAllocationSize();
-        if (availableBytes > 0 && maxAllocSize < availableBytes) {
+        if (shouldCheckEdgeCase(availableBytes, maxAllocSize)) {
             final long resultingChunks = calculateResultingChunks(availableBytes, maxAllocSize);
             if (shouldSkipTrimDueToEdgeCase(resultingChunks, buffer.size())) {
                 return false;
@@ -509,6 +511,38 @@ public class StreamBuffer implements Closeable {
      */
     boolean shouldSkipTrimDueToEdgeCase(long resultingChunks, int currentBufferSize) {
         return resultingChunks >= currentBufferSize;
+    }
+
+    /**
+     * Check if trim should be skipped because maxBufferElements is invalid.
+     * Package-private for direct unit testing of boundary conditions.
+     */
+    boolean shouldSkipTrimDueToInvalidMaxBufferElements(int maxBufferElements) {
+        return maxBufferElements <= 0;
+    }
+
+    /**
+     * Check if trim should be skipped because buffer is too small.
+     * Package-private for direct unit testing of boundary conditions.
+     */
+    boolean shouldSkipTrimDueToSmallBuffer(int bufferSize) {
+        return bufferSize < 2;
+    }
+
+    /**
+     * Check if trim should be skipped because buffer size is within limit.
+     * Package-private for direct unit testing of boundary conditions.
+     */
+    boolean shouldSkipTrimDueToSufficientBuffer(int bufferSize, int maxBufferElements) {
+        return bufferSize <= maxBufferElements;
+    }
+
+    /**
+     * Check if edge case check should be performed (available bytes > 0 AND maxAllocSize < availableBytes).
+     * Package-private for direct unit testing of boundary conditions.
+     */
+    boolean shouldCheckEdgeCase(long availableBytes, long maxAllocSize) {
+        return availableBytes > 0 && maxAllocSize < availableBytes;
     }
 
     /**

@@ -3350,5 +3350,124 @@ public class StreamBufferTest {
         );
     }
 
+    @Test
+    public void shouldSkipTrimDueToInvalidMaxBufferElements_boundsComparison() {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+
+        // act & assert
+        // Test <= boundary: when maxBufferElements <= 0, should skip
+        assertAll(
+            () -> {
+                // When zero: 0 <= 0 → should skip (return true)
+                boolean shouldSkip = sb.shouldSkipTrimDueToInvalidMaxBufferElements(0);
+                assertThat(shouldSkip, is(true));  // Kills <= vs < mutation
+            },
+            () -> {
+                // When negative: -1 <= 0 → should skip (return true)
+                boolean shouldSkip = sb.shouldSkipTrimDueToInvalidMaxBufferElements(-1);
+                assertThat(shouldSkip, is(true));
+            },
+            () -> {
+                // When positive: 1 <= 0 → should not skip (return false)
+                boolean shouldSkip = sb.shouldSkipTrimDueToInvalidMaxBufferElements(1);
+                assertThat(shouldSkip, is(false));  // Kills <= vs < mutation
+            }
+        );
+    }
+
+    @Test
+    public void shouldSkipTrimDueToSmallBuffer_boundsComparison() {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+
+        // act & assert
+        // Test < boundary: when buffer.size() < 2, should skip
+        assertAll(
+            () -> {
+                // When zero: 0 < 2 → should skip (return true)
+                boolean shouldSkip = sb.shouldSkipTrimDueToSmallBuffer(0);
+                assertThat(shouldSkip, is(true));
+            },
+            () -> {
+                // When one: 1 < 2 → should skip (return true)
+                boolean shouldSkip = sb.shouldSkipTrimDueToSmallBuffer(1);
+                assertThat(shouldSkip, is(true));  // Kills < vs <= mutation
+            },
+            () -> {
+                // When two: 2 < 2 → should not skip (return false)
+                boolean shouldSkip = sb.shouldSkipTrimDueToSmallBuffer(2);
+                assertThat(shouldSkip, is(false));  // Kills < vs <= mutation
+            },
+            () -> {
+                // When three: 3 < 2 → should not skip (return false)
+                boolean shouldSkip = sb.shouldSkipTrimDueToSmallBuffer(3);
+                assertThat(shouldSkip, is(false));
+            }
+        );
+    }
+
+    @Test
+    public void shouldSkipTrimDueToSufficientBuffer_boundsComparison() {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+
+        // act & assert
+        // Test <= boundary: when buffer.size() <= maxBufferElements, should skip
+        assertAll(
+            () -> {
+                // When equal: 10 <= 10 → should skip (return true)
+                boolean shouldSkip = sb.shouldSkipTrimDueToSufficientBuffer(10, 10);
+                assertThat(shouldSkip, is(true));  // Kills <= vs < mutation
+            },
+            () -> {
+                // When greater: 11 <= 10 → should not skip (return false)
+                boolean shouldSkip = sb.shouldSkipTrimDueToSufficientBuffer(11, 10);
+                assertThat(shouldSkip, is(false));  // Kills <= vs < mutation
+            },
+            () -> {
+                // When less: 9 <= 10 → should skip (return true)
+                boolean shouldSkip = sb.shouldSkipTrimDueToSufficientBuffer(9, 10);
+                assertThat(shouldSkip, is(true));
+            }
+        );
+    }
+
+    @Test
+    public void shouldCheckEdgeCase_andConditionBoundaries() {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+
+        // act & assert
+        // Test AND condition: both availableBytes > 0 AND maxAllocSize < availableBytes
+        assertAll(
+            () -> {
+                // Both true: 100 > 0 AND 50 < 100 → should check (return true)
+                boolean shouldCheck = sb.shouldCheckEdgeCase(100L, 50L);
+                assertThat(shouldCheck, is(true));
+            },
+            () -> {
+                // availableBytes zero: 0 > 0 AND 50 < 0 → should not check (return false)
+                boolean shouldCheck = sb.shouldCheckEdgeCase(0L, 50L);
+                assertThat(shouldCheck, is(false));  // Kills > vs >= mutation on availableBytes
+            },
+            () -> {
+                // maxAllocSize >= availableBytes: 100 > 0 AND 100 < 100 → should not check (return false)
+                boolean shouldCheck = sb.shouldCheckEdgeCase(100L, 100L);
+                assertThat(shouldCheck, is(false));  // Kills < vs <= mutation on maxAllocSize
+            },
+            () -> {
+                // maxAllocSize > availableBytes: 100 > 0 AND 150 < 100 → should not check (return false)
+                boolean shouldCheck = sb.shouldCheckEdgeCase(100L, 150L);
+                assertThat(shouldCheck, is(false));  // Kills < vs <= mutation
+            },
+            () -> {
+                // availableBytes negative: -100 > 0 AND 50 < -100 → should not check (return false)
+                boolean shouldCheck = sb.shouldCheckEdgeCase(-100L, 50L);
+                assertThat(shouldCheck, is(false));  // Kills > vs >= mutation
+            }
+        );
+    }
+
     // </editor-fold>
 }
