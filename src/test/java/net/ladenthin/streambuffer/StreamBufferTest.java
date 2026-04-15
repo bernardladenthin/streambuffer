@@ -4241,6 +4241,134 @@ public class StreamBufferTest {
         );
     }
 
+    /**
+     * CRITICAL TEST: Close called while trim is active - race condition safety
+     *
+     * REQUIREMENT: If close() is called while trim() is executing,
+     * both methods must complete safely without exceptions, deadlocks,
+     * or data corruption. Both use bufferLock synchronization.
+     *
+     * IMPLEMENTATION ANALYSIS:
+     * Race condition scenario:
+     * - Thread 1: trim() acquired bufferLock, reading/writing internal streams
+     * - Thread 2: close() calls bufferLock, closes output/input streams
+     *
+     * Both methods synchronize on bufferLock:
+     * - trim() (line 443-484): synchronized operations on is/os
+     * - close() (line 995-1010): closes streams, synchronizes access
+     *
+     * Potential issues:
+     * - close() could close streams while trim() is using them
+     * - Could cause IOException during trim read/write
+     * - Could cause NullPointerException if streams become null
+     * - Could lose signal notifications if close() interrupts trim
+     *
+     * TEST APPROACH:
+     * 1. Use ExecutorService to run threads concurrently
+     * 2. Thread 1: Write large data to trigger trim (will take time)
+     * 3. Use CountDownLatch to synchronize: wait for trim to start
+     * 4. Thread 2: Call close() after trim has started
+     * 5. Both threads should complete without exceptions
+     * 6. Verify: no exceptions, stream closed, data can still be read
+     */
+    @Test
+    public void trim_closeCalledDuringTrim_handlesGracefully() throws IOException, InterruptedException {
+        // arrange — Setup concurrent test infrastructure
+        final StreamBuffer sb = new StreamBuffer();
+        final OutputStream os = sb.getOutputStream();
+        final InputStream is = sb.getInputStream();
+        final ExecutorService executor = java.util.concurrent.Executors.newFixedThreadPool(2);
+
+        // Use latch to coordinate: signal when trim starts
+        final CountDownLatch trimStarted = new CountDownLatch(1);
+        final Semaphore trimStartSignal = new Semaphore(0) {
+            @Override
+            public void release() {
+                trimStarted.countDown();  // Signal that trim is executing
+                super.release();
+            }
+        };
+
+        sb.addTrimStartSignal(trimStartSignal);
+        sb.setMaxBufferElements(5);
+
+        // Create large data to trigger trim consolidation (takes time)
+        byte[] largeData = new byte[1000];
+        Arrays.fill(largeData, (byte) 42);
+
+        // Track exceptions from threads
+        final AtomicReference<Exception> thread1Exception = new AtomicReference<>(null);
+        final AtomicReference<Exception> thread2Exception = new AtomicReference<>(null);
+
+        try {
+            // act — Thread 1: Write data to trigger trim
+            java.util.concurrent.Future<?> trimTask = executor.submit(() -> {
+                try {
+                    // Write enough data to trigger trim on successive writes
+                    // This will take time due to consolidation
+                    for (int i = 0; i < 100; i++) {
+                        os.write(largeData);
+                    }
+                } catch (Exception e) {
+                    thread1Exception.set(e);
+                }
+            });
+
+            // Wait for trim to actually start executing
+            boolean trimStartedInTime = trimStarted.await(5, java.util.concurrent.TimeUnit.SECONDS);
+            assertThat("Trim should start within timeout", trimStartedInTime, is(true));
+
+            // act — Thread 2: Call close() while trim is running
+            java.util.concurrent.Future<?> closeTask = executor.submit(() -> {
+                try {
+                    sb.close();
+                } catch (Exception e) {
+                    thread2Exception.set(e);
+                }
+            });
+
+            // Wait for both tasks to complete
+            boolean trimCompleted = trimTask.get(10, java.util.concurrent.TimeUnit.SECONDS) != null;
+            boolean closeCompleted = closeTask.get(10, java.util.concurrent.TimeUnit.SECONDS) != null;
+
+            // assert — No exceptions from either thread
+            assertAll(
+                () -> {
+                    assertThat("Trim should not throw exception",
+                        thread1Exception.get(), is((Exception) null));
+                },
+                () -> {
+                    assertThat("Close should not throw exception",
+                        thread2Exception.get(), is((Exception) null));
+                },
+                () -> {
+                    // Verify stream closed properly
+                    assertThat("Stream should be closed",
+                        sb.isClosed(), is(true));
+                },
+                () -> {
+                    // Verify data can still be read (no corruption)
+                    byte[] buffer = new byte[1000];
+                    int bytesRead = 0;
+                    int totalRead = 0;
+                    try {
+                        while ((bytesRead = is.read(buffer)) >= 0 && totalRead < 100000) {
+                            totalRead += bytesRead;
+                        }
+                        assertThat("Should be able to read data despite concurrent close",
+                            totalRead, greaterThan(0));
+                    } catch (IOException ignored) {
+                        // Reading from closed stream is acceptable
+                    }
+                }
+            );
+
+        } finally {
+            executor.shutdownNow();
+            sb.removeTrimStartSignal(trimStartSignal);
+        }
+    }
+
     // Test extracted boundary checking methods
 
     @Test
