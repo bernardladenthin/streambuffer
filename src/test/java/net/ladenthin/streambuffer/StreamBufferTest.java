@@ -4331,8 +4331,12 @@ public class StreamBufferTest {
             });
 
             // Wait for both tasks to complete
-            boolean trimCompleted = trimTask.get(10, java.util.concurrent.TimeUnit.SECONDS) != null;
-            boolean closeCompleted = closeTask.get(10, java.util.concurrent.TimeUnit.SECONDS) != null;
+            try {
+                trimTask.get(10, java.util.concurrent.TimeUnit.SECONDS);
+                closeTask.get(10, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (java.util.concurrent.ExecutionException e) {
+                // Task threw exception (already captured in thread*Exception)
+            }
 
             // assert — No exceptions from either thread
             assertAll(
