@@ -69,6 +69,20 @@ public class StreamBuffer implements Closeable {
     private final CopyOnWriteArrayList<Semaphore> signals = new CopyOnWriteArrayList<>();
 
     /**
+     * Observers notified when trim() starts executing.
+     * Uses {@link CopyOnWriteArrayList} for thread-safe iteration.
+     * Each registered semaphore is released when trim begins.
+     */
+    private final CopyOnWriteArrayList<Semaphore> trimStartSignals = new CopyOnWriteArrayList<>();
+
+    /**
+     * Observers notified when trim() completes executing.
+     * Uses {@link CopyOnWriteArrayList} for thread-safe iteration.
+     * Each registered semaphore is released when trim ends.
+     */
+    private final CopyOnWriteArrayList<Semaphore> trimEndSignals = new CopyOnWriteArrayList<>();
+
+    /**
      * A variable for the current position of the current element in the
      * {@link #buffer}.
      */
@@ -111,6 +125,34 @@ public class StreamBuffer implements Closeable {
      * <code>100</code> elements.
      */
     private volatile int maxBufferElements = 100;
+
+    /**
+     * Peak value of availableBytes ever observed. Updated under bufferLock, read as volatile.
+     */
+    private volatile long maxObservedBytes = 0;
+
+    /**
+     * Cumulative bytes written by the user (excludes internal trim operations).
+     */
+    private volatile long totalBytesWritten = 0;
+
+    /**
+     * Cumulative bytes consumed by user reads and skips (excludes internal trim operations).
+     */
+    private volatile long totalBytesRead = 0;
+
+    /**
+     * Maximum size of a single byte array during consolidation. Default {@link Integer#MAX_VALUE}.
+     */
+    private volatile long maxAllocationSize = Integer.MAX_VALUE;
+
+    /**
+     * Flag set to true while trim is rearranging internal buffers.
+     * Volatile so it's visible to all threads — used to skip statistics updates during trim.
+     * Set to true at start of trim body, set to false in finally block.
+     * This ensures totalBytesRead and totalBytesWritten always represent user I/O only.
+     */
+    private volatile boolean isTrimRunning = false;
 
     private final SBInputStream is = new SBInputStream();
     private final SBOutputStream os = new SBOutputStream();
@@ -167,6 +209,85 @@ public class StreamBuffer implements Closeable {
     }
 
     /**
+     * Returns the cumulative number of bytes written by user I/O operations.
+     * Excludes bytes read/written during internal {@link #trim()} operations.
+     *
+     * @return total bytes written.
+     */
+    public long getTotalBytesWritten() {
+        return totalBytesWritten;
+    }
+
+    /**
+     * Returns the cumulative number of bytes read by user I/O operations.
+     * Excludes bytes read/written during internal {@link #trim()} operations.
+     *
+     * @return total bytes read.
+     */
+    public long getTotalBytesRead() {
+        return totalBytesRead;
+    }
+
+    /**
+     * Returns the peak value of available bytes ever observed.
+     *
+     * @return maximum observed available bytes.
+     */
+    public long getMaxObservedBytes() {
+        return maxObservedBytes;
+    }
+
+    /**
+     * Returns the maximum size of a single byte array allocated during trim.
+     *
+     * @return maximum allocation size.
+     */
+    public long getMaxAllocationSize() {
+        return maxAllocationSize;
+    }
+
+    /**
+     * Set the maximum size of a single byte array allocated during {@link #trim()}.
+     * When trim consolidates the buffer, it splits data into chunks respecting
+     * this limit. Default is {@link Integer#MAX_VALUE}.
+     *
+     * @param maxSize maximum allocation size in bytes. Must be positive.
+     * @throws IllegalArgumentException if maxSize is not positive.
+     */
+    public void setMaxAllocationSize(final long maxSize) {
+        if (maxSize <= 0) {
+            throw new IllegalArgumentException("maxAllocationSize must be positive");
+        }
+        this.maxAllocationSize = maxSize;
+    }
+
+    /**
+     * Returns whether {@link #trim()} is currently running.
+     * This can be used to determine if the buffer is in the middle of consolidation.
+     * <strong>Note:</strong> This value can change at any time in concurrent scenarios.
+     * The caller must not rely on this value remaining constant between method calls.
+     *
+     * @return {@code true} if trim is currently executing, {@code false} otherwise.
+     */
+    public boolean isTrimRunning() {
+        return isTrimRunning;
+    }
+
+    /**
+     * Returns the current number of byte arrays in the internal queue.
+     * <strong>Note:</strong> This value can change at any time in concurrent scenarios
+     * due to {@link #write(int)} / {@link #read()} operations or {@link #trim()} consolidation.
+     * The caller must not rely on this value remaining constant between method calls.
+     *
+     * @return the number of byte arrays currently in the queue.
+     */
+    public int getBufferElementCount() {
+        synchronized (bufferLock) {
+            return buffer.size();
+        }
+    }
+
+    /**
      * Register an external {@link Semaphore} to be released when the buffer is
      * modified (data written or stream closed). The semaphore uses the same
      * "max 1 permit" pattern as the internal signaling: a permit is released
@@ -193,6 +314,54 @@ public class StreamBuffer implements Closeable {
      */
     public boolean removeSignal(Semaphore semaphore) {
         return signals.remove(semaphore);
+    }
+
+    /**
+     * Register an external {@link Semaphore} to be released when trim() starts.
+     * The semaphore uses the same "max 1 permit" pattern as modification signals.
+     *
+     * @param semaphore the semaphore to register for trim start events
+     * @throws NullPointerException if semaphore is null
+     */
+    public void addTrimStartSignal(Semaphore semaphore) {
+        if (semaphore == null) {
+            throw new NullPointerException("Semaphore cannot be null");
+        }
+        trimStartSignals.add(semaphore);
+    }
+
+    /**
+     * Remove a previously registered trim start semaphore.
+     *
+     * @param semaphore the semaphore to remove
+     * @return true if the semaphore was found and removed, otherwise false
+     */
+    public boolean removeTrimStartSignal(Semaphore semaphore) {
+        return trimStartSignals.remove(semaphore);
+    }
+
+    /**
+     * Register an external {@link Semaphore} to be released when trim() completes.
+     * The semaphore uses the same "max 1 permit" pattern as modification signals.
+     *
+     * @param semaphore the semaphore to register for trim end events
+     * @throws NullPointerException if semaphore is null
+     */
+    public void addTrimEndSignal(Semaphore semaphore) {
+        if (semaphore == null) {
+            throw new NullPointerException("Semaphore cannot be null");
+        }
+        trimEndSignals.add(semaphore);
+    }
+
+    /**
+     * Remove a previously registered trim end semaphore.
+     *
+     * @param semaphore the semaphore to remove
+     * @return true if the semaphore was found and removed, otherwise false
+     */
+    public boolean removeTrimEndSignal(Semaphore semaphore) {
+        return trimEndSignals.remove(semaphore);
     }
 
     /**
@@ -263,56 +432,172 @@ public class StreamBuffer implements Closeable {
      * This method trims the buffer. This method can be invoked after every
      * write operation. The method checks itself if the buffer should be trimmed
      * or not.
+     * <strong>MUST be called inside {@code synchronized(bufferLock)}.</strong>
+     * Sets {@link #isTrimRunning} volatile flag to prevent statistics updates during internal I/O.
+     * Respects {@link #maxAllocationSize} limit when allocating byte arrays.
      */
     private void trim() throws IOException {
         if (isTrimShouldBeExecuted()) {
-
-            /**
-             * Need to store more bufs, may it is not possible to read out all
-             * data at once. The available method only returns an int value
-             * instead a long value. Store all read parts of the full buffer in
-             * a deque.
-             */
-            final Deque<byte[]> tmpBuffer = new LinkedList<>();
-
-            int available;
-            // empty the current buffer, read out all bytes
-            while ((available = is.available()) > 0) {
-                final byte[] buf = new byte[available];
-                // read out of the buffer
-                // and store the result to the tmpBuffer
-                int read = is.read(buf);
-                // should never happen
-                assert read == available : "Read not enough bytes from buffer.";
-                tmpBuffer.add(buf);
-            }
-            /**
-             * Write all previously read parts back to the buffer. The buffer is
-             * clean and contains no elements because all parts are read out.
-             */
+            isTrimRunning = true;
             try {
-                ignoreSafeWrite = true;
-                while (!tmpBuffer.isEmpty()) {
-                    // pollFirst returns always a non null value, tmpBuffer is only filled with non null values
-                    os.write(tmpBuffer.pollFirst());
+                releaseTrimStartSignals();
+
+                /**
+                 * Need to store more bufs, may it is not possible to read out all
+                 * data at once. The available method only returns an int value
+                 * instead a long value. Store all read parts of the full buffer in
+                 * a deque.
+                 */
+                final Deque<byte[]> tmpBuffer = new LinkedList<>();
+
+                int available;
+                // empty the current buffer, read out all bytes
+                while ((available = is.available()) > 0) {
+                    // Limit each allocation to maxAllocationSize
+                    final int toAllocate = (int) Math.min(available, maxAllocationSize);
+                    final byte[] buf = new byte[toAllocate];
+                    // read out of the buffer
+                    // and store the result to the tmpBuffer
+                    int read = is.read(buf);
+                    // should never happen
+                    assert read == toAllocate : "Read not enough bytes from buffer.";
+                    tmpBuffer.add(buf);
+                }
+                /**
+                 * Write all previously read parts back to the buffer. The buffer is
+                 * clean and contains no elements because all parts are read out.
+                 */
+                try {
+                    ignoreSafeWrite = true;
+                    while (!tmpBuffer.isEmpty()) {
+                        // pollFirst returns always a non null value, tmpBuffer is only filled with non null values
+                        os.write(tmpBuffer.pollFirst());
+                    }
+                } finally {
+                    ignoreSafeWrite = false;
                 }
             } finally {
-                ignoreSafeWrite = false;
+                isTrimRunning = false;
+                releaseTrimEndSignals();
+            }
+        }
+    }
+
+    /**
+     * Release all registered trim start signals (max 1 permit pattern).
+     * This is called when trim() begins executing.
+     */
+    private void releaseTrimStartSignals() {
+        for (Semaphore semaphore : trimStartSignals) {
+            if (semaphore.availablePermits() == 0) {
+                semaphore.release();
+            }
+        }
+    }
+
+    /**
+     * Release all registered trim end signals (max 1 permit pattern).
+     * This is called when trim() completes executing.
+     */
+    private void releaseTrimEndSignals() {
+        for (Semaphore semaphore : trimEndSignals) {
+            if (semaphore.availablePermits() == 0) {
+                semaphore.release();
             }
         }
     }
 
     /**
      * Checks if a trim should be performed.
+     * Critical: Ensures trim will actually reduce buffer chunks below {@link #maxBufferElements}.
+     * If consolidating would create chunks that still exceed the limit (when respecting
+     * {@link #maxAllocationSize}), trim is skipped to prevent repeated trim calls on every write.
+     *
      * @return <code>true</code> if a trim should be performed, otherwise <code>false</code>.
      */
+    /**
+     * Pure function to decide if trim should execute based on buffer state.
+     * Contains all decision logic for the trim decision tree:
+     * - maxBufferElements validity check (≤ 0 is invalid)
+     * - buffer size constraints (must be ≥ 2)
+     * - current size vs max limit check (must exceed max)
+     * - edge case: consolidation chunk count analysis
+     *
+     * This is a PURE FUNCTION with NO side effects or state access.
+     * All parameters are value-based, not references to mutable state.
+     *
+     * Decision logic:
+     * 1. If maxBufferElements ≤ 0: invalid configuration → return false
+     * 2. If currentBufferSize < 2: buffer too small to consolidate → return false
+     * 3. If currentBufferSize ≤ maxBufferElements: within limit → return false
+     * 4. If edge case applies:
+     *    - Calculate resulting chunks: ceil(availableBytes / maxAllocationSize)
+     *    - If resultingChunks ≥ currentBufferSize: consolidation wouldn't reduce → return false
+     * 5. Otherwise: all conditions met → return true
+     *
+     * @param currentBufferSize number of byte arrays in buffer Deque
+     * @param maxBufferElements maximum allowed elements before trim triggers
+     * @param availableBytes total bytes currently buffered
+     * @param maxAllocationSize maximum size of a single byte array during consolidation
+     * @return true if trim should execute, false if trim should be skipped
+     */
+    boolean decideTrimExecution(
+            final int currentBufferSize,
+            final int maxBufferElements,
+            final long availableBytes,
+            final long maxAllocationSize) {
+
+        // Check 1: Invalid maxBufferElements (≤ 0)
+        if (maxBufferElements <= 0) {
+            return false;
+        }
+
+        // Check 2: Buffer too small to consolidate (< 2 elements)
+        if (currentBufferSize < 2) {
+            return false;
+        }
+
+        // Check 3: Buffer within limit (≤ maxBufferElements)
+        if (currentBufferSize <= maxBufferElements) {
+            return false;
+        }
+
+        // Check 4: Edge case - consolidation wouldn't reduce chunk count
+        if (shouldCheckEdgeCase(availableBytes, maxAllocationSize)) {
+            // Calculate resulting chunks using ceiling division: ceil(n/d) = (n + d - 1) / d
+            final long resultingChunks = calculateResultingChunks(availableBytes, maxAllocationSize);
+            // If consolidation would still exceed current buffer size, trim is pointless
+            if (shouldSkipTrimDueToEdgeCase(resultingChunks, currentBufferSize)) {
+                return false;
+            }
+        }
+
+        // All checks passed - trim should execute
+        return true;
+    }
+
     boolean isTrimShouldBeExecuted() {
+        /**
+         * Prevent recursive trim: if trim is already running, its internal
+         * writes must never trigger another trim (infinite recursion / stack overflow).
+         */
+        if (isTrimRunning) {
+            return false;
+        }
+
         /**
          * To be thread safe, cache the maxBufferElements value. May the method
          * {@link #setMaxBufferElements(int)} was invoked from outside by another thread.
          */
         final int maxBufferElements = getMaxBufferElements();
-        return (maxBufferElements > 0) && (buffer.size() >= 2) && (buffer.size() > maxBufferElements);
+
+        // Delegate to pure decision function
+        return decideTrimExecution(
+            buffer.size(),
+            maxBufferElements,
+            availableBytes,
+            getMaxAllocationSize()
+        );
     }
 
     /**
@@ -320,6 +605,30 @@ public class StreamBuffer implements Closeable {
      * eliminating the equivalent ConditionalsBoundary mutation that would arise
      * from {@code value > MAX_VALUE} vs {@code value >= MAX_VALUE} (both return
      * the same result when {@code value == MAX_VALUE}).
+     *
+     * SAFETY GUARANTEE FOR LARGE BUFFERS:
+     *
+     * This method handles the type mismatch between:
+     * - {@link #availableBytes}: volatile long (0 to 2^63-1, supports future-proof large buffers)
+     * - InputStream.available(): int contract (0 to 2^31-1, ~2.1 billion)
+     *
+     * If availableBytes ever exceeds Integer.MAX_VALUE (e.g., 5GB+ of buffered data):
+     * 1. This method returns Integer.MAX_VALUE (~2.1GB)
+     * 2. The trim() loop reads Integer.MAX_VALUE bytes in one iteration
+     * 3. Loop condition (available > 0) allows continuation
+     * 4. Next iteration calls available() again, reads remaining bytes
+     * 5. Process repeats until all availableBytes are consolidated
+     *
+     * Result: NO DATA LOSS, NO OVERFLOW - all data is processed correctly.
+     *
+     * EXAMPLE FLOW (5GB data):
+     *   Iteration 1: available() → clamped to 2,147,483,647 bytes → read and consolidate
+     *   Iteration 2: available() → clamped to remaining bytes → read and consolidate
+     *   ... continues until availableBytes == 0
+     *
+     * This design allows StreamBuffer to theoretically support buffers larger than 2GB
+     * while maintaining compatibility with the InputStream API contract that uses int.
+     *
      * Package-private for direct unit testing.
      */
     int clampToMaxInt(long value) {
@@ -335,6 +644,104 @@ public class StreamBuffer implements Closeable {
      */
     long decrementAvailableBytesBudget(long current, long decrement) {
         return current - decrement;
+    }
+
+    /**
+     * Calculates the number of chunks needed to hold availableBytes when
+     * consolidating with a size limit of maxAllocSize.
+     * Uses ceiling division: ceil(n/d) = (n + d - 1) / d
+     * Extracted so PIT can generate testable mutations on the arithmetic operators.
+     * Package-private for direct unit testing.
+     */
+    long calculateResultingChunks(long availableBytes, long maxAllocSize) {
+        return (availableBytes + maxAllocSize - 1) / maxAllocSize;
+    }
+
+    /**
+     * Determines if trim should be skipped due to edge case:
+     * when consolidating would NOT reduce chunk count below the current buffer size.
+     * Extracted so PIT can generate testable mutations on the comparison operators.
+     * Package-private for direct unit testing.
+     */
+    boolean shouldSkipTrimDueToEdgeCase(long resultingChunks, int currentBufferSize) {
+        return resultingChunks >= currentBufferSize;
+    }
+
+    /**
+     * Check if trim should be skipped because maxBufferElements is invalid.
+     * Package-private for direct unit testing of boundary conditions.
+     */
+    boolean shouldSkipTrimDueToInvalidMaxBufferElements(int maxBufferElements) {
+        return maxBufferElements <= 0;
+    }
+
+    /**
+     * Check if trim should be skipped because buffer is too small.
+     * Package-private for direct unit testing of boundary conditions.
+     */
+    boolean shouldSkipTrimDueToSmallBuffer(int bufferSize) {
+        return bufferSize < 2;
+    }
+
+    /**
+     * Check if trim should be skipped because buffer size is within limit.
+     * Package-private for direct unit testing of boundary conditions.
+     */
+    boolean shouldSkipTrimDueToSufficientBuffer(int bufferSize, int maxBufferElements) {
+        return bufferSize <= maxBufferElements;
+    }
+
+    /**
+     * Check if available bytes is positive (boundary: > 0).
+     * Package-private for direct unit testing of boundary conditions.
+     */
+    boolean isAvailableBytesPositive(long availableBytes) {
+        return availableBytes > 0;
+    }
+
+    /**
+     * Check if max allocation size is less than available bytes (boundary: <).
+     * Package-private for direct unit testing of boundary conditions.
+     */
+    boolean isMaxAllocSizeLessThanAvailable(long maxAllocSize, long availableBytes) {
+        return maxAllocSize < availableBytes;
+    }
+
+    /**
+     * Check if edge case check should be performed (available bytes > 0 AND maxAllocSize < availableBytes).
+     * Package-private for direct unit testing of boundary conditions.
+     */
+    boolean shouldCheckEdgeCase(long availableBytes, long maxAllocSize) {
+        return isAvailableBytesPositive(availableBytes) &&
+               isMaxAllocSizeLessThanAvailable(maxAllocSize, availableBytes);
+    }
+
+    /**
+     * Record bytes read to statistics if trim is not running.
+     * Package-private for direct unit testing.
+     */
+    void recordReadStatistics(long bytesRead) {
+        if (!isTrimRunning) {
+            totalBytesRead += bytesRead;
+        }
+    }
+
+    /**
+     * Check if available bytes exceeds current max observed (boundary: >).
+     * Package-private for direct unit testing of boundary conditions.
+     */
+    boolean shouldUpdateMaxObservedBytes(long availableBytes, long currentMax) {
+        return availableBytes > currentMax;
+    }
+
+    /**
+     * Update max observed bytes if available bytes exceeds current max.
+     * Package-private for direct unit testing.
+     */
+    void updateMaxObservedBytesIfNeeded(long availableBytes) {
+        if (shouldUpdateMaxObservedBytes(availableBytes, maxObservedBytes)) {
+            maxObservedBytes = availableBytes;
+        }
     }
 
     /**
@@ -421,6 +828,7 @@ public class StreamBuffer implements Closeable {
                     buffer.pollFirst();
                 }
                 availableBytes--;
+                recordReadStatistics(1);
                 // returned as int in the range 0 to 255.
                 return value & 0xff;
             }
@@ -490,6 +898,7 @@ public class StreamBuffer implements Closeable {
                         copiedBytes += maximumBytesToCopy;
                         maximumAvailableBytes = decrementAvailableBytesBudget(maximumAvailableBytes, maximumBytesToCopy);
                         availableBytes -= maximumBytesToCopy;
+                        recordReadStatistics(maximumBytesToCopy);
                         missingBytes -= maximumBytesToCopy;
                         // remove the first element from the buffer
                         buffer.pollFirst();
@@ -504,6 +913,7 @@ public class StreamBuffer implements Closeable {
                         copiedBytes += missingBytes;
                         maximumAvailableBytes = decrementAvailableBytesBudget(maximumAvailableBytes, missingBytes);
                         availableBytes -= missingBytes;
+                        recordReadStatistics(missingBytes);
                         // set missing bytes to zero
                         // we reach the end of the current buffer (b)
                         missingBytes = 0;
@@ -571,6 +981,10 @@ public class StreamBuffer implements Closeable {
                 availableBytes += len;
                 // the count must be positive after any write operation
                 assert availableBytes > 0 : "More memory used as a long can count";
+                if (!isTrimRunning) {
+                    totalBytesWritten += len;
+                    updateMaxObservedBytesIfNeeded(availableBytes);
+                }
                 trim();
             }
             // always at least, signal bytes are written to the buffer

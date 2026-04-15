@@ -61,6 +61,27 @@ jobs:
       - name: Run mutation tests with PIT
         run: mvn -B test-compile org.pitest:pitest-maven:mutationCoverage -Dmaven.javadoc.skip=true --file pom.xml
 
+      - name: Extract Pitest Survivors with Context
+        if: always()
+        run: |
+          echo "=== PIT Survived Mutations ==="
+          echo ""
+
+          # Loop through all HTML files in pit-reports
+          for html_file in $(find target/pit-reports -name "*.html" -type f | sort); do
+            echo "Processing: $html_file"
+
+            # Extract lines containing SURVIVED with context (2 before, 3 after)
+            if grep -q "SURVIVED" "$html_file"; then
+              echo "Found survivors in $html_file:"
+              grep -B 2 -A 3 "SURVIVED" "$html_file"
+              echo ""
+            fi
+          done
+
+          echo "=== Count unique survivors ==="
+          echo "Check the 'Found survivors' sections above - each unique location with SURVIVED is one uncovered mutation"
+
       - name: Upload PIT report
         if: always()
         uses: actions/upload-artifact@v4
