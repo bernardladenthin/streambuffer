@@ -3925,24 +3925,26 @@ public class StreamBufferTest {
             os.write(testData);
         }
 
-        // act & assert — Trigger trim and verify recovery
+        // act — Trigger trim and capture exception
+        RuntimeException caughtException = null;
+        try {
+            os.write(testData);
+        } catch (RuntimeException e) {
+            caughtException = e;
+        }
+
+        // assert — Verify exception was thrown as expected
+        assertThat("Signal release exception should be thrown", caughtException, not((RuntimeException) null));
+        assertThat("Exception message correct", caughtException.getMessage(),
+            is("Simulated signal release failure"));
+
+        // Clean up faulty semaphore for remaining tests
+        sb.removeTrimStartSignal(faultySemaphore);
+
+        // assert — After exception, verify stream recovered
         assertAll(
             () -> {
-                // Try to trigger trim - releaseTrimStartSignals will throw
-                // Stream should recover despite the exception
-                try {
-                    os.write(testData);
-                    // If we get here, stream survived the exception
-                } catch (RuntimeException e) {
-                    // Exception is expected to propagate from trim
-                    assertThat(e.getMessage(), is("Simulated signal release failure"));
-                }
-            },
-            () -> {
                 // Verify isTrimRunning is false (flag was reset despite exception)
-                // Even though releaseTrimStartSignals threw, isTrimRunning should be false
-                // because trim never entered the try block
-                // OR if trim did start before exception, finally would reset it
                 assertThat("Stream should not be in trim state after exception",
                     sb.isTrimRunning(), is(false));
             },
@@ -3959,9 +3961,6 @@ public class StreamBufferTest {
                 assertThat("Should be able to read after signal exception", bytesRead, greaterThan(0));
             }
         );
-
-        // cleanup
-        sb.removeTrimStartSignal(faultySemaphore);
     }
 
     // Test extracted boundary checking methods
