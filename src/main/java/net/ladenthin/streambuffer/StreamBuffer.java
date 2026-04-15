@@ -439,8 +439,8 @@ public class StreamBuffer implements Closeable {
     private void trim() throws IOException {
         if (isTrimShouldBeExecuted()) {
             isTrimRunning = true;
-            releaseTrimStartSignals();
             try {
+                releaseTrimStartSignals();
 
                 /**
                  * Need to store more bufs, may it is not possible to read out all
