@@ -605,6 +605,30 @@ public class StreamBuffer implements Closeable {
      * eliminating the equivalent ConditionalsBoundary mutation that would arise
      * from {@code value > MAX_VALUE} vs {@code value >= MAX_VALUE} (both return
      * the same result when {@code value == MAX_VALUE}).
+     *
+     * SAFETY GUARANTEE FOR LARGE BUFFERS:
+     *
+     * This method handles the type mismatch between:
+     * - {@link #availableBytes}: volatile long (0 to 2^63-1, supports future-proof large buffers)
+     * - InputStream.available(): int contract (0 to 2^31-1, ~2.1 billion)
+     *
+     * If availableBytes ever exceeds Integer.MAX_VALUE (e.g., 5GB+ of buffered data):
+     * 1. This method returns Integer.MAX_VALUE (~2.1GB)
+     * 2. The trim() loop reads Integer.MAX_VALUE bytes in one iteration
+     * 3. Loop condition (available > 0) allows continuation
+     * 4. Next iteration calls available() again, reads remaining bytes
+     * 5. Process repeats until all availableBytes are consolidated
+     *
+     * Result: NO DATA LOSS, NO OVERFLOW - all data is processed correctly.
+     *
+     * EXAMPLE FLOW (5GB data):
+     *   Iteration 1: available() → clamped to 2,147,483,647 bytes → read and consolidate
+     *   Iteration 2: available() → clamped to remaining bytes → read and consolidate
+     *   ... continues until availableBytes == 0
+     *
+     * This design allows StreamBuffer to theoretically support buffers larger than 2GB
+     * while maintaining compatibility with the InputStream API contract that uses int.
+     *
      * Package-private for direct unit testing.
      */
     int clampToMaxInt(long value) {
