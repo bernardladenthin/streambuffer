@@ -4191,7 +4191,21 @@ public class StreamBufferTest {
             Arguments.of(101, 100, 1010, 100, true), // 101 > 100, result 11 < 101 → trim
 
             // Very large buffer needing consolidation
-            Arguments.of(1000, 100, 10000, 1000, true) // 1000 > 100, ceil(10000/1000)=10 < 1000 → trim
+            Arguments.of(1000, 100, 10000, 1000, true), // 1000 > 100, ceil(10000/1000)=10 < 1000 → trim
+
+            // ============ SPECIFIC MUTATIONS TO KILL ============
+            // Kill "Replaced long subtraction with addition" mutation in ceiling division
+            // Case: availableBytes=100, maxAllocSize=100
+            // Correct: (100+100-1)/100 = 199/100 = 1
+            // Mutated to +1: (100+100+1)/100 = 201/100 = 2
+            // With currentBufferSize=2, trim executes if chunks < 2
+            Arguments.of(2, 1, 100, 100, true),  // chunks=1 < 2 → EXECUTE (kills arithmetic mutation)
+
+            // Kill "changed conditional boundary" mutations by testing exact equality
+            // Case: resultingChunks exactly equals currentBufferSize
+            // Correct: resultingChunks >= currentBufferSize → return false
+            // Mutated to >: resultingChunks > currentBufferSize → return true (if not equal)
+            Arguments.of(2, 1, 200, 100, false), // chunks=2, size=2, 2>=2 → SKIP (kills >= vs > mutation)
         );
     }
 
