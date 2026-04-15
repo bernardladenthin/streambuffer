@@ -563,11 +563,11 @@ public class StreamBuffer implements Closeable {
         }
 
         // Check 4: Edge case - consolidation wouldn't reduce chunk count
-        if (availableBytes > 0 && maxAllocationSize < availableBytes) {
+        if (shouldCheckEdgeCase(availableBytes, maxAllocationSize)) {
             // Calculate resulting chunks using ceiling division: ceil(n/d) = (n + d - 1) / d
-            final long resultingChunks = (availableBytes + maxAllocationSize - 1) / maxAllocationSize;
+            final long resultingChunks = calculateResultingChunks(availableBytes, maxAllocationSize);
             // If consolidation would still exceed current buffer size, trim is pointless
-            if (resultingChunks >= currentBufferSize) {
+            if (shouldSkipTrimDueToEdgeCase(resultingChunks, currentBufferSize)) {
                 return false;
             }
         }

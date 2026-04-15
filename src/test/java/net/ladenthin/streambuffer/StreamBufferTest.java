@@ -4193,20 +4193,96 @@ public class StreamBufferTest {
             // Very large buffer needing consolidation
             Arguments.of(1000, 100, 10000, 1000, true), // 1000 > 100, ceil(10000/1000)=10 < 1000 → trim
 
-            // ============ SPECIFIC MUTATIONS TO KILL ============
-            // Kill "Replaced long subtraction with addition" mutation in ceiling division
-            // Case: availableBytes=100, maxAllocSize=100
-            // Correct: (100+100-1)/100 = 199/100 = 1
-            // Mutated to +1: (100+100+1)/100 = 201/100 = 2
-            // With currentBufferSize=2, trim executes if chunks < 2
-            Arguments.of(2, 1, 100, 100, true),  // chunks=1 < 2 → EXECUTE (kills arithmetic mutation)
+            // ============ KILL SURVIVING MUTATIONS ============
+            // Kill arithmetic mutation: subtraction vs addition in ceiling division
+            // Need: maxAllocationSize < availableBytes to ENTER edge case, where ceiling formula is executed
+            // Correct: (200 + 100 - 1) / 100 = 2, so 2 >= 3 is false, return true (trim executes)
+            // Mutated (+1): (200 + 100 + 1) / 100 = 3, so 3 >= 3 is true, return false (skip trim)
+            Arguments.of(3, 1, 200, 100, true),
 
-            // Kill "changed conditional boundary" mutations by testing exact equality
-            // Case: resultingChunks exactly equals currentBufferSize
-            // Correct: resultingChunks >= currentBufferSize → return false
-            // Mutated to >: resultingChunks > currentBufferSize → return true (if not equal)
-            Arguments.of(2, 1, 200, 100, false)  // chunks=2, size=2, 2>=2 → SKIP (kills >= vs > mutation)
+            // Kill boundary mutation on < vs <=: test maxAllocationSize == availableBytes
+            // Edge case: when maxAllocationSize == availableBytes, currently skipped (< is false)
+            // With <= mutation, edge case would be entered, but ceiling = 1, doesn't change result
+            Arguments.of(2, 1, 100, 100, true),   // maxAllocSize=availableBytes, edge case skipped (< false)
+
+            // Kill boundary mutation on > vs >=: test availableBytes == 0
+            // If availableBytes == 0, currently skip edge case (> is false)
+            // With >= mutation, would enter but maxAllocationSize < 0 is never true
+            Arguments.of(2, 1, 0, 100, true),     // availableBytes=0, edge case skipped (> false)
+
+            // Additional edge cases to expose mutations
+            Arguments.of(2, 1, 99, 100, true),    // 99 < 100, edge case skipped (< false)
+            Arguments.of(2, 1, 101, 100, false),  // 101 > 100, edge case entered, ceil=(101+100-1)/100=2, 2>=2 true, skip trim
+            Arguments.of(4, 1, 200, 100, true)    // bufferSize=4: ceiling=(200+100-1)/100=2, 2>=4 false, return true
         );
+    }
+
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="Direct Tests for Boundary Condition Functions">
+
+    @Test
+    public void isAvailableBytesPositive_withZero_returnsFalse() {
+        StreamBuffer sb = new StreamBuffer();
+        assertThat(sb.isAvailableBytesPositive(0), is(false));
+    }
+
+    @Test
+    public void isAvailableBytesPositive_withOne_returnsTrue() {
+        StreamBuffer sb = new StreamBuffer();
+        assertThat(sb.isAvailableBytesPositive(1), is(true));
+    }
+
+    @Test
+    public void isAvailableBytesPositive_withNegative_returnsFalse() {
+        StreamBuffer sb = new StreamBuffer();
+        assertThat(sb.isAvailableBytesPositive(-1), is(false));
+    }
+
+    @Test
+    public void isMaxAllocSizeLessThanAvailable_withLess_returnsTrue() {
+        StreamBuffer sb = new StreamBuffer();
+        assertThat(sb.isMaxAllocSizeLessThanAvailable(100, 200), is(true));
+    }
+
+    @Test
+    public void isMaxAllocSizeLessThanAvailable_withEqual_returnsFalse() {
+        StreamBuffer sb = new StreamBuffer();
+        assertThat(sb.isMaxAllocSizeLessThanAvailable(100, 100), is(false));
+    }
+
+    @Test
+    public void isMaxAllocSizeLessThanAvailable_withGreater_returnsFalse() {
+        StreamBuffer sb = new StreamBuffer();
+        assertThat(sb.isMaxAllocSizeLessThanAvailable(200, 100), is(false));
+    }
+
+    @Test
+    public void shouldCheckEdgeCase_withBothConditionsTrue_returnsTrue() {
+        StreamBuffer sb = new StreamBuffer();
+        // availableBytes > 0 AND maxAllocSize < availableBytes
+        assertThat(sb.shouldCheckEdgeCase(200, 100), is(true));
+    }
+
+    @Test
+    public void shouldCheckEdgeCase_withAvailableBytesZero_returnsFalse() {
+        StreamBuffer sb = new StreamBuffer();
+        // availableBytes > 0 is false
+        assertThat(sb.shouldCheckEdgeCase(0, 100), is(false));
+    }
+
+    @Test
+    public void shouldCheckEdgeCase_withMaxAllocSizeEqual_returnsFalse() {
+        StreamBuffer sb = new StreamBuffer();
+        // maxAllocSize < availableBytes is false
+        assertThat(sb.shouldCheckEdgeCase(100, 100), is(false));
+    }
+
+    @Test
+    public void shouldCheckEdgeCase_withMaxAllocSizeGreater_returnsFalse() {
+        StreamBuffer sb = new StreamBuffer();
+        // maxAllocSize < availableBytes is false
+        assertThat(sb.shouldCheckEdgeCase(50, 100), is(false));
     }
 
     // </editor-fold>
