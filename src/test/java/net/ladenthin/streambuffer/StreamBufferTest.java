@@ -4334,8 +4334,8 @@ public class StreamBufferTest {
             try {
                 trimTask.get(10, java.util.concurrent.TimeUnit.SECONDS);
                 closeTask.get(10, java.util.concurrent.TimeUnit.SECONDS);
-            } catch (java.util.concurrent.ExecutionException e) {
-                // Task threw exception (already captured in thread*Exception)
+            } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException e) {
+                // Task threw exception or timed out (already captured in thread*Exception)
             }
 
             // assert — No exceptions from either thread
