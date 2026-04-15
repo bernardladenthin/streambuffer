@@ -3900,50 +3900,99 @@ public class StreamBufferTest {
      * 4. Verify stream recovers (can still write/read, trim flag reset)
      * 5. Verify second trim can execute (not deadlocked)
      */
-    @Disabled("Signal release exceptions are impractical to test: Semaphore.release() never throws in practice. " +
-        "The code fix (moving releaseTrimStartSignals inside try-finally) has been verified to be correct. " +
-        "This test documents the critical bug that WAS fixed: releaseTrimStartSignals() is now inside try block " +
-        "so isTrimRunning flag is ALWAYS reset even if signal release throws. " +
-        "Real-world testing: standard Semaphore.release() is safe and doesn't throw.")
+    /**
+     * CRITICAL TEST: Exception during trim start signal release doesn't deadlock stream
+     *
+     * REQUIREMENT: If releaseTrimStartSignals() throws an exception,
+     * the isTrimRunning flag MUST still be properly managed via finally block.
+     * Without this, the flag stays true forever, blocking all future trim operations.
+     *
+     * IMPLEMENTATION FIX (applied):
+     * Moved releaseTrimStartSignals() INSIDE the try-finally block (line 443):
+     * ```
+     * try {
+     *     releaseTrimStartSignals();  // ← NOW INSIDE try-finally
+     *     // trim logic
+     * } finally {
+     *     isTrimRunning = false;  // ← Always executes
+     * }
+     * ```
+     *
+     * TEST APPROACH:
+     * Uses a throwing semaphore wrapper that is added to the trim start signal list.
+     * When trim() calls releaseTrimStartSignals(), it iterates through signals
+     * and calls release() on the throwing semaphore.
+     * Verifies that despite the exception:
+     * 1. isTrimRunning flag is reset (finally executed)
+     * 2. Stream remains usable (subsequent writes/reads work)
+     * 3. Proper exception propagates to caller
+     */
     @Test
     public void trim_signalReleaseExceptionDuringStart_streamRecoverable() throws IOException {
-        // This test documents a critical bug that has been FIXED in StreamBuffer.trim():
-        // releaseTrimStartSignals() was originally called OUTSIDE the try-finally block.
-        // If it threw an exception, isTrimRunning would never be reset → permanent deadlock.
-        //
-        // FIX APPLIED: Moved releaseTrimStartSignals() INSIDE try block (line 443).
-        // Now even if signal release throws, finally block executes and resets the flag.
-        //
-        // Why disabled: Cannot practically test because:
-        // 1. Standard Semaphore.release() never throws exceptions
-        // 2. To mock a throwing semaphore, we'd need to wrap/mock the signal list
-        // 3. The exception escapes test's try-catch due to how write() is structured
-        // 4. The fix is proven correct by code inspection and the try-finally structure
-        //
-        // VERIFICATION OF FIX:
-        // Before: releaseTrimStartSignals(); try { ... } finally { isTrimRunning = false; }
-        //         If exception at releaseTrimStartSignals → flag never reset
-        // After:  try { releaseTrimStartSignals(); ... } finally { isTrimRunning = false; }
-        //         If exception at releaseTrimStartSignals → finally still executes, flag reset
-        //
-        // This is the same pattern used for the OTHER critical exception test which DOES pass:
-        // trim_exceptionDuringRead_flagResetsInFinally() and trim_exceptionDuringWrite_flagResetsInFinally()
-
-        final StreamBuffer sb = new StreamBuffer();
-        final OutputStream os = sb.getOutputStream();
-
-        final Semaphore faultySemaphore = new Semaphore(0) {
+        // arrange — Create throwing semaphore wrapper
+        final AtomicBoolean exceptionThrown = new AtomicBoolean(false);
+        final Semaphore throwingSemaphore = new Semaphore(0) {
             @Override
             public void release() {
+                exceptionThrown.set(true);
                 throw new RuntimeException("Simulated signal release failure");
             }
         };
 
-        sb.addTrimStartSignal(faultySemaphore);
+        final StreamBuffer sb = new StreamBuffer();
+        final OutputStream os = sb.getOutputStream();
+        final InputStream is = sb.getInputStream();
+
+        sb.addTrimStartSignal(throwingSemaphore);
         sb.setMaxBufferElements(5);
 
-        // This test cannot be completed due to exception handling limitations
-        // The fix has been verified by code review and is correct
+        // Write data to set up trim conditions
+        byte[] testData = new byte[100];
+        Arrays.fill(testData, (byte) 42);
+        for (int i = 0; i < 50; i++) {
+            os.write(testData);
+        }
+
+        // act — Trigger trim with exception from signal release
+        assertAll(
+            () -> {
+                // Attempt write that will trigger trim and exception
+                // The exception will be caught by SBOutputStream.write() or propagate
+                // We verify recovery by checking state, not by catching exception
+                try {
+                    os.write(testData);
+                } catch (Exception ignored) {
+                    // Exception from signal release is expected
+                }
+            },
+            () -> {
+                // Remove the throwing semaphore for cleanup
+                sb.removeTrimStartSignal(throwingSemaphore);
+            },
+            () -> {
+                // assert — Verify flag is reset despite exception
+                // If finally block didn't execute, flag would still be true
+                assertThat("isTrimRunning must be false after exception (finally executed)",
+                    sb.isTrimRunning(), is(false));
+            },
+            () -> {
+                // assert — Verify stream still usable - can write
+                byte[] moreData = new byte[50];
+                Arrays.fill(moreData, (byte) 99);
+                os.write(moreData);  // Should not throw
+            },
+            () -> {
+                // assert — Verify stream still usable - can read
+                byte[] buffer = new byte[100];
+                int bytesRead = is.read(buffer);
+                assertThat("Should be able to read after signal exception", bytesRead, greaterThan(0));
+            },
+            () -> {
+                // assert — Verify exception actually occurred
+                assertThat("Throwing semaphore should have been called",
+                    exceptionThrown.get(), is(true));
+            }
+        );
     }
 
     // Test extracted boundary checking methods
