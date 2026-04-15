@@ -4132,6 +4132,115 @@ public class StreamBufferTest {
         );
     }
 
+    /**
+     * CRITICAL TEST: Exception during trim end signal release - flag already reset but exception propagates
+     *
+     * REQUIREMENT: If exception occurs in releaseTrimEndSignals() (line 481 finally block),
+     * the isTrimRunning flag MUST already be false (line 480 executes first).
+     * However, the exception can suppress notification to signal observers.
+     *
+     * IMPLEMENTATION ANALYSIS:
+     * Finally block order matters:
+     * ```
+     * } finally {
+     *     isTrimRunning = false;              // ← Line 480: executes FIRST
+     *     releaseTrimEndSignals();            // ← Line 481: executes SECOND
+     * }
+     * ```
+     *
+     * Key difference from trim start test:
+     * - Trim start exception (line 443): flag ALREADY true, exception before reset → DANGEROUS
+     * - Trim end exception (line 481): flag ALREADY reset, exception after → SAFE for flag
+     * - But: Signal observers may not be notified if exception occurs
+     *
+     * TEST APPROACH:
+     * 1. Create throwing semaphore for trim end signal
+     * 2. Setup: high threshold, write data, add throwing signal
+     * 3. Lower threshold and write more → trim runs → signal release throws
+     * 4. Verify:
+     *    - isTrimRunning is false (flag was reset before exception)
+     *    - Exception propagates to caller (signal notification failure)
+     *    - Stream still works (exception doesn't break stream state)
+     */
+    @Test
+    public void trim_signalReleaseExceptionDuringEnd_flagAlreadyResetExceptionPropagates() throws IOException {
+        // arrange — Create throwing semaphore for trim end signal
+        final AtomicBoolean endSignalCalled = new AtomicBoolean(false);
+        final Semaphore throwingEndSemaphore = new Semaphore(0) {
+            @Override
+            public void release() {
+                endSignalCalled.set(true);
+                throw new RuntimeException("Simulated trim end signal release failure");
+            }
+        };
+
+        final StreamBuffer sb = new StreamBuffer();
+        final OutputStream os = sb.getOutputStream();
+        final InputStream is = sb.getInputStream();
+
+        // Set high threshold initially — no trim during setup
+        sb.setMaxBufferElements(1000);
+
+        // Write data to build up buffer (no trim yet)
+        byte[] testData = new byte[100];
+        Arrays.fill(testData, (byte) 42);
+        for (int i = 0; i < 50; i++) {
+            os.write(testData);
+        }
+
+        // NOW add the throwing trim end signal and lower threshold to trigger trim on next write
+        sb.addTrimEndSignal(throwingEndSemaphore);
+        sb.setMaxBufferElements(5);
+
+        // act — Trigger trim (next write exceeds maxBufferElements → trim → signal release throws)
+        RuntimeException caughtException = null;
+        try {
+            os.write(testData);
+        } catch (RuntimeException e) {
+            caughtException = e;
+        }
+
+        // Remove throwing semaphore so subsequent operations don't retrigger exception
+        sb.removeTrimEndSignal(throwingEndSemaphore);
+
+        // assert — Verify exception occurred and stream recovered
+        final RuntimeException finalCaught = caughtException;
+        assertAll(
+            () -> {
+                // Exception was thrown from trim end signal release
+                assertThat("Trim end signal release exception should propagate",
+                    finalCaught, not((RuntimeException) null));
+                assertThat("Exception message correct",
+                    finalCaught.getMessage(), is("Simulated trim end signal release failure"));
+            },
+            () -> {
+                // Throwing end semaphore was actually invoked
+                assertThat("Throwing trim end semaphore's release() should have been called",
+                    endSignalCalled.get(), is(true));
+            },
+            () -> {
+                // CRITICAL: isTrimRunning must be false (flag was reset BEFORE signal exception)
+                // Line 480 executes before line 481, so flag is already false
+                // This is different from trim start where flag would be stuck true
+                assertThat("isTrimRunning must be false (flag reset before signal release)",
+                    sb.isTrimRunning(), is(false));
+            },
+            () -> {
+                // Stream still usable - can write (trim end exception doesn't break stream)
+                byte[] moreData = new byte[50];
+                Arrays.fill(moreData, (byte) 99);
+                os.write(moreData);
+            },
+            () -> {
+                // Stream still usable - can read
+                byte[] buffer = new byte[100];
+                int bytesRead = is.read(buffer);
+                assertThat("Should be able to read after trim end signal exception",
+                    bytesRead, greaterThan(0));
+            }
+        );
+    }
+
     // Test extracted boundary checking methods
 
     @Test
