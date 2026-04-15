@@ -4205,7 +4205,7 @@ public class StreamBufferTest {
             // Case: resultingChunks exactly equals currentBufferSize
             // Correct: resultingChunks >= currentBufferSize → return false
             // Mutated to >: resultingChunks > currentBufferSize → return true (if not equal)
-            Arguments.of(2, 1, 200, 100, false), // chunks=2, size=2, 2>=2 → SKIP (kills >= vs > mutation)
+            Arguments.of(2, 1, 200, 100, false)  // chunks=2, size=2, 2>=2 → SKIP (kills >= vs > mutation)
         );
     }
 
