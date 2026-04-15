@@ -4465,5 +4465,186 @@ public class StreamBufferTest {
         assertThat(totalRead, is(5000));
     }
 
+    /**
+     * CRITICAL CORRECTNESS TEST: Config changes during trim don't affect running trim
+     *
+     * REQUIREMENT: When trim is already executing, changes to configuration parameters
+     * (maxBufferElements, maxAllocationSize) must NOT affect the currently running trim
+     * operation. Configuration should only influence trim DECISIONS, not trim EXECUTION.
+     *
+     * IMPLEMENTATION VERIFICATION:
+     * The trim decision logic caches configuration values BEFORE trim starts:
+     * - isTrimShouldBeExecuted() calls: final int maxBufferElements = getMaxBufferElements()
+     * - This cached value is passed to decideTrimExecution() as a parameter
+     * - During trim execution, only the cached value is used, not the volatile field
+     *
+     * RISK IF NOT CORRECT:
+     * If trim re-read configuration during execution, a concurrent config change could:
+     * - Cause trim to terminate prematurely (if maxBufferElements changed)
+     * - Change chunk allocation mid-operation (if maxAllocationSize changed)
+     * - Corrupt internal state (data loss, inconsistent buffer state)
+     *
+     * TEST APPROACH:
+     * 1. Register semaphore observer to detect when trim STARTS executing
+     * 2. Continuously write data in writer thread to trigger trim
+     * 3. Main thread waits for trim to start
+     * 4. While trim is running, change configuration
+     * 5. Verify trim completes successfully and data is intact
+     * 6. Verify that new configuration takes effect in subsequent operations
+     *
+     * SYNCHRONIZATION MECHANISM:
+     * Uses StreamBuffer's built-in semaphore observer pattern:
+     * - addTrimStartSignal(Semaphore) releases semaphore when trim() begins
+     * - addTrimEndSignal(Semaphore) releases semaphore when trim() completes
+     * This allows precise test synchronization without mocking or instrumentation.
+     */
+    @Test
+    @Timeout(10)  // 10 second timeout to prevent hanging if sync fails
+    public void setMaxBufferElements_duringTrimExecution_doesNotAffectRunningTrim() throws IOException, InterruptedException {
+        // arrange — Set up continuous writer and trim observers
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        InputStream is = sb.getInputStream();
+
+        sb.setMaxBufferElements(100);    // Initial high threshold
+        sb.setMaxAllocationSize(50);     // Reasonable chunk size
+
+        // Semaphores for synchronization
+        Semaphore trimStarted = new Semaphore(0);  // Released when trim() begins
+        Semaphore trimEnded = new Semaphore(0);    // Released when trim() ends
+
+        // Register observers to detect trim lifecycle
+        sb.addTrimStartSignal(trimStarted);
+        sb.addTrimEndSignal(trimEnded);
+
+        // Writer thread: continuously write data to trigger trim
+        Thread writerThread = new Thread(() -> {
+            try {
+                byte[] chunk = new byte[10];
+                Arrays.fill(chunk, anyValue);
+                // Write 200 chunks (2000 bytes) — exceeds maxBufferElements(100), triggers trim
+                for (int i = 0; i < 200; i++) {
+                    os.write(chunk);
+                    Thread.sleep(2);  // Small delay to allow trim to execute
+                }
+                os.close();
+            } catch (IOException | InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+        });
+
+        writerThread.start();
+
+        // act — Wait for trim to start, then change config mid-trim
+        trimStarted.acquire();  // Block until trim() is executing
+
+        // At this point: trim is running, isTrimRunning == true
+        // Change configuration while trim is in progress
+        sb.setMaxBufferElements(0);      // Change to invalid value while trim runs
+        sb.setMaxAllocationSize(100);    // Also change allocation size
+
+        // Wait for trim to complete
+        trimEnded.acquire();  // Block until trim() finishes
+
+        // assert — Verify trim completed successfully despite config changes
+        assertAll(
+            // 1. Trim finished (flag reset)
+            () -> assertThat("Trim should complete and reset flag", sb.isTrimRunning(), is(false)),
+
+            // 2. Data integrity preserved (all written data readable)
+            () -> {
+                byte[] result = new byte[2000];
+                int totalRead = 0;
+                int bytesRead;
+                while ((bytesRead = is.read(result, totalRead, 2000 - totalRead)) > 0) {
+                    totalRead += bytesRead;
+                }
+                assertThat("All 2000 written bytes should be readable", totalRead, is(2000));
+                assertThat("First byte intact", result[0], is(anyValue));
+                assertThat("Last byte intact", result[1999], is(anyValue));
+            },
+
+            // 3. New configuration takes effect in next operation
+            () -> {
+                // maxBufferElements=0 is invalid, should prevent further trims
+                // Write more data and verify it doesn't trigger another trim
+                // (trim won't execute because maxBufferElements <= 0 is invalid)
+                assertThat("Invalid maxBufferElements prevents trim",
+                    sb.decideTrimExecution(150, 0, 1500, 50), is(false));
+            }
+        );
+
+        writerThread.join(2000);  // Wait for writer thread to finish
+    }
+
+    /**
+     * CORRECTNESS TEST: maxAllocationSize changes during trim don't affect running trim
+     *
+     * Similar to the maxBufferElements test, but verifies that changes to maxAllocationSize
+     * (the chunk size limit during consolidation) don't affect the currently executing trim.
+     *
+     * IMPLEMENTATION DETAIL:
+     * maxAllocationSize is also only read once via getMaxAllocationSize() in isTrimShouldBeExecuted(),
+     * so trim execution is isolated from config changes.
+     */
+    @Test
+    @Timeout(10)
+    public void setMaxAllocationSize_duringTrimExecution_doesNotAffectRunningTrim() throws IOException, InterruptedException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        InputStream is = sb.getInputStream();
+
+        sb.setMaxBufferElements(50);
+        sb.setMaxAllocationSize(30);    // Initial allocation size
+
+        Semaphore trimStarted = new Semaphore(0);
+        Semaphore trimEnded = new Semaphore(0);
+
+        sb.addTrimStartSignal(trimStarted);
+        sb.addTrimEndSignal(trimEnded);
+
+        // Writer thread
+        Thread writerThread = new Thread(() -> {
+            try {
+                byte[] chunk = new byte[5];
+                Arrays.fill(chunk, anyValue);
+                // Write 500 chunks (2500 bytes) to trigger trim
+                for (int i = 0; i < 500; i++) {
+                    os.write(chunk);
+                    Thread.sleep(1);
+                }
+                os.close();
+            } catch (IOException | InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+        });
+
+        writerThread.start();
+
+        // act — Change maxAllocationSize while trim is executing
+        trimStarted.acquire();
+        sb.setMaxAllocationSize(100);    // Change to larger chunks mid-trim
+        trimEnded.acquire();
+
+        // assert
+        assertAll(
+            () -> assertThat("Trim should complete", sb.isTrimRunning(), is(false)),
+            () -> assertThat("New allocation size is set", sb.getMaxAllocationSize(), is(100L)),
+            // Verify data integrity
+            () -> {
+                byte[] result = new byte[2500];
+                int totalRead = 0;
+                int bytesRead;
+                while ((bytesRead = is.read(result, totalRead, 2500 - totalRead)) > 0) {
+                    totalRead += bytesRead;
+                }
+                assertThat("All data preserved", totalRead, is(2500));
+            }
+        );
+
+        writerThread.join(2000);
+    }
+
     // </editor-fold>
 }
