@@ -3867,6 +3867,103 @@ public class StreamBufferTest {
         assertThrows(NullPointerException.class, () -> sb.addTrimEndSignal(null));
     }
 
+    /**
+     * CRITICAL TEST: Exception during trim start signal release doesn't deadlock stream
+     *
+     * REQUIREMENT: If releaseTrimStartSignals() throws an exception (line 442),
+     * the isTrimRunning flag MUST still be properly managed and the stream MUST recover.
+     * Without this, the flag stays true forever, blocking all future trim operations.
+     *
+     * IMPLEMENTATION RISK:
+     * releaseTrimStartSignals() is called OUTSIDE the try block:
+     * ```
+     * if (isTrimShouldBeExecuted()) {
+     *     isTrimRunning = true;
+     *     releaseTrimStartSignals();  // ← OUTSIDE try-finally (line 442)
+     *     try {
+     *         // trim logic
+     *     } finally {
+     *         isTrimRunning = false;
+     *     }
+     * }
+     * ```
+     *
+     * If releaseTrimStartSignals() throws:
+     * - isTrimRunning stays true (never reset)
+     * - Subsequent trim attempts blocked
+     * - Stream enters permanent deadlock
+     *
+     * TEST APPROACH:
+     * 1. Create custom semaphore that throws on release()
+     * 2. Add as trim start signal to trigger exception during trim
+     * 3. Trigger trim by writing data
+     * 4. Verify stream recovers (can still write/read, trim flag reset)
+     * 5. Verify second trim can execute (not deadlocked)
+     */
+    @Test
+    public void trim_signalReleaseExceptionDuringStart_streamRecoverable() throws IOException {
+        // arrange — Create semaphore that throws on release
+        final StreamBuffer sb = new StreamBuffer();
+        final OutputStream os = sb.getOutputStream();
+        final InputStream is = sb.getInputStream();
+
+        // Custom semaphore that throws RuntimeException on release()
+        final Semaphore faultySemaphore = new Semaphore(0) {
+            @Override
+            public void release() {
+                throw new RuntimeException("Simulated signal release failure");
+            }
+        };
+
+        sb.addTrimStartSignal(faultySemaphore);
+        sb.setMaxBufferElements(5);
+
+        // Write data to set up trim conditions
+        byte[] testData = new byte[100];
+        Arrays.fill(testData, (byte) 42);
+        for (int i = 0; i < 50; i++) {
+            os.write(testData);
+        }
+
+        // act & assert — Trigger trim and verify recovery
+        assertAll(
+            () -> {
+                // Try to trigger trim - releaseTrimStartSignals will throw
+                // Stream should recover despite the exception
+                try {
+                    os.write(testData);
+                    // If we get here, stream survived the exception
+                } catch (RuntimeException e) {
+                    // Exception is expected to propagate from trim
+                    assertThat(e.getMessage(), is("Simulated signal release failure"));
+                }
+            },
+            () -> {
+                // Verify isTrimRunning is false (flag was reset despite exception)
+                // Even though releaseTrimStartSignals threw, isTrimRunning should be false
+                // because trim never entered the try block
+                // OR if trim did start before exception, finally would reset it
+                assertThat("Stream should not be in trim state after exception",
+                    sb.isTrimRunning(), is(false));
+            },
+            () -> {
+                // Verify stream is still usable - can still write
+                byte[] moreData = new byte[50];
+                Arrays.fill(moreData, (byte) 99);
+                os.write(moreData);  // Should not throw
+            },
+            () -> {
+                // Verify stream is still usable - can still read
+                byte[] buffer = new byte[100];
+                int bytesRead = is.read(buffer);
+                assertThat("Should be able to read after signal exception", bytesRead, greaterThan(0));
+            }
+        );
+
+        // cleanup
+        sb.removeTrimStartSignal(faultySemaphore);
+    }
+
     // Test extracted boundary checking methods
 
     @Test
