@@ -18,6 +18,8 @@
 // @formatter:on
 package net.ladenthin.streambuffer;
 
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.Disabled;
@@ -61,9 +63,12 @@ public class StreamBufferTest {
     /**
      * The answer to all questions.
      */
-    private final static byte anyValue = 42;
+    static final byte anyValue = 42;
 
-    // <editor-fold defaultstate="collapsed" desc="roundtrip">
+    @Nested
+    @DisplayName("roundtrip")
+    class RoundtripTests {
+    @DisplayName("simple round trip")
     @Test
     public void testSimpleRoundTrip() throws IOException {
         // arrange
@@ -96,6 +101,7 @@ public class StreamBufferTest {
      * This test verifies that the input stream's read method places bytes at a specific offset.
      * @throws IOException
      */
+    @DisplayName("safe write simple offset")
     @Test
     public void testSafeWriteSimpleOffset() throws IOException {
         // arrange
@@ -129,6 +135,7 @@ public class StreamBufferTest {
         );
     }
 
+    @DisplayName("multiple array")
     @Test
     public void testMultipleArray() throws IOException {
         // arrange
@@ -161,6 +168,7 @@ public class StreamBufferTest {
         );
     }
 
+    @DisplayName("looped roundtrip")
     @Test
     public void testLoopedRoundtrip() throws IOException {
         // arrange
@@ -211,6 +219,7 @@ public class StreamBufferTest {
         );
     }
 
+    @DisplayName("data input output")
     @Test
     public void testDataInputOutput() throws IOException {
         // arrange
@@ -230,9 +239,12 @@ public class StreamBufferTest {
         // assert
         assertEquals(testString, readUTF);
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="constructor">
+    @Nested
+    @DisplayName("constructor")
+    class ConstructorTests {
+    @DisplayName("constructor(): no arguments — no exception thrown")
     @Test
     public void constructor_noArguments_NoExceptionThrown() {
         // arrange
@@ -240,9 +252,12 @@ public class StreamBufferTest {
         new StreamBuffer();
         // assert — no exception thrown
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="getMaxBufferElements">
+    @Nested
+    @DisplayName("getMaxBufferElements()")
+    class GetMaxBufferElementsTests {
+    @DisplayName("getMaxBufferElements(): initial value — greater zero")
     @Test
     public void getMaxBufferElements_initialValue_GreaterZero() {
         // arrange
@@ -252,6 +267,7 @@ public class StreamBufferTest {
         assertThat(sb.getMaxBufferElements(), is(greaterThan(0)));
     }
 
+    @DisplayName("getMaxBufferElements(): after set — zero")
     @Test
     public void getMaxBufferElements_afterSet_Zero() {
         // arrange
@@ -263,9 +279,12 @@ public class StreamBufferTest {
         // assert
         assertThat(sb.getMaxBufferElements(), is(0));
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="setMaxBufferElements">
+    @Nested
+    @DisplayName("setMaxBufferElements()")
+    class SetMaxBufferElementsTests {
+    @DisplayName("setMaxBufferElements(): write negative value — equals to getter")
     @Test
     public void setMaxBufferElements_writeNegativeValue_equalsToGetter() throws Exception {
         // arrange
@@ -278,6 +297,7 @@ public class StreamBufferTest {
         assertThat(-1, is(sb.getMaxBufferElements()));
     }
 
+    @DisplayName("setMaxBufferElements(): use negative value — trim not called")
     @Test
     public void setMaxBufferElements_useNegativeValue_trimNotCalled() throws Exception {
         // arrange
@@ -295,9 +315,12 @@ public class StreamBufferTest {
         // assert
         assertThat(sb.getBufferSize(), is(3));
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="isSafeWrite">
+    @Nested
+    @DisplayName("isSafeWrite()")
+    class IsSafeWriteTests {
+    @DisplayName("isSafeWrite(): initial value — false")
     @Test
     public void isSafeWrite_initialValue_false() {
         // arrange
@@ -307,6 +330,7 @@ public class StreamBufferTest {
         assertThat(sb.isSafeWrite(), is(false));
     }
 
+    @DisplayName("isSafeWrite(): after set — true")
     @Test
     public void isSafeWrite_afterSet_true() {
         // arrange
@@ -318,9 +342,12 @@ public class StreamBufferTest {
         // assert
         assertThat(sb.isSafeWrite(), is(true));
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="isClosed">
+    @Nested
+    @DisplayName("isClosed()")
+    class IsClosedTests {
+    @DisplayName("isClosed(): after construct — false")
     @Test
     public void isClosed_afterConstruct_false() {
         // arrange
@@ -330,6 +357,7 @@ public class StreamBufferTest {
         assertThat(sb.isClosed(), is(false));
     }
 
+    @DisplayName("isClosed(): after close — true")
     @Test
     public void isClosed_afterClose_true() throws IOException {
         // arrange
@@ -341,9 +369,11 @@ public class StreamBufferTest {
         // assert
         assertThat(sb.isClosed(), is(true));
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="read_changeBufferFromOutside">
+    @Nested
+    @DisplayName("read() — external buffer mutation")
+    class ReadChangeBufferFromOutsideTests {
     /**
      * This test verifies that when the option safeWrite is disabled, the buffer
      * can be modified externally (the write method does not create clones of the
@@ -351,6 +381,7 @@ public class StreamBufferTest {
      *
      * @throws IOException
      */
+    @DisplayName("read(): change buffer from outside — has changed")
     @Test
     public void read_changeBufferFromOutside_hasChanged() throws IOException {
         // arrange
@@ -381,6 +412,7 @@ public class StreamBufferTest {
      *
      * @throws IOException
      */
+    @DisplayName("read(): change buffer from outside — not changed")
     @Test
     public void read_changeBufferFromOutside_notChanged() throws IOException {
         // arrange
@@ -403,9 +435,12 @@ public class StreamBufferTest {
         // assert
         assertThat(fromStream[0], is((byte) anyValue));
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="getBufferSize">
+    @Nested
+    @DisplayName("getBufferSize()")
+    class GetBufferSizeTests {
+    @DisplayName("getBufferSize(): reach max buffer elements — trim called")
     @Test
     public void getBufferSize_reachMaxBufferElements_trimCalled() throws Exception {
         // arrange
@@ -423,6 +458,7 @@ public class StreamBufferTest {
         assertThat(result, is(1));
     }
 
+    @DisplayName("getBufferSize(): reach max buffer elements — trim buffer right values")
     @Test
     public void getBufferSize_reachMaxBufferElements_trimBufferRightValues() throws Exception {
         // arrange
@@ -442,6 +478,7 @@ public class StreamBufferTest {
         assertThat(read, is(new byte[]{1, 2, 3, 4, 5, 6}));
     }
 
+    @DisplayName("getBufferSize(): write some elements — trim not called")
     @Test
     public void getBufferSize_writeSomeElements_trimNotCalled() throws Exception {
         // arrange
@@ -458,9 +495,12 @@ public class StreamBufferTest {
         // assert
         assertThat(sb.getBufferSize(), is(3));
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="read">
+    @Nested
+    @DisplayName("read()")
+    class ReadTests {
+    @DisplayName("read(): closed stream before write — return minus one")
     @Test
     public void read_closedStreamBeforeWrite_ReturnMinusOne() throws Exception {
         // arrange
@@ -475,6 +515,7 @@ public class StreamBufferTest {
         assertThat(is.read(), is(-1));
     }
 
+    @DisplayName("read(): closed stream after write — return minus one")
     @Test
     public void read_closedStreamAfterWrite_ReturnMinusOne() throws Exception {
         // arrange
@@ -491,6 +532,7 @@ public class StreamBufferTest {
         assertThat(is.read(), is(-1));
     }
 
+    @DisplayName("read(): read with offset — use offset")
     @Test
     public void read_readWithOffset_useOffset() throws IOException {
         // arrange
@@ -507,6 +549,7 @@ public class StreamBufferTest {
         assertThat(dest, is(new byte[]{0, 0, 0, anyValue, anyValue, anyValue, 0, 0, 0}));
     }
 
+    @DisplayName("read(): zero length — unmodified byte array")
     @Test
     public void read_zeroLength_unmodifiedByteArray() throws IOException {
         // arrange
@@ -523,6 +566,7 @@ public class StreamBufferTest {
         assertThat(dest, is(new byte[]{0}));
     }
 
+    @DisplayName("read(): nothing written — return minus one")
     @Test
     public void read_nothingWritten_returnMinusOne() throws IOException {
         // arrange
@@ -539,6 +583,7 @@ public class StreamBufferTest {
         assertThat(read, is(-1));
     }
 
+    @DisplayName("read(): null dest given — throw null pointer exception")
     @Test
     public void read_nullDestGiven_throwNullPointerException() {
         // arrange
@@ -549,6 +594,7 @@ public class StreamBufferTest {
         assertThrows(NullPointerException.class, () -> is.read(null, 0, 0));
     }
 
+    @DisplayName("read(): use invalid offset — throw index out of bounds exception")
     @Test
     public void read_useInvalidOffset_throwIndexOutOfBoundsException() {
         // arrange
@@ -560,6 +606,7 @@ public class StreamBufferTest {
         assertThrows(IndexOutOfBoundsException.class, () -> is.read(dest, 3, 1));
     }
 
+    @DisplayName("read(): length greater than destination — throw index out of bounds exception")
     @Test
     public void read_lengthGreaterThanDestination_throwIndexOutOfBoundsException() {
         // arrange
@@ -571,6 +618,7 @@ public class StreamBufferTest {
         assertThrows(IndexOutOfBoundsException.class, () -> is.read(dest, 0, 2));
     }
 
+    @DisplayName("read(): negative length — throw index out of bounds exception")
     @Test
     public void read_negativeLength_throwIndexOutOfBoundsException() {
         // arrange
@@ -582,6 +630,7 @@ public class StreamBufferTest {
         assertThrows(IndexOutOfBoundsException.class, () -> is.read(dest, 0, -1));
     }
 
+    @DisplayName("read(): negative offset — throw index out of bounds exception")
     @Test
     public void read_negativeOffset_throwIndexOutOfBoundsException() {
         // arrange
@@ -593,6 +642,7 @@ public class StreamBufferTest {
         assertThrows(IndexOutOfBoundsException.class, () -> is.read(dest, -1, 1));
     }
 
+    @DisplayName("read(): close stream — returns written bytes")
     @Test
     public void read_closeStream_returnsWrittenBytes() throws IOException, InterruptedException {
         // arrange
@@ -627,6 +677,7 @@ public class StreamBufferTest {
         assertThat(read, is(1));
     }
 
+    @DisplayName("read(): after immediate close — returns eof")
     @Test
     public void read_afterImmediateClose_returnsEOF() throws IOException {
         // arrange
@@ -637,6 +688,7 @@ public class StreamBufferTest {
         assertThat(sb.getInputStream().read(), is(-1));
     }
 
+    @DisplayName("read(): parallel close — no deadlock")
     @Test
     public void read_parallelClose_noDeadlock() throws Exception {
         // arrange
@@ -660,6 +712,7 @@ public class StreamBufferTest {
         // assert — no deadlock, no exception
     }
 
+    @DisplayName("read(): after trim and close — returns remaining bytes then eof")
     @Test
     public void read_afterTrimAndClose_returnsRemainingBytesThenEOF() throws Exception {
         // arrange
@@ -680,6 +733,7 @@ public class StreamBufferTest {
         );
     }
 
+    @DisplayName("alternatingReadWrite(): small chunks — correct order")
     @Test
     public void alternatingReadWrite_smallChunks_correctOrder() throws Exception {
         // arrange
@@ -696,9 +750,12 @@ public class StreamBufferTest {
         // assert
         assertThat("Stream should be empty after balanced writes/reads", is.available(), is(0));
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="write">
+    @Nested
+    @DisplayName("write()")
+    class WriteTests {
+    @DisplayName("write(): null dest given — throw null pointer exception")
     @Test
     public void write_nullDestGiven_throwNullPointerException() {
         // arrange
@@ -709,6 +766,7 @@ public class StreamBufferTest {
         assertThrows(NullPointerException.class, () -> os.write(null, 0, 0));
     }
 
+    @DisplayName("write(): use invalid offset — throw index out of bounds exception")
     @Test
     public void write_useInvalidOffset_throwIndexOutOfBoundsException() {
         // arrange
@@ -724,6 +782,7 @@ public class StreamBufferTest {
         assertThat(ex.getMessage(), is(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
     }
 
+    @DisplayName("write(): length greater than destination — throw index out of bounds exception")
     @Test
     public void write_lengthGreaterThanDestination_throwIndexOutOfBoundsException() {
         // arrange
@@ -739,6 +798,7 @@ public class StreamBufferTest {
         assertThat(ex.getMessage(), is(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
     }
 
+    @DisplayName("write(): negative length — throw index out of bounds exception")
     @Test
     public void write_negativeLength_throwIndexOutOfBoundsException() {
         // arrange
@@ -754,6 +814,7 @@ public class StreamBufferTest {
         assertThat(ex.getMessage(), is(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
     }
 
+    @DisplayName("write(): negative offset — throw index out of bounds exception")
     @Test
     public void write_negativeOffset_throwIndexOutOfBoundsException() {
         // arrange
@@ -769,6 +830,7 @@ public class StreamBufferTest {
         assertThat(ex.getMessage(), is(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
     }
 
+    @DisplayName("write(): with valid offset — partial write successful")
     @Test
     public void write_withValidOffset_partialWriteSuccessful() throws IOException {
         // arrange
@@ -782,6 +844,62 @@ public class StreamBufferTest {
 
         // assert
         assertThat(is.available(), is(1));
+    }
+
+    @DisplayName("write(): closed stream — throw io exception")
+    @ParameterizedTest
+    @MethodSource("net.ladenthin.streambuffer.StreamBufferTest#writeMethods")
+    public void write_closedStream_throwIOException(WriteMethod writeMethod) {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        // act
+        // assert
+        assertThrows(IOException.class, () -> {
+            os.close();
+            writeAnyValue(writeMethod, os);
+        });
+    }
+
+    @DisplayName("write(): invalid offset — not written")
+    @Test
+    public void write_invalidOffset_notWritten() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        int invalidOffset = 1;
+
+        // act
+        os.write(new byte[]{anyValue}, invalidOffset, 0);
+
+        // assert
+        assertThat(sb.getBufferSize(), is(0));
+    }
+
+    @DisplayName("write(): invalid length — not written")
+    @Test
+    public void write_invalidLength_notWritten() throws IOException {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        OutputStream os = sb.getOutputStream();
+        int invalidLength = 0;
+
+        // act
+        os.write(new byte[]{anyValue}, 0, invalidLength);
+
+        // assert
+        assertThat(sb.getBufferSize(), is(0));
+    }
+
+    @DisplayName("write(): null array with offset — throws npe")
+    @Test
+    public void write_nullArrayWithOffset_throwsNPE() {
+        // arrange
+        StreamBuffer sb = new StreamBuffer();
+        // act
+        // assert
+        assertThrows(NullPointerException.class, () -> sb.getOutputStream().write(null, 0, 1));
+    }
     }
 
     private void writeAnyValue(WriteMethod writeMethod, OutputStream os) throws IOException {
@@ -800,59 +918,10 @@ public class StreamBufferTest {
         }
     }
 
-    @ParameterizedTest
-    @MethodSource("writeMethods")
-    public void write_closedStream_throwIOException(WriteMethod writeMethod) {
-        // arrange
-        StreamBuffer sb = new StreamBuffer();
-        OutputStream os = sb.getOutputStream();
-        // act
-        // assert
-        assertThrows(IOException.class, () -> {
-            os.close();
-            writeAnyValue(writeMethod, os);
-        });
-    }
-
-    @Test
-    public void write_invalidOffset_notWritten() throws IOException {
-        // arrange
-        StreamBuffer sb = new StreamBuffer();
-        OutputStream os = sb.getOutputStream();
-        int invalidOffset = 1;
-
-        // act
-        os.write(new byte[]{anyValue}, invalidOffset, 0);
-
-        // assert
-        assertThat(sb.getBufferSize(), is(0));
-    }
-
-    @Test
-    public void write_invalidLength_notWritten() throws IOException {
-        // arrange
-        StreamBuffer sb = new StreamBuffer();
-        OutputStream os = sb.getOutputStream();
-        int invalidLength = 0;
-
-        // act
-        os.write(new byte[]{anyValue}, 0, invalidLength);
-
-        // assert
-        assertThat(sb.getBufferSize(), is(0));
-    }
-
-    @Test
-    public void write_nullArrayWithOffset_throwsNPE() {
-        // arrange
-        StreamBuffer sb = new StreamBuffer();
-        // act
-        // assert
-        assertThrows(NullPointerException.class, () -> sb.getOutputStream().write(null, 0, 1));
-    }
-    // </editor-fold>
-
-    // <editor-fold defaultstate="collapsed" desc="available">
+    @Nested
+    @DisplayName("available() — large buffer / overflow")
+    class AvailableLargeBufferTests {
+    @DisplayName("available(): buffer contains more bytes as max int — return max value")
     @Test
     public void available_bufferContainsMoreBytesAsMaxInt_returnMaxValue() throws IOException {
         // arrange
@@ -879,6 +948,7 @@ public class StreamBufferTest {
         assertThat(is.available(), is(Integer.MAX_VALUE));
     }
 
+    @DisplayName("available(): after multiple writes — correct count")
     @Test
     public void available_afterMultipleWrites_correctCount() throws IOException {
         // arrange
@@ -895,7 +965,7 @@ public class StreamBufferTest {
         // assert
         assertThat("available() should reflect the correct byte count", is.available(), is(10));
     }
-    // </editor-fold>
+    }
     
     /**
      * Brief sleep to allow the method to block the thread correctly.
@@ -904,9 +974,12 @@ public class StreamBufferTest {
         Thread.sleep(1000);
     }
 
-    // <editor-fold defaultstate="collapsed" desc="blockDataAvailable">
+    @Nested
+    @DisplayName("blockDataAvailable()")
+    class BlockDataAvailableTests {
+    @DisplayName("blockDataAvailable(): data written before — no waiting")
     @ParameterizedTest
-    @MethodSource("writeMethods")
+    @MethodSource("net.ladenthin.streambuffer.StreamBufferTest#writeMethods")
     public void blockDataAvailable_dataWrittenBefore_noWaiting(WriteMethod writeMethod) throws IOException, InterruptedException {
         // arrange
         final StreamBuffer sb = new StreamBuffer();
@@ -933,6 +1006,7 @@ public class StreamBufferTest {
         assertThat(after.tryAcquire(10, TimeUnit.SECONDS), is(true));
     }
 
+    @DisplayName("blockDataAvailable(): data written before and read afterwards — waiting")
     @Test
     @Timeout(value = 1, unit = TimeUnit.HOURS)
     public void blockDataAvailable_dataWrittenBeforeAndReadAfterwards_waiting() throws IOException, InterruptedException {
@@ -963,6 +1037,7 @@ public class StreamBufferTest {
         assertThat(after.tryAcquire(10, TimeUnit.SECONDS), is(false));
     }
 
+    @DisplayName("blockDataAvailable(): stream untouched — waiting")
     @Test
     @Timeout(value = 1, unit = TimeUnit.HOURS)
     public void blockDataAvailable_streamUntouched_waiting() throws IOException, InterruptedException {
@@ -990,8 +1065,9 @@ public class StreamBufferTest {
         assertThat(after.tryAcquire(10, TimeUnit.SECONDS), is(false));
     }
 
+    @DisplayName("blockDataAvailable(): write to stream — return")
     @ParameterizedTest
-    @MethodSource("writeMethods")
+    @MethodSource("net.ladenthin.streambuffer.StreamBufferTest#writeMethods")
     public void blockDataAvailable_writeToStream_return(WriteMethod writeMethod) throws IOException, InterruptedException {
         // arrange
         final StreamBuffer sb = new StreamBuffer();
@@ -1019,6 +1095,7 @@ public class StreamBufferTest {
         assertThat(after.tryAcquire(10, TimeUnit.SECONDS), is(true));
     }
 
+    @DisplayName("blockDataAvailable(): close stream — return")
     @Test
     public void blockDataAvailable_closeStream_return() throws IOException, InterruptedException {
         // arrange
@@ -1047,6 +1124,7 @@ public class StreamBufferTest {
         assertThat(after.tryAcquire(10, TimeUnit.SECONDS), is(true));
     }
 
+    @DisplayName("blockDataAvailable(): stream already closed — return")
     @Test
     public void blockDataAvailable_streamAlreadyClosed_return() throws IOException, InterruptedException {
         // arrange
@@ -1059,6 +1137,7 @@ public class StreamBufferTest {
         // assert — no exception thrown
     }
 
+    @DisplayName("blockDataAvailable(): data already available — only one wakeup")
     @Test
     public void blockDataAvailable_dataAlreadyAvailable_onlyOneWakeup() throws Exception {
         // arrange
@@ -1103,6 +1182,7 @@ public class StreamBufferTest {
         assertThat("Only one thread should proceed due to single permit", acquired, is(1));
     }
 
+    @DisplayName("blockDataAvailable(): multiple writes before call — does not block")
     @Test
     public void blockDataAvailable_multipleWritesBeforeCall_doesNotBlock() throws Exception {
         // arrange
@@ -1118,6 +1198,7 @@ public class StreamBufferTest {
         // assert — does not block
     }
 
+    @DisplayName("blockDataAvailable(): after bytes consumed — blocks again")
     @Test
     public void blockDataAvailable_afterBytesConsumed_blocksAgain() throws Exception {
         // arrange
@@ -1149,9 +1230,12 @@ public class StreamBufferTest {
         os.write(anyValue);
         assertThat("Thread should wake up after new data", signal.tryAcquire(2, TimeUnit.SECONDS), is(true));
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="mark">
+    @Nested
+    @DisplayName("mark() / BufferedInputStream")
+    class MarkTests {
+    @DisplayName("mark(): use buffered input stream — reset position")
     @Test
     public void mark_useBufferedInputStream_resetPosition() throws IOException, InterruptedException {
         // arrange
@@ -1174,9 +1258,12 @@ public class StreamBufferTest {
         int result = bis.available();
         assertThat(result, is(size));
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="trim">
+    @Nested
+    @DisplayName("trim()")
+    class TrimTests {
+    @DisplayName("trim(): preserves all bytes in correct order")
     @Test
     public void trim_preservesAllBytesInCorrectOrder() throws Exception {
         // arrange
@@ -1197,6 +1284,7 @@ public class StreamBufferTest {
         assertArrayEquals(input, output, "Trimmed buffer should preserve all byte order");
     }
 
+    @DisplayName("trim(): empty buffer — no exception thrown")
     @Test
     public void trim_emptyBuffer_noExceptionThrown() throws IOException {
         // arrange
@@ -1209,9 +1297,12 @@ public class StreamBufferTest {
 
         // assert — no exception thrown
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="close">
+    @Nested
+    @DisplayName("close()")
+    class CloseTests {
+    @DisplayName("close(): multiple calls — no exception thrown")
     @Test
     public void close_multipleCalls_noExceptionThrown() throws IOException {
         // arrange
@@ -1223,9 +1314,12 @@ public class StreamBufferTest {
 
         // assert — no exception thrown
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="concurrentReadWrite">
+    @Nested
+    @DisplayName("concurrent read/write")
+    class ConcurrentReadWriteTests {
+    @DisplayName("concurrentReadWrite(): stress test — no crash or inconsistency")
     @Test
     public void concurrentReadWrite_stressTest_noCrashOrInconsistency() throws Exception {
         // arrange
@@ -1269,9 +1363,11 @@ public class StreamBufferTest {
         // assert
         assertArrayEquals(written, read, "Read data should match written data");
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="getInputStream">
+    @Nested
+    @DisplayName("getInputStream()")
+    class GetInputStreamTests {
     /**
      * This test documents that multiple calls to getInputStream()
      * return the same shared InputStream instance.
@@ -1279,6 +1375,7 @@ public class StreamBufferTest {
      * Note: StreamBuffer is designed to support a single consumer.
      * Repeated calls return the same instance; independent parallel reads are not supported.
      */
+    @DisplayName("multipleInputStream(): returns same instance — each call")
     @Test
     public void multipleInputStream_returnsSameInstance_eachCall() {
         // arrange
@@ -1290,9 +1387,12 @@ public class StreamBufferTest {
         // assert
         assertSame(first, second, "StreamBuffer should return the same InputStream instance");
     }
-    // </editor-fold>
+    }
     
-    // <editor-fold defaultstate="collapsed" desc="correctOffsetAndLengthToRead">
+    @Nested
+    @DisplayName("correctOffsetAndLengthToRead()")
+    class CorrectOffsetAndLengthToReadTests {
+    @DisplayName("correctOffsetAndLengthToRead(): null array — throws null pointer exception")
     @Test
     public void correctOffsetAndLengthToRead_nullArray_throwsNullPointerException() {
         // arrange
@@ -1302,6 +1402,7 @@ public class StreamBufferTest {
             () -> StreamBuffer.correctOffsetAndLengthToRead(null, 0, 1));
     }
 
+    @DisplayName("correctOffsetAndLengthToRead(): negative offset — throws index out of bounds exception")
     @Test
     public void correctOffsetAndLengthToRead_negativeOffset_throwsIndexOutOfBoundsException() {
         // arrange
@@ -1313,6 +1414,7 @@ public class StreamBufferTest {
         // assert — exception thrown is the assertion
     }
 
+    @DisplayName("correctOffsetAndLengthToRead(): negative length — throws index out of bounds exception")
     @Test
     public void correctOffsetAndLengthToRead_negativeLength_throwsIndexOutOfBoundsException() {
         // arrange
@@ -1324,6 +1426,7 @@ public class StreamBufferTest {
         // assert — exception thrown is the assertion
     }
 
+    @DisplayName("correctOffsetAndLengthToRead(): length exceeds remaining array — throws index out of bounds exception")
     @Test
     public void correctOffsetAndLengthToRead_lengthExceedsRemainingArray_throwsIndexOutOfBoundsException() {
         // arrange
@@ -1335,6 +1438,7 @@ public class StreamBufferTest {
         // assert — exception thrown is the assertion
     }
 
+    @DisplayName("correctOffsetAndLengthToRead(): zero length — returns false")
     @Test
     public void correctOffsetAndLengthToRead_zeroLength_returnsFalse() {
         // arrange
@@ -1347,6 +1451,7 @@ public class StreamBufferTest {
         assertThat(result, is(false));
     }
 
+    @DisplayName("correctOffsetAndLengthToRead(): valid parameters — returns true")
     @Test
     public void correctOffsetAndLengthToRead_validParameters_returnsTrue() {
         // arrange
@@ -1358,9 +1463,12 @@ public class StreamBufferTest {
         // assert
         assertThat(result, is(true));
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="correctOffsetAndLengthToWrite">
+    @Nested
+    @DisplayName("correctOffsetAndLengthToWrite()")
+    class CorrectOffsetAndLengthToWriteTests {
+    @DisplayName("correctOffsetAndLengthToWrite(): null array — throws null pointer exception")
     @Test
     public void correctOffsetAndLengthToWrite_nullArray_throwsNullPointerException() {
         // arrange
@@ -1370,6 +1478,7 @@ public class StreamBufferTest {
             () -> StreamBuffer.correctOffsetAndLengthToWrite(null, 0, 1));
     }
 
+    @DisplayName("correctOffsetAndLengthToWrite(): negative offset — throws index out of bounds exception")
     @Test
     public void correctOffsetAndLengthToWrite_negativeOffset_throwsIndexOutOfBoundsException() {
         // arrange
@@ -1382,6 +1491,7 @@ public class StreamBufferTest {
         assertThat(ex.getMessage(), is(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
     }
 
+    @DisplayName("correctOffsetAndLengthToWrite(): negative length — throws index out of bounds exception")
     @Test
     public void correctOffsetAndLengthToWrite_negativeLength_throwsIndexOutOfBoundsException() {
         // arrange
@@ -1394,6 +1504,7 @@ public class StreamBufferTest {
         assertThat(ex.getMessage(), is(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
     }
 
+    @DisplayName("correctOffsetAndLengthToWrite(): offset exceeds array length — throws index out of bounds exception")
     @Test
     public void correctOffsetAndLengthToWrite_offsetExceedsArrayLength_throwsIndexOutOfBoundsException() {
         // arrange
@@ -1406,6 +1517,7 @@ public class StreamBufferTest {
         assertThat(ex.getMessage(), is(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
     }
 
+    @DisplayName("correctOffsetAndLengthToWrite(): length exceeds remaining array — throws index out of bounds exception")
     @Test
     public void correctOffsetAndLengthToWrite_lengthExceedsRemainingArray_throwsIndexOutOfBoundsException() {
         // arrange
@@ -1418,6 +1530,7 @@ public class StreamBufferTest {
         assertThat(ex.getMessage(), is(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
     }
 
+    @DisplayName("correctOffsetAndLengthToWrite(): zero length — returns false")
     @Test
     public void correctOffsetAndLengthToWrite_zeroLength_returnsFalse() {
         // arrange
@@ -1430,6 +1543,7 @@ public class StreamBufferTest {
         assertThat(result, is(false));
     }
 
+    @DisplayName("correctOffsetAndLengthToWrite(): valid parameters — returns true")
     @Test
     public void correctOffsetAndLengthToWrite_validParameters_returnsTrue() {
         // arrange
@@ -1441,9 +1555,12 @@ public class StreamBufferTest {
         // assert
         assertThat(result, is(true));
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="isTrimShouldBeExecuted boundary">
+    @Nested
+    @DisplayName("isTrimShouldBeExecuted() — boundary")
+    class IsTrimShouldBeExecutedBoundaryTests {
+    @DisplayName("getBufferSize(): exactly at max buffer elements — trim not called")
     @Test
     public void getBufferSize_exactlyAtMaxBufferElements_trimNotCalled() throws IOException {
         // arrange
@@ -1458,6 +1575,7 @@ public class StreamBufferTest {
         assertThat(sb.getBufferSize(), is(2));
     }
 
+    @DisplayName("getBufferSize(): one above max buffer elements — trim called")
     @Test
     public void getBufferSize_oneAboveMaxBufferElements_trimCalled() throws IOException {
         // arrange
@@ -1472,9 +1590,12 @@ public class StreamBufferTest {
         // assert
         assertThat(sb.getBufferSize(), is(1));
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="getOutputStream">
+    @Nested
+    @DisplayName("getOutputStream()")
+    class GetOutputStreamTests {
+    @DisplayName("multipleOutputStream(): returns same instance — each call")
     @Test
     public void multipleOutputStream_returnsSameInstance_eachCall() {
         // arrange
@@ -1487,9 +1608,12 @@ public class StreamBufferTest {
         // assert
         assertSame(first, second, "StreamBuffer should return the same OutputStream instance");
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="requireNonClosed">
+    @Nested
+    @DisplayName("requireNonClosed()")
+    class RequireNonClosedTests {
+    @DisplayName("write(): closed stream — throw io exception with stream closed message")
     @Test
     public void write_closedStream_throwIOExceptionWithStreamClosedMessage() throws IOException {
         // arrange
@@ -1501,9 +1625,12 @@ public class StreamBufferTest {
             () -> sb.getOutputStream().write(new byte[]{anyValue}, 0, 1));
         assertThat(ex.getMessage(), is("Stream closed."));
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="write inherited">
+    @Nested
+    @DisplayName("write() — inherited overloads")
+    class WriteInheritedTests {
+    @DisplayName("write(): full array without offset parameter — all bytes written")
     @Test
     public void write_fullArrayWithoutOffsetParameter_allBytesWritten() throws IOException {
         // arrange
@@ -1520,9 +1647,12 @@ public class StreamBufferTest {
         is.read(dest);
         assertThat(dest, is(new byte[]{1, 2, 3}));
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="read inherited">
+    @Nested
+    @DisplayName("read() — inherited overloads")
+    class ReadInheritedTests {
+    @DisplayName("read(): full array without offset parameter — all bytes read")
     @Test
     public void read_fullArrayWithoutOffsetParameter_allBytesRead() throws IOException {
         // arrange
@@ -1539,9 +1669,12 @@ public class StreamBufferTest {
             () -> assertThat(dest, is(new byte[]{1, 2, 3}))
         );
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="trim with partial buffer entry">
+    @Nested
+    @DisplayName("trim() — partial buffer entry")
+    class TrimWithPartialBufferEntryTests {
+    @DisplayName("trim(): with partially consumed buffer entry — remaining bytes correct after trim")
     @Test
     public void trim_withPartiallyConsumedBufferEntry_remainingBytesCorrectAfterTrim() throws IOException {
         // arrange
@@ -1562,9 +1695,12 @@ public class StreamBufferTest {
             () -> assertThat(dest, is(new byte[]{2, 3, 4, 5, 6}))
         );
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="available">
+    @Nested
+    @DisplayName("available()")
+    class AvailableTests {
+    @DisplayName("available(): empty buffer — returns zero")
     @Test
     public void available_emptyBuffer_returnsZero() throws IOException {
         // arrange
@@ -1576,9 +1712,12 @@ public class StreamBufferTest {
         // assert
         assertThat(result, is(0));
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="safeWrite partial range">
+    @Nested
+    @DisplayName("safeWrite — partial range")
+    class SafeWritePartialRangeTests {
+    @DisplayName("write(): partial range with safe write disabled — external mutation not affecting read value")
     @Test
     public void write_partialRangeWithSafeWriteDisabled_externalMutationNotAffectingReadValue() throws IOException {
         // arrange
@@ -1595,9 +1734,12 @@ public class StreamBufferTest {
         sb.getInputStream().read(dest);
         assertThat(dest[0], is(anyValue));
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="read partial return on closed stream">
+    @Nested
+    @DisplayName("read() — partial return on closed stream")
+    class ReadPartialReturnOnClosedStreamTests {
+    @DisplayName("read(): byte array when stream closed after one byte — returns one byte")
     @Test
     public void read_byteArrayWhenStreamClosedAfterOneByte_returnsOneByte() throws IOException {
         // arrange
@@ -1616,6 +1758,7 @@ public class StreamBufferTest {
         );
     }
 
+    @DisplayName("read(): request more bytes than available on closed stream — returns available bytes")
     @Test
     public void read_requestMoreBytesThanAvailableOnClosedStream_returnsAvailableBytes() throws IOException {
         // arrange
@@ -1634,6 +1777,7 @@ public class StreamBufferTest {
         );
     }
 
+    @DisplayName("read(): concurrent write close with insufficient bytes — returns available bytes")
     @Test
     public void read_concurrentWriteCloseWithInsufficientBytes_returnsAvailableBytes() throws Exception {
         // arrange
@@ -1670,6 +1814,7 @@ public class StreamBufferTest {
         );
     }
 
+    @DisplayName("read(): multiple deque entries on closed stream — returns available bytes")
     @Test
     public void read_multipleDequeEntriesOnClosedStream_returnsAvailableBytes() throws IOException {
         // arrange — three separate writes create three deque entries
@@ -1692,6 +1837,7 @@ public class StreamBufferTest {
         );
     }
 
+    @DisplayName("read(): partial entry consumed then close and over read — returns remaining bytes")
     @Test
     public void read_partialEntryConsumedThenCloseAndOverRead_returnsRemainingBytes() throws IOException {
         // arrange — write 5 bytes, read 2 to advance positionAtCurrentBufferEntry
@@ -1714,6 +1860,7 @@ public class StreamBufferTest {
         );
     }
 
+    @DisplayName("read(): request exactly one more than available — returns available bytes")
     @Test
     public void read_requestExactlyOneMoreThanAvailable_returnsAvailableBytes() throws IOException {
         // arrange — 4 bytes written, request 5 (after first internal read: 3 remain, missingBytes=4)
@@ -1732,6 +1879,7 @@ public class StreamBufferTest {
         );
     }
 
+    @DisplayName("read(): non zero offset with over read on closed stream — returns available bytes at offset")
     @Test
     public void read_nonZeroOffsetWithOverReadOnClosedStream_returnsAvailableBytesAtOffset() throws IOException {
         // arrange
@@ -1750,6 +1898,7 @@ public class StreamBufferTest {
         );
     }
 
+    @DisplayName("read(): trim then close and over read — returns available bytes")
     @Test
     public void read_trimThenCloseAndOverRead_returnsAvailableBytes() throws IOException {
         // arrange — low maxBufferElements triggers trim during writes
@@ -1774,6 +1923,7 @@ public class StreamBufferTest {
         );
     }
 
+    @DisplayName("read(): concurrent multiple writes then close — returns available bytes")
     @Test
     public void read_concurrentMultipleWritesThenClose_returnsAvailableBytes() throws Exception {
         // arrange
@@ -1810,9 +1960,12 @@ public class StreamBufferTest {
             () -> assertArrayEquals(new byte[]{1, 2, 3, 4, 5}, Arrays.copyOf(dest, 5))
         );
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="concurrent trim and write">
+    @Nested
+    @DisplayName("concurrent trim and write")
+    class ConcurrentTrimAndWriteTests {
+    @DisplayName("concurrentTrimAndWrite(): no crash or corruption")
     @Test
     public void concurrentTrimAndWrite_noCrashOrCorruption() throws Exception {
         // arrange
@@ -1865,9 +2018,12 @@ public class StreamBufferTest {
 
         // assert — no crash or data corruption
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="signal/slot">
+    @Nested
+    @DisplayName("signal/slot")
+    class SignalSlotTests {
+    @DisplayName("signal(): add signal and write — signal released")
     @Test
     public void signal_addSignalAndWrite_signalReleased() throws IOException, InterruptedException {
         // arrange
@@ -1882,6 +2038,7 @@ public class StreamBufferTest {
         assertThat(signal.tryAcquire(5, TimeUnit.SECONDS), is(true));
     }
 
+    @DisplayName("signal(): add signal and close — signal released")
     @Test
     public void signal_addSignalAndClose_signalReleased() throws IOException, InterruptedException {
         // arrange
@@ -1896,6 +2053,7 @@ public class StreamBufferTest {
         assertThat(signal.tryAcquire(5, TimeUnit.SECONDS), is(true));
     }
 
+    @DisplayName("signal(): multiple signals — all released")
     @Test
     public void signal_multipleSignals_allReleased() throws IOException, InterruptedException {
         // arrange
@@ -1918,6 +2076,7 @@ public class StreamBufferTest {
         );
     }
 
+    @DisplayName("signal(): remove signal — not released")
     @Test
     public void signal_removeSignal_notReleased() throws IOException, InterruptedException {
         // arrange
@@ -1936,6 +2095,7 @@ public class StreamBufferTest {
         );
     }
 
+    @DisplayName("signal(): remove non existent signal — returns false")
     @Test
     public void signal_removeNonExistentSignal_returnsFalse() {
         // arrange
@@ -1949,6 +2109,7 @@ public class StreamBufferTest {
         assertThat(removed, is(false));
     }
 
+    @DisplayName("signal(): add null signal — throws null pointer exception")
     @Test
     public void signal_addNullSignal_throwsNullPointerException() {
         // arrange
@@ -1959,6 +2120,7 @@ public class StreamBufferTest {
         assertThrows(NullPointerException.class, () -> sb.addSignal(null));
     }
 
+    @DisplayName("signal(): thread barrier — observer wakes in own thread")
     @Test
     public void signal_threadBarrier_observerWakesInOwnThread() throws IOException, InterruptedException {
         // arrange
@@ -1998,6 +2160,7 @@ public class StreamBufferTest {
         observer.join(5000);
     }
 
+    @DisplayName("signal(): close via output stream — signal released")
     @Test
     public void signal_closeViaOutputStream_signalReleased() throws IOException, InterruptedException {
         // arrange
@@ -2012,6 +2175,7 @@ public class StreamBufferTest {
         assertThat(signal.tryAcquire(5, TimeUnit.SECONDS), is(true));
     }
 
+    @DisplayName("signal(): close via input stream — signal released")
     @Test
     public void signal_closeViaInputStream_signalReleased() throws IOException, InterruptedException {
         // arrange
@@ -2026,6 +2190,7 @@ public class StreamBufferTest {
         assertThat(signal.tryAcquire(5, TimeUnit.SECONDS), is(true));
     }
 
+    @DisplayName("signal(): remove null — returns false")
     @Test
     public void signal_removeNull_returnsFalse() {
         // arrange
@@ -2037,9 +2202,12 @@ public class StreamBufferTest {
         // assert
         assertThat(result, is(false));
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="read unsigned byte round-trip">
+    @Nested
+    @DisplayName("read() — unsigned byte round-trip")
+    class ReadUnsignedByteRoundTripTests {
+    @DisplayName("read(): write byte0x ff — returns255")
     @Test
     public void read_writeByte0xFF_returns255() throws IOException {
         // arrange
@@ -2053,6 +2221,7 @@ public class StreamBufferTest {
         assertThat(result, is(255));
     }
 
+    @DisplayName("read(): write byte0x80 — returns128")
     @Test
     public void read_writeByte0x80_returns128() throws IOException {
         // arrange
@@ -2066,6 +2235,7 @@ public class StreamBufferTest {
         assertThat(result, is(128));
     }
 
+    @DisplayName("read(): write negative byte value — returns unsigned")
     @Test
     public void read_writeNegativeByteValue_returnsUnsigned() throws IOException {
         // arrange
@@ -2080,6 +2250,7 @@ public class StreamBufferTest {
         assertThat(result, is(255));
     }
 
+    @DisplayName("read(): write all high byte values — returns correct unsigned")
     @Test
     public void read_writeAllHighByteValues_returnsCorrectUnsigned() throws IOException {
         // arrange
@@ -2093,9 +2264,12 @@ public class StreamBufferTest {
             assertThat(is.read(), is(i));
         }
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="correctOffsetAndLengthToWrite integer overflow">
+    @Nested
+    @DisplayName("correctOffsetAndLengthToWrite() — integer overflow")
+    class CorrectOffsetAndLengthToWriteIntegerOverflowTests {
+    @DisplayName("correctOffsetAndLengthToWrite(): integer overflow — throws index out of bounds exception")
     @Test
     public void correctOffsetAndLengthToWrite_integerOverflow_throwsIndexOutOfBoundsException() {
         // arrange
@@ -2106,9 +2280,12 @@ public class StreamBufferTest {
             () -> StreamBuffer.correctOffsetAndLengthToWrite(b, Integer.MAX_VALUE, 1));
         assertThat(ex.getMessage(), is(StreamBuffer.EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="close via InputStream">
+    @Nested
+    @DisplayName("close() via InputStream")
+    class CloseViaInputStreamTests {
+    @DisplayName("write(): closed via input stream — throws io exception")
     @Test
     public void write_closedViaInputStream_throwsIOException() throws IOException {
         // arrange
@@ -2119,6 +2296,7 @@ public class StreamBufferTest {
         assertThrows(IOException.class, () -> sb.getOutputStream().write(anyValue));
     }
 
+    @DisplayName("isClosed(): closed via input stream — true")
     @Test
     public void isClosed_closedViaInputStream_true() throws IOException {
         // arrange
@@ -2131,6 +2309,7 @@ public class StreamBufferTest {
         assertThat(sb.isClosed(), is(true));
     }
 
+    @DisplayName("read(): closed via output stream — returns minus one")
     @Test
     public void read_closedViaOutputStream_returnsMinusOne() throws IOException {
         // arrange
@@ -2143,10 +2322,13 @@ public class StreamBufferTest {
         // assert
         assertThat(result, is(-1));
     }
-    // </editor-fold>
+    }
 
 
-    // <editor-fold defaultstate="collapsed" desc="trim with safeWrite">
+    @Nested
+    @DisplayName("trim() with safeWrite enabled")
+    class TrimWithSafeWriteTests {
+    @DisplayName("trim(): with safe write enabled — preserves data integrity")
     @Test
     public void trim_withSafeWriteEnabled_preservesDataIntegrity() throws IOException {
         // arrange
@@ -2166,9 +2348,12 @@ public class StreamBufferTest {
             () -> assertThat(dest, is(new byte[]{1, 2, 3, 4, 5, 6}))
         );
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="maxBufferElements zero disables trim">
+    @Nested
+    @DisplayName("maxBufferElements=0 disables trim")
+    class MaxBufferElementsZeroDisablesTrimTests {
+    @DisplayName("setMaxBufferElements(): zero — trim not called")
     @Test
     public void setMaxBufferElements_zero_trimNotCalled() throws IOException {
         // arrange
@@ -2183,10 +2368,13 @@ public class StreamBufferTest {
         // assert — all entries remain un-trimmed (each write(int) adds one entry)
         assertThat(sb.getBufferSize(), is(greaterThan(1)));
     }
-    // </editor-fold>
+    }
 
 
-    // <editor-fold defaultstate="collapsed" desc="read single byte via array">
+    @Nested
+    @DisplayName("read() — single byte via array")
+    class ReadSingleByteViaArrayTests {
+    @DisplayName("read(): array with length one — returns single byte")
     @Test
     public void read_arrayWithLengthOne_returnsSingleByte() throws IOException {
         // arrange
@@ -2203,9 +2391,12 @@ public class StreamBufferTest {
             () -> assertThat(dest[0], is(anyValue))
         );
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="available after close with buffered data">
+    @Nested
+    @DisplayName("available() after close with buffered data")
+    class AvailableAfterCloseWithBufferedDataTests {
+    @DisplayName("available(): closed with data remaining — returns correct count")
     @Test
     public void available_closedWithDataRemaining_returnsCorrectCount() throws IOException {
         // arrange
@@ -2219,9 +2410,12 @@ public class StreamBufferTest {
         // assert
         assertThat(result, is(5));
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="thread interruption during read">
+    @Nested
+    @DisplayName("thread interruption during read()")
+    class ThreadInterruptionDuringReadTests {
+    @DisplayName("read(): thread interrupted — throws io exception")
     @Test
     public void read_threadInterrupted_throwsIOException() throws Exception {
         // arrange
@@ -2251,6 +2445,7 @@ public class StreamBufferTest {
                 caught[0] instanceof IOException, is(true));
     }
 
+    @DisplayName("read(): array thread interrupted while waiting for second byte — throws io exception")
     @Test
     public void read_arrayThreadInterruptedWhileWaitingForSecondByte_throwsIOException() throws Exception {
         // arrange
@@ -2284,9 +2479,12 @@ public class StreamBufferTest {
         assertThat("IOException should be thrown wrapping InterruptedException",
                 caught[0] instanceof IOException, is(true));
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="correctOffsetAndLengthToRead empty array">
+    @Nested
+    @DisplayName("correctOffsetAndLengthToRead() — empty array")
+    class CorrectOffsetAndLengthToReadEmptyArrayTests {
+    @DisplayName("correctOffsetAndLengthToRead(): empty array with positive length — throws index out of bounds exception")
     @Test
     public void correctOffsetAndLengthToRead_emptyArrayWithPositiveLength_throwsIndexOutOfBoundsException() {
         // arrange
@@ -2295,9 +2493,12 @@ public class StreamBufferTest {
         assertThrows(IndexOutOfBoundsException.class,
             () -> StreamBuffer.correctOffsetAndLengthToRead(new byte[0], 0, 1));
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="correctOffsetAndLengthToWrite empty array">
+    @Nested
+    @DisplayName("correctOffsetAndLengthToWrite() — empty array")
+    class CorrectOffsetAndLengthToWriteEmptyArrayTests {
+    @DisplayName("correctOffsetAndLengthToWrite(): empty array zero length — returns false")
     @Test
     public void correctOffsetAndLengthToWrite_emptyArrayZeroLength_returnsFalse() {
         // arrange
@@ -2307,9 +2508,12 @@ public class StreamBufferTest {
         // assert
         assertThat(result, is(false));
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="getBufferSize initial">
+    @Nested
+    @DisplayName("getBufferSize() — initial state")
+    class GetBufferSizeInitialTests {
+    @DisplayName("getBufferSize(): empty buffer — returns zero")
     @Test
     public void getBufferSize_emptyBuffer_returnsZero() {
         // arrange
@@ -2321,9 +2525,12 @@ public class StreamBufferTest {
         // assert
         assertThat(result, is(0));
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="isTrimShouldBeExecuted zero boundary">
+    @Nested
+    @DisplayName("isTrimShouldBeExecuted() — zero boundary")
+    class IsTrimShouldBeExecutedZeroBoundaryTests {
+    @DisplayName("getBufferSize(): max buffer elements zero with multiple entries — no trim executed")
     @Test
     public void getBufferSize_maxBufferElementsZeroWithMultipleEntries_noTrimExecuted() throws IOException {
         // arrange
@@ -2338,9 +2545,12 @@ public class StreamBufferTest {
         // assert
         assertThat(sb.getBufferSize(), is(3));
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="tryWaitForEnoughBytes closed stream return">
+    @Nested
+    @DisplayName("tryWaitForEnoughBytes() — closed stream")
+    class TryWaitForEnoughBytesClosedStreamTests {
+    @DisplayName("read(): closed stream with two bytes — read array returns both bytes")
     @Test
     public void read_closedStreamWithTwoBytes_readArrayReturnsBothBytes() throws IOException {
         // arrange
@@ -2358,9 +2568,12 @@ public class StreamBufferTest {
             () -> assertArrayEquals(new byte[]{10, 20}, Arrays.copyOf(dest, 2))
         );
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="read if-branch: exact full-entry consumption">
+    @Nested
+    @DisplayName("read() — exact full-entry consumption")
+    class ReadExactFullEntryConsumptionTests {
+    @DisplayName("read(): exact full entry consumption — available and buffer size are zero")
     @Test
     public void read_exactFullEntryConsumption_availableAndBufferSizeAreZero() throws IOException {
         // arrange — write 3 bytes as a single entry; after the internal read() call consumes byte 0,
@@ -2383,9 +2596,12 @@ public class StreamBufferTest {
             () -> assertThat(sb.getInputStream().available(), is(0))
         );
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="isTrimShouldBeExecuted direct">
+    @Nested
+    @DisplayName("isTrimShouldBeExecuted() — direct")
+    class IsTrimShouldBeExecutedDirectTests {
+    @DisplayName("isTrimShouldBeExecuted(): buffer size two max elements one — returns true")
     @Test
     public void isTrimShouldBeExecuted_bufferSizeTwoMaxElementsOne_returnsTrue() throws IOException {
         // arrange — disable trim while writing so we can control buffer.size() independently
@@ -2400,9 +2616,12 @@ public class StreamBufferTest {
         //                mutant:   (2 >  2) && (2 > 1) = false  → mutation killed
         assertThat(sb.isTrimShouldBeExecuted(), is(true));
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="clampToMaxInt direct">
+    @Nested
+    @DisplayName("clampToMaxInt() — direct")
+    class ClampToMaxIntDirectTests {
+    @DisplayName("clampToMaxInt(): value above max int — returns max int")
     @Test
     public void clampToMaxInt_valueAboveMaxInt_returnsMaxInt() {
         // arrange
@@ -2412,6 +2631,7 @@ public class StreamBufferTest {
         assertThat(sb.clampToMaxInt((long) Integer.MAX_VALUE + 1), is(Integer.MAX_VALUE));
     }
 
+    @DisplayName("clampToMaxInt(): value equal to max int — returns max int")
     @Test
     public void clampToMaxInt_valueEqualToMaxInt_returnsMaxInt() {
         // arrange
@@ -2421,6 +2641,7 @@ public class StreamBufferTest {
         assertThat(sb.clampToMaxInt((long) Integer.MAX_VALUE), is(Integer.MAX_VALUE));
     }
 
+    @DisplayName("clampToMaxInt(): small value — returns value")
     @Test
     public void clampToMaxInt_smallValue_returnsValue() {
         // arrange
@@ -2429,9 +2650,12 @@ public class StreamBufferTest {
         // assert
         assertThat(sb.clampToMaxInt(42L), is(42));
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="decrementAvailableBytesBudget direct">
+    @Nested
+    @DisplayName("decrementAvailableBytesBudget() — direct")
+    class DecrementAvailableBytesBudgetDirectTests {
+    @DisplayName("decrementAvailableBytesBudget(): subtracts decrement")
     @Test
     public void decrementAvailableBytesBudget_subtractsDecrement() {
         // original: current - decrement = 9 - 4 = 5
@@ -2442,9 +2666,12 @@ public class StreamBufferTest {
         // assert
         assertThat(sb.decrementAvailableBytesBudget(9L, 4L), is(5L));
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="isTrimShouldBeExecuted size-two boundary">
+    @Nested
+    @DisplayName("isTrimShouldBeExecuted() — size-two boundary")
+    class IsTrimShouldBeExecutedSizeTwoBoundaryTests {
+    @DisplayName("getBufferSize(): two entries with max buffer elements one — trim called")
     @Test
     public void getBufferSize_twoEntriesWithMaxBufferElementsOne_trimCalled() throws IOException {
         // arrange
@@ -2460,9 +2687,12 @@ public class StreamBufferTest {
         // assert
         assertThat(sb.getBufferSize(), is(1));
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="tryWaitForEnoughBytes open-stream return">
+    @Nested
+    @DisplayName("tryWaitForEnoughBytes() — open stream")
+    class TryWaitForEnoughBytesOpenStreamTests {
+    @DisplayName("read(): multiple bytes single entry open stream — returns all requested bytes")
     @Test
     public void read_multipleBytesSingleEntryOpenStream_returnsAllRequestedBytes() throws IOException {
         // arrange — write 5 bytes as one entry; stream left open
@@ -2480,9 +2710,12 @@ public class StreamBufferTest {
             () -> assertThat(dest, is(new byte[]{1, 2, 3, 4, 5}))
         );
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="available after partial read from single entry">
+    @Nested
+    @DisplayName("available() after partial read from single entry")
+    class AvailableAfterPartialReadTests {
+    @DisplayName("available(): after partial read from single entry — returns remaining count")
     @Test
     public void available_afterPartialReadFromSingleEntry_returnsRemainingCount() throws IOException {
         // arrange — 10 bytes as a single deque entry
@@ -2499,9 +2732,11 @@ public class StreamBufferTest {
             () -> assertThat(sb.getInputStream().available(), is(5))
         );
     }
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="capMissingBytes equivalence: old vs new formula">
+    @Nested
+    @DisplayName("capMissingBytes() — formula equivalence")
+    class CapMissingBytesEquivalenceTests {
 
     // Extracts the OLD capping formula from the guarded if-block (pre-cb66b68)
     private static int capMissingBytesOld(long maximumAvailableBytes, int missingBytes) {
@@ -2536,6 +2771,7 @@ public class StreamBufferTest {
         );
     }
 
+    @DisplayName("capMissingBytes(): old and new formula — return same result")
     @ParameterizedTest
     @MethodSource("capMissingBytesInputs")
     public void capMissingBytes_oldAndNewFormula_returnSameResult(
@@ -2548,10 +2784,13 @@ public class StreamBufferTest {
         assertThat(newResult, is(oldResult));
     }
 
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="Statistics: getTotalBytesWritten, getTotalBytesRead, getMaxObservedBytes">
+    @Nested
+    @DisplayName("statistics: getTotalBytesWritten / Read / getMaxObservedBytes")
+    class StatisticsTests {
 
+    @DisplayName("statistics(): initial — all counters zero")
     @Test
     public void statistics_initial_allCountersZero() throws IOException {
         // arrange
@@ -2565,6 +2804,7 @@ public class StreamBufferTest {
         );
     }
 
+    @DisplayName("statistics(): single write — tracks total bytes written")
     @Test
     public void statistics_singleWrite_tracksTotalBytesWritten() throws IOException {
         // arrange
@@ -2579,6 +2819,7 @@ public class StreamBufferTest {
         assertThat(sb.getTotalBytesWritten(), is(3L));
     }
 
+    @DisplayName("statistics(): multiple writes — accumulate")
     @Test
     public void statistics_multipleWrites_accumulate() throws IOException {
         // arrange
@@ -2594,6 +2835,7 @@ public class StreamBufferTest {
         assertThat(sb.getTotalBytesWritten(), is(6L));
     }
 
+    @DisplayName("statistics(): write with offset — counts only offset")
     @Test
     public void statistics_writeWithOffset_countsOnlyOffset() throws IOException {
         // arrange
@@ -2608,6 +2850,7 @@ public class StreamBufferTest {
         assertThat(sb.getTotalBytesWritten(), is(3L));
     }
 
+    @DisplayName("statistics(): write int — counts as one")
     @Test
     public void statistics_writeInt_countsAsOne() throws IOException {
         // arrange
@@ -2621,6 +2864,7 @@ public class StreamBufferTest {
         assertThat(sb.getTotalBytesWritten(), is(1L));
     }
 
+    @DisplayName("statistics(): single byte read — tracks total bytes read")
     @Test
     public void statistics_singleByteRead_tracksTotalBytesRead() throws IOException {
         // arrange
@@ -2636,6 +2880,7 @@ public class StreamBufferTest {
         assertThat(sb.getTotalBytesRead(), is(1L));
     }
 
+    @DisplayName("statistics(): array read — tracks total bytes read")
     @Test
     public void statistics_arrayRead_tracksTotalBytesRead() throws IOException {
         // arrange
@@ -2652,6 +2897,7 @@ public class StreamBufferTest {
         assertThat(sb.getTotalBytesRead(), is(5L));
     }
 
+    @DisplayName("statistics(): partial read — counts actually returned")
     @Test
     public void statistics_partialRead_countsActuallyReturned() throws IOException {
         // arrange
@@ -2672,6 +2918,7 @@ public class StreamBufferTest {
         );
     }
 
+    @DisplayName("statistics(): concurrent reads writes — counters consistent")
     @Test
     public void statistics_concurrentReadsWrites_countersConsistent() throws IOException, InterruptedException {
         // arrange
@@ -2712,6 +2959,7 @@ public class StreamBufferTest {
         );
     }
 
+    @DisplayName("statistics(): max observed bytes — tracks highest available")
     @Test
     public void statistics_maxObservedBytes_tracksHighestAvailable() throws IOException {
         // arrange
@@ -2727,6 +2975,7 @@ public class StreamBufferTest {
         assertThat(sb.getMaxObservedBytes(), is(100L));
     }
 
+    @DisplayName("statistics(): max observed bytes — preserves peak")
     @Test
     public void statistics_maxObservedBytes_preservesPeak() throws IOException {
         // arrange
@@ -2743,6 +2992,7 @@ public class StreamBufferTest {
         assertThat(sb.getMaxObservedBytes(), is(100L));
     }
 
+    @DisplayName("statistics(): max observed bytes — updated — only during user writes")
     @Test
     public void statistics_maxObservedBytes_updated_onlyDuringUserWrites() throws IOException {
         // arrange
@@ -2768,6 +3018,7 @@ public class StreamBufferTest {
         );
     }
 
+    @DisplayName("statistics(): trim — do not affect counters")
     @Test
     public void statistics_trim_doNotAffectCounters() throws IOException {
         // arrange
@@ -2792,10 +3043,13 @@ public class StreamBufferTest {
         );
     }
 
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="Buffer element count and trim state">
+    @Nested
+    @DisplayName("buffer element count and trim state")
+    class BufferElementCountAndTrimStateTests {
 
+    @DisplayName("bufferElementCount(): initial — is zero")
     @Test
     public void bufferElementCount_initial_isZero() {
         // arrange
@@ -2805,6 +3059,7 @@ public class StreamBufferTest {
         assertThat(sb.getBufferElementCount(), is(0));
     }
 
+    @DisplayName("bufferElementCount(): after writes — increases accordingly")
     @Test
     public void bufferElementCount_afterWrites_increasesAccordingly() throws IOException {
         // arrange
@@ -2820,6 +3075,7 @@ public class StreamBufferTest {
         assertThat(sb.getBufferElementCount(), is(2));
     }
 
+    @DisplayName("bufferElementCount(): after trim consolidation — reduces to one")
     @Test
     public void bufferElementCount_afterTrimConsolidation_reducesToOne() throws IOException {
         // arrange
@@ -2838,6 +3094,7 @@ public class StreamBufferTest {
         assertThat(sb.getBufferElementCount(), is(1));
     }
 
+    @DisplayName("isTrimRunning(): after trim complete — is false")
     @Test
     public void isTrimRunning_afterTrimComplete_isFalse() throws IOException {
         // arrange
@@ -2853,10 +3110,13 @@ public class StreamBufferTest {
         assertThat(sb.isTrimRunning(), is(false));
     }
 
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="maxAllocationSize: getter, setter, trim behavior">
+    @Nested
+    @DisplayName("maxAllocationSize: getter, setter, trim behavior")
+    class MaxAllocationSizeTests {
 
+    @DisplayName("maxAllocationSize(): default value — is integer max value")
     @Test
     public void maxAllocationSize_defaultValue_isIntegerMaxValue() {
         // arrange
@@ -2869,6 +3129,7 @@ public class StreamBufferTest {
         assertThat(maxSize, is((long) Integer.MAX_VALUE));
     }
 
+    @DisplayName("maxAllocationSize(): set and get — returns set value")
     @Test
     public void maxAllocationSize_setAndGet_returnsSetValue() {
         // arrange
@@ -2882,6 +3143,7 @@ public class StreamBufferTest {
         assertThat(sb.getMaxAllocationSize(), is(newMax));
     }
 
+    @DisplayName("setMaxAllocationSize(): invalid value — throws exception")
     @Test
     public void setMaxAllocationSize_invalidValue_throwsException() {
         // arrange
@@ -2894,6 +3156,7 @@ public class StreamBufferTest {
         );
     }
 
+    @DisplayName("trim(): respects max allocation size — splits large buffer")
     @Test
     public void trim_respectsMaxAllocationSize_splitsLargeBuffer() throws IOException {
         // arrange — write many small chunks so buffer.size() exceeds maxBufferElements,
@@ -2930,6 +3193,7 @@ public class StreamBufferTest {
         assertThat(result[999], is(anyValue));
     }
 
+    @DisplayName("trim(): max allocation size — all data preserved")
     @Test
     public void trim_maxAllocationSize_allDataPreserved() throws IOException {
         // arrange — write multiple small chunks so trim fires with maxAllocationSize limit,
@@ -2965,6 +3229,7 @@ public class StreamBufferTest {
         );
     }
 
+    @DisplayName("trim(): max allocation size — with partial read")
     @Test
     public void trim_maxAllocationSize_withPartialRead() throws IOException {
         // arrange
@@ -2988,6 +3253,7 @@ public class StreamBufferTest {
         assertThat(read, is(400));
     }
 
+    @DisplayName("trim(): recursive trim — on chunk overflow — all data preserved")
     @Test
     public void trim_recursiveTrim_onChunkOverflow_allDataPreserved() throws IOException {
         // arrange — write many small chunks that trigger multiple trims.
@@ -3025,6 +3291,7 @@ public class StreamBufferTest {
         assertThat(result[9999], is(anyValue));
     }
 
+    @DisplayName("trim(): edge case — skips trim when result still exceeds limit")
     @Test
     public void trim_edgeCase_skipsTrimWhenResultStillExceedsLimit() throws IOException {
         // arrange: Critical edge case where consolidation would NOT reduce chunk count below limit
@@ -3059,6 +3326,7 @@ public class StreamBufferTest {
         assertThat(totalRead, is(1100));
     }
 
+    @DisplayName("trim(): edge case — executes when result reduces chunks")
     @Test
     public void trim_edgeCase_executesWhenResultReducesChunks() throws IOException {
         // arrange: Verify that trim DOES execute when consolidation will reduce chunks.
@@ -3099,6 +3367,7 @@ public class StreamBufferTest {
         assertThat(totalRead, is(600));
     }
 
+    @DisplayName("trim(): edge case — prevents trim loops on every write")
     @Test
     public void trim_edgeCase_preventsTrimLoopsOnEveryWrite() throws IOException {
         // arrange: Verify that repeated writes don't cause trim to loop constantly
@@ -3135,10 +3404,13 @@ public class StreamBufferTest {
         assertThat(totalRead, is(300));
     }
 
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="Mutation survivors: boundary conditions and arithmetic">
+    @Nested
+    @DisplayName("mutation survivors — boundary conditions and arithmetic")
+    class MutationSurvivorTests {
 
+    @DisplayName("maxAllocationSize(): set to one — succeeds")
     @Test
     public void maxAllocationSize_setToOne_succeeds() {
         // arrange
@@ -3149,6 +3421,7 @@ public class StreamBufferTest {
         assertThat(sb.getMaxAllocationSize(), is(1L));
     }
 
+    @DisplayName("trim(): max allocation size — one — with substantial data")
     @Test
     public void trim_maxAllocationSize_one_withSubstantialData() throws IOException {
         // arrange — Verify that trim works correctly even with maxAllocationSize=1 (extreme case)
@@ -3188,6 +3461,7 @@ public class StreamBufferTest {
         );
     }
 
+    @DisplayName("decrementAvailableBytesBudget(): subtracts — not adds")
     @Test
     public void decrementAvailableBytesBudget_subtracts_notAdds() {
         // arrange
@@ -3200,6 +3474,7 @@ public class StreamBufferTest {
         assertThat(result, is(70L));
     }
 
+    @DisplayName("decrementAvailableBytesBudget(): large values")
     @Test
     public void decrementAvailableBytesBudget_largeValues() {
         // arrange
@@ -3212,6 +3487,7 @@ public class StreamBufferTest {
         assertThat(result, is(500_000L));
     }
 
+    @DisplayName("clampToMaxInt(): clamps large values")
     @Test
     public void clampToMaxInt_clampsLargeValues() {
         // arrange
@@ -3226,6 +3502,7 @@ public class StreamBufferTest {
         );
     }
 
+    @DisplayName("trimCondition(): max buffer elements zero — never trims")
     @Test
     public void trimCondition_maxBufferElementsZero_neverTrims() throws IOException {
         // arrange — Boundary: maxBufferElements=0 must never trigger trim (kills <= 0 vs < 0)
@@ -3242,6 +3519,7 @@ public class StreamBufferTest {
         assertThat(sb.isTrimShouldBeExecuted(), is(false));
     }
 
+    @DisplayName("trimCondition(): all checks pass — returns true")
     @Test
     public void trimCondition_allChecksPass_returnsTrue() throws IOException {
         // arrange — Force all conditions in isTrimShouldBeExecuted to pass
@@ -3269,6 +3547,7 @@ public class StreamBufferTest {
         assertThat(sb.isTrimShouldBeExecuted(), is(true));
     }
 
+    @DisplayName("trimCondition(): available bytes zero — skips trim check")
     @Test
     public void trimCondition_availableBytesZero_skipsTrimCheck() throws IOException {
         // arrange — Boundary: availableBytes=0 must skip trim check (kills > 0 vs >= 0)
@@ -3285,6 +3564,7 @@ public class StreamBufferTest {
         assertThat(sb.isTrimShouldBeExecuted(), is(false));
     }
 
+    @DisplayName("trimCondition(): resulting chunks equal buffer size — does not trim")
     @Test
     public void trimCondition_resultingChunksEqualBufferSize_doesNotTrim() throws IOException {
         // arrange — Boundary: resultingChunks == buffer.size() must not trim (kills >= vs >)
@@ -3303,6 +3583,7 @@ public class StreamBufferTest {
         assertThat(sb.isTrimShouldBeExecuted(), is(false));
     }
 
+    @DisplayName("trimCondition(): max alloc size greater or equal — skips trim check")
     @Test
     public void trimCondition_maxAllocSizeGreaterOrEqual_skipsTrimCheck() throws IOException {
         // arrange — Boundary: maxAllocSize >= availableBytes must skip trim check
@@ -3321,6 +3602,7 @@ public class StreamBufferTest {
         assertThat(sb.isTrimShouldBeExecuted(), is(false));
     }
 
+    @DisplayName("trimCondition(): max alloc size less than available — checks chunks")
     @Test
     public void trimCondition_maxAllocSizeLessThanAvailable_checksChunks() throws IOException {
         // arrange — Both conditions in edge case AND must be tested:
@@ -3344,6 +3626,7 @@ public class StreamBufferTest {
         assertThat(sb.isTrimRunning(), is(false));  // Not currently trimming
     }
 
+    @DisplayName("ceilingDivisionFormula(): calculates correctly")
     @Test
     public void ceilingDivisionFormula_calculatesCorrectly() {
         // arrange — Verify the ceiling division formula: (n + d - 1) / d
@@ -3367,6 +3650,7 @@ public class StreamBufferTest {
         );
     }
 
+    @DisplayName("shouldSkipTrimDueToEdgeCase(): bounds comparison")
     @Test
     public void shouldSkipTrimDueToEdgeCase_boundsComparison() {
         // arrange
@@ -3393,6 +3677,7 @@ public class StreamBufferTest {
         );
     }
 
+    @DisplayName("shouldSkipTrimDueToInvalidMaxBufferElements(): bounds comparison")
     @Test
     public void shouldSkipTrimDueToInvalidMaxBufferElements_boundsComparison() {
         // arrange
@@ -3419,6 +3704,7 @@ public class StreamBufferTest {
         );
     }
 
+    @DisplayName("shouldSkipTrimDueToSmallBuffer(): bounds comparison")
     @Test
     public void shouldSkipTrimDueToSmallBuffer_boundsComparison() {
         // arrange
@@ -3450,6 +3736,7 @@ public class StreamBufferTest {
         );
     }
 
+    @DisplayName("shouldSkipTrimDueToSufficientBuffer(): bounds comparison")
     @Test
     public void shouldSkipTrimDueToSufficientBuffer_boundsComparison() {
         // arrange
@@ -3476,6 +3763,7 @@ public class StreamBufferTest {
         );
     }
 
+    @DisplayName("shouldCheckEdgeCase(): and condition boundaries")
     @Test
     public void shouldCheckEdgeCase_andConditionBoundaries() {
         // arrange
@@ -3512,6 +3800,7 @@ public class StreamBufferTest {
         );
     }
 
+    @DisplayName("isTrimShouldBeExecuted(): all conditions pass — returns true")
     @Test
     public void isTrimShouldBeExecuted_allConditionsPass_returnsTrue() throws IOException {
         // arrange
@@ -3535,6 +3824,7 @@ public class StreamBufferTest {
         assertThat(sb.isTrimShouldBeExecuted(), is(true));  // Kills mutation of final return true
     }
 
+    @DisplayName("isTrimShouldBeExecuted(): or condition first check — returns false")
     @Test
     public void isTrimShouldBeExecuted_orConditionFirstCheck_returnsFalse() throws IOException {
         // arrange
@@ -3554,6 +3844,7 @@ public class StreamBufferTest {
         assertThat(sb.isTrimShouldBeExecuted(), is(false));  // Kills first return false in OR
     }
 
+    @DisplayName("isTrimShouldBeExecuted(): edge case returns false")
     @Test
     public void isTrimShouldBeExecuted_edgeCaseReturnsFalse() throws IOException {
         // arrange
@@ -3574,6 +3865,7 @@ public class StreamBufferTest {
         assertThat(sb.isTrimShouldBeExecuted(), is(false));  // Kills edge case return false
     }
 
+    @DisplayName("isTrimShouldBeExecuted(): or condition second check — returns false")
     @Test
     public void isTrimShouldBeExecuted_orConditionSecondCheck_returnsFalse() throws IOException {
         // arrange
@@ -3588,6 +3880,7 @@ public class StreamBufferTest {
         assertThat(sb.isTrimShouldBeExecuted(), is(false));  // Kills second return false in OR
     }
 
+    @DisplayName("isTrimShouldBeExecuted(): or condition third check — returns false")
     @Test
     public void isTrimShouldBeExecuted_orConditionThirdCheck_returnsFalse() throws IOException {
         // arrange
@@ -3605,6 +3898,7 @@ public class StreamBufferTest {
         assertThat(sb.isTrimShouldBeExecuted(), is(false));  // Kills third condition return false
     }
 
+    @DisplayName("shouldCheckEdgeCase(): boundary available bytes — zero")
     @Test
     public void shouldCheckEdgeCase_boundaryAvailableBytes_zero() {
         // arrange
@@ -3621,6 +3915,7 @@ public class StreamBufferTest {
         assertThat(result, is(false));
     }
 
+    @DisplayName("shouldCheckEdgeCase(): boundary available bytes — positive")
     @Test
     public void shouldCheckEdgeCase_boundaryAvailableBytes_positive() {
         // arrange
@@ -3637,6 +3932,7 @@ public class StreamBufferTest {
         assertThat(result, is(true));
     }
 
+    @DisplayName("shouldCheckEdgeCase(): boundary max alloc size — less than")
     @Test
     public void shouldCheckEdgeCase_boundaryMaxAllocSize_lessThan() {
         // arrange
@@ -3652,6 +3948,7 @@ public class StreamBufferTest {
         assertThat(result, is(false));
     }
 
+    @DisplayName("shouldCheckEdgeCase(): boundary max alloc size — greater")
     @Test
     public void shouldCheckEdgeCase_boundaryMaxAllocSize_greater() {
         // arrange
@@ -3665,6 +3962,7 @@ public class StreamBufferTest {
         assertThat(result, is(false));
     }
 
+    @DisplayName("maxObservedBytes(): boundary equal — not updated")
     @Test
     public void maxObservedBytes_boundaryEqual_notUpdated() throws IOException {
         // arrange
@@ -3700,6 +3998,7 @@ public class StreamBufferTest {
         assertThat(secondMax, is(100L));  // Kills: availableBytes >= maxObservedBytes
     }
 
+    @DisplayName("maxObservedBytes(): boundary greater — updated")
     @Test
     public void maxObservedBytes_boundaryGreater_updated() throws IOException {
         // arrange
@@ -3732,6 +4031,7 @@ public class StreamBufferTest {
         assertThat(secondMax, is(101L));  // Positive test: both > and >= work here
     }
 
+    @DisplayName("trimStartSignal(): released when trim begins")
     @Test
     public void trimStartSignal_releasedWhenTrimBegins() throws IOException, InterruptedException {
         // arrange
@@ -3754,6 +4054,7 @@ public class StreamBufferTest {
         sb.removeTrimStartSignal(trimStarted);
     }
 
+    @DisplayName("trimEndSignal(): released when trim completes")
     @Test
     public void trimEndSignal_releasedWhenTrimCompletes() throws IOException, InterruptedException {
         // arrange
@@ -3776,6 +4077,7 @@ public class StreamBufferTest {
         sb.removeTrimEndSignal(trimEnded);
     }
 
+    @DisplayName("isTrimRunning(): true when trim start signal fires")
     @Test
     public void isTrimRunning_trueWhenTrimStartSignalFires() throws IOException, InterruptedException {
         // arrange
@@ -3808,6 +4110,7 @@ public class StreamBufferTest {
         sb.removeTrimStartSignal(trimStartObserver);
     }
 
+    @DisplayName("isTrimRunning(): flag visible via observer")
     @Test
     public void isTrimRunning_flagVisibleViaObserver() throws IOException, InterruptedException {
         // arrange
@@ -3841,6 +4144,7 @@ public class StreamBufferTest {
         sb.removeTrimEndSignal(trimEndObserver);
     }
 
+    @DisplayName("trimSignals(): can be added and removed")
     @Test
     public void trimSignals_canBeAddedAndRemoved() throws IOException {
         // arrange
@@ -3858,6 +4162,7 @@ public class StreamBufferTest {
         assertThat(sb.removeTrimEndSignal(signal), is(false));
     }
 
+    @DisplayName("trimSignals(): null throws exception")
     @Test
     public void trimSignals_nullThrowsException() {
         // arrange
@@ -3928,6 +4233,7 @@ public class StreamBufferTest {
      * 4. Catch the exception outside of assertAll
      * 5. Verify recovery: flag reset, stream still usable, exception was thrown
      */
+    @DisplayName("trim(): signal release exception during start — stream recoverable")
     @Test
     public void trim_signalReleaseExceptionDuringStart_streamRecoverable() throws IOException {
         // arrange — Track when throwing semaphore is called
@@ -4035,6 +4341,7 @@ public class StreamBufferTest {
      * 5. Verify ignoreSafeWrite is reset despite exception
      * 6. Verify stream still usable (flag not stuck in true state)
      */
+    @DisplayName("trim(): ignore safe write flag reset during write exception — stream recoverable")
     @Test
     public void trim_ignoreSafeWriteFlagResetDuringWriteException_streamRecoverable() throws IOException {
         // arrange — Custom StreamBuffer with throwing output stream
@@ -4165,6 +4472,7 @@ public class StreamBufferTest {
      *    - Exception propagates to caller (signal notification failure)
      *    - Stream still works (exception doesn't break stream state)
      */
+    @DisplayName("trim(): signal release exception during end — flag already reset exception propagates")
     @Test
     public void trim_signalReleaseExceptionDuringEnd_flagAlreadyResetExceptionPropagates() throws IOException {
         // arrange — Create throwing semaphore for trim end signal
@@ -4274,6 +4582,7 @@ public class StreamBufferTest {
      * 5. Both threads should complete without exceptions
      * 6. Verify: no exceptions, stream closed, data can still be read
      */
+    @DisplayName("trim(): close called during trim — handles gracefully")
     @Test
     public void trim_closeCalledDuringTrim_handlesGracefully() throws IOException, InterruptedException {
         // arrange — Setup concurrent test infrastructure
@@ -4378,6 +4687,7 @@ public class StreamBufferTest {
 
     // Test extracted boundary checking methods
 
+    @DisplayName("isAvailableBytesPositive(): zero — returns false")
     @Test
     public void isAvailableBytesPositive_zero_returnsFalse() {
         // arrange
@@ -4390,6 +4700,7 @@ public class StreamBufferTest {
         assertThat(result, is(false));
     }
 
+    @DisplayName("isAvailableBytesPositive(): one — returns true")
     @Test
     public void isAvailableBytesPositive_one_returnsTrue() {
         // arrange
@@ -4402,6 +4713,7 @@ public class StreamBufferTest {
         assertThat(result, is(true));
     }
 
+    @DisplayName("isAvailableBytesPositive(): negative — returns false")
     @Test
     public void isAvailableBytesPositive_negative_returnsFalse() {
         // arrange
@@ -4414,6 +4726,7 @@ public class StreamBufferTest {
         assertThat(result, is(false));
     }
 
+    @DisplayName("isMaxAllocSizeLessThanAvailable(): equal — returns false")
     @Test
     public void isMaxAllocSizeLessThanAvailable_equal_returnsFalse() {
         // arrange
@@ -4426,6 +4739,7 @@ public class StreamBufferTest {
         assertThat(result, is(false));
     }
 
+    @DisplayName("isMaxAllocSizeLessThanAvailable(): less than — returns true")
     @Test
     public void isMaxAllocSizeLessThanAvailable_lessThan_returnsTrue() {
         // arrange
@@ -4438,6 +4752,7 @@ public class StreamBufferTest {
         assertThat(result, is(true));
     }
 
+    @DisplayName("isMaxAllocSizeLessThanAvailable(): greater than — returns false")
     @Test
     public void isMaxAllocSizeLessThanAvailable_greaterThan_returnsFalse() {
         // arrange
@@ -4450,6 +4765,7 @@ public class StreamBufferTest {
         assertThat(result, is(false));
     }
 
+    @DisplayName("shouldUpdateMaxObservedBytes(): equal — returns false")
     @Test
     public void shouldUpdateMaxObservedBytes_equal_returnsFalse() {
         // arrange
@@ -4462,6 +4778,7 @@ public class StreamBufferTest {
         assertThat(result, is(false));
     }
 
+    @DisplayName("shouldUpdateMaxObservedBytes(): greater than — returns true")
     @Test
     public void shouldUpdateMaxObservedBytes_greaterThan_returnsTrue() {
         // arrange
@@ -4474,6 +4791,7 @@ public class StreamBufferTest {
         assertThat(result, is(true));
     }
 
+    @DisplayName("shouldUpdateMaxObservedBytes(): less than — returns false")
     @Test
     public void shouldUpdateMaxObservedBytes_lessThan_returnsFalse() {
         // arrange
@@ -4486,6 +4804,7 @@ public class StreamBufferTest {
         assertThat(result, is(false));
     }
 
+    @DisplayName("updateMaxObservedBytesIfNeeded(): exceeds current max")
     @Test
     public void updateMaxObservedBytesIfNeeded_exceedsCurrentMax() throws IOException {
         // arrange
@@ -4499,6 +4818,7 @@ public class StreamBufferTest {
         assertThat(sb.getMaxObservedBytes(), is(100L));
     }
 
+    @DisplayName("updateMaxObservedBytesIfNeeded(): equal to current max")
     @Test
     public void updateMaxObservedBytesIfNeeded_equalToCurrentMax() throws IOException {
         // arrange
@@ -4513,6 +4833,7 @@ public class StreamBufferTest {
         assertThat(sb.getMaxObservedBytes(), is(100L));
     }
 
+    @DisplayName("recordReadStatistics(): updates counter when trim not running")
     @Test
     public void recordReadStatistics_updatesCounterWhenTrimNotRunning() throws IOException {
         // arrange
@@ -4526,6 +4847,7 @@ public class StreamBufferTest {
         assertThat(sb.getTotalBytesRead(), is(50L));
     }
 
+    @DisplayName("recordReadStatistics(): accumulates multiple calls")
     @Test
     public void recordReadStatistics_accumulatesMultipleCalls() throws IOException {
         // arrange
@@ -4543,6 +4865,7 @@ public class StreamBufferTest {
     // Integration tests: Verify statistics are updated during actual read operations
     // These tests ensure recordReadStatistics() is actually called in the read path
 
+    @DisplayName("statistics(): array read — updates counter during integration")
     @Test
     public void statistics_arrayRead_updatesCounterDuringIntegration() throws IOException {
         // arrange
@@ -4561,6 +4884,7 @@ public class StreamBufferTest {
         assertThat(sb.getTotalBytesRead(), is(5L));
     }
 
+    @DisplayName("statistics(): single byte read — updates counter during integration")
     @Test
     public void statistics_singleByteRead_updatesCounterDuringIntegration() throws IOException {
         // arrange
@@ -4580,6 +4904,7 @@ public class StreamBufferTest {
         assertThat(sb.getTotalBytesRead(), is(2L));
     }
 
+    @DisplayName("statistics(): partial array read — updates counter correctly")
     @Test
     public void statistics_partialArrayRead_updatesCounterCorrectly() throws IOException {
         // arrange
@@ -4598,6 +4923,7 @@ public class StreamBufferTest {
         assertThat(sb.getTotalBytesRead(), is(3L));
     }
 
+    @DisplayName("statistics(): multiple reads — accumulate correctly")
     @Test
     public void statistics_multipleReads_accumulateCorrectly() throws IOException {
         // arrange
@@ -4726,46 +5052,55 @@ public class StreamBufferTest {
         );
     }
 
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="Direct Tests for Boundary Condition Functions">
+    @Nested
+    @DisplayName("boundary condition functions — direct")
+    class BoundaryConditionFunctionTests {
 
+    @DisplayName("isAvailableBytesPositive(): with zero — returns false")
     @Test
     public void isAvailableBytesPositive_withZero_returnsFalse() {
         StreamBuffer sb = new StreamBuffer();
         assertThat(sb.isAvailableBytesPositive(0), is(false));
     }
 
+    @DisplayName("isAvailableBytesPositive(): with one — returns true")
     @Test
     public void isAvailableBytesPositive_withOne_returnsTrue() {
         StreamBuffer sb = new StreamBuffer();
         assertThat(sb.isAvailableBytesPositive(1), is(true));
     }
 
+    @DisplayName("isAvailableBytesPositive(): with negative — returns false")
     @Test
     public void isAvailableBytesPositive_withNegative_returnsFalse() {
         StreamBuffer sb = new StreamBuffer();
         assertThat(sb.isAvailableBytesPositive(-1), is(false));
     }
 
+    @DisplayName("isMaxAllocSizeLessThanAvailable(): with less — returns true")
     @Test
     public void isMaxAllocSizeLessThanAvailable_withLess_returnsTrue() {
         StreamBuffer sb = new StreamBuffer();
         assertThat(sb.isMaxAllocSizeLessThanAvailable(100, 200), is(true));
     }
 
+    @DisplayName("isMaxAllocSizeLessThanAvailable(): with equal — returns false")
     @Test
     public void isMaxAllocSizeLessThanAvailable_withEqual_returnsFalse() {
         StreamBuffer sb = new StreamBuffer();
         assertThat(sb.isMaxAllocSizeLessThanAvailable(100, 100), is(false));
     }
 
+    @DisplayName("isMaxAllocSizeLessThanAvailable(): with greater — returns false")
     @Test
     public void isMaxAllocSizeLessThanAvailable_withGreater_returnsFalse() {
         StreamBuffer sb = new StreamBuffer();
         assertThat(sb.isMaxAllocSizeLessThanAvailable(200, 100), is(false));
     }
 
+    @DisplayName("shouldCheckEdgeCase(): with both conditions true — returns true")
     @Test
     public void shouldCheckEdgeCase_withBothConditionsTrue_returnsTrue() {
         StreamBuffer sb = new StreamBuffer();
@@ -4773,6 +5108,7 @@ public class StreamBufferTest {
         assertThat(sb.shouldCheckEdgeCase(200, 100), is(true));
     }
 
+    @DisplayName("shouldCheckEdgeCase(): with available bytes zero — returns false")
     @Test
     public void shouldCheckEdgeCase_withAvailableBytesZero_returnsFalse() {
         StreamBuffer sb = new StreamBuffer();
@@ -4780,6 +5116,7 @@ public class StreamBufferTest {
         assertThat(sb.shouldCheckEdgeCase(0, 100), is(false));
     }
 
+    @DisplayName("shouldCheckEdgeCase(): with max alloc size equal — returns false")
     @Test
     public void shouldCheckEdgeCase_withMaxAllocSizeEqual_returnsFalse() {
         StreamBuffer sb = new StreamBuffer();
@@ -4787,6 +5124,7 @@ public class StreamBufferTest {
         assertThat(sb.shouldCheckEdgeCase(100, 100), is(false));
     }
 
+    @DisplayName("shouldCheckEdgeCase(): with max alloc size greater — returns false")
     @Test
     public void shouldCheckEdgeCase_withMaxAllocSizeGreater_returnsFalse() {
         StreamBuffer sb = new StreamBuffer();
@@ -4794,9 +5132,11 @@ public class StreamBufferTest {
         assertThat(sb.shouldCheckEdgeCase(50, 100), is(false));
     }
 
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="Exception Safety & Signal Management">
+    @Nested
+    @DisplayName("exception safety and signal management")
+    class ExceptionSafetyAndSignalManagementTests {
 
     /**
      * CRITICAL TEST SECTION: Exception Safety During Trim Operations
@@ -4820,6 +5160,7 @@ public class StreamBufferTest {
      * exception scenario and why the fix prevents problems.
      */
 
+    @DisplayName("trim(): exception during read — flag resets in finally")
     @Test
     public void trim_exceptionDuringRead_flagResetsInFinally() throws IOException {
         // arrange — Verify that isTrimRunning is reset even if exception occurs during is.read()
@@ -4840,6 +5181,7 @@ public class StreamBufferTest {
         assertThat(sb.isTrimRunning(), is(false));
     }
 
+    @DisplayName("trim(): exception during write — flag resets in finally")
     @Test
     public void trim_exceptionDuringWrite_flagResetsInFinally() throws IOException {
         // arrange — Similar to above but focused on write phase of trim
@@ -4872,6 +5214,7 @@ public class StreamBufferTest {
         assertThat(totalRead, is(800));
     }
 
+    @DisplayName("setMaxAllocationSize(): during normal operation — applies immediately")
     @Test
     public void setMaxAllocationSize_duringNormalOperation_appliesImmediately() throws IOException {
         // arrange
@@ -4903,6 +5246,7 @@ public class StreamBufferTest {
         assertThat(totalRead, is(150));
     }
 
+    @DisplayName("trim(): signal operations concurrent — handles safely")
     @Test
     public void trim_signalOperationsConcurrent_handlesSafely() throws IOException, InterruptedException {
         // arrange
@@ -4935,6 +5279,7 @@ public class StreamBufferTest {
         sb.removeTrimEndSignal(trimEnded);
     }
 
+    @DisplayName("ignoreSafeWrite(): reset after trim")
     @Test
     public void ignoreSafeWrite_resetAfterTrim() throws IOException {
         // arrange — Verify that ignoreSafeWrite flag is properly reset after trim
@@ -4968,6 +5313,7 @@ public class StreamBufferTest {
         assertThat(result[249], is(anyValue));
     }
 
+    @DisplayName("largeBuffer(): with small allocation size — handles correctly")
     @Test
     public void largeBuffer_withSmallAllocationSize_handlesCorrectly() throws IOException {
         // arrange — Test buffer overflow scenario with extreme constraints
@@ -5029,6 +5375,7 @@ public class StreamBufferTest {
      * - addTrimEndSignal(Semaphore) releases semaphore when trim() completes
      * This allows precise test synchronization without mocking or instrumentation.
      */
+    @DisplayName("setMaxBufferElements(): during trim execution — does not affect running trim")
     @Test
     @Timeout(10)  // 10 second timeout to prevent hanging if sync fails
     public void setMaxBufferElements_duringTrimExecution_doesNotAffectRunningTrim() throws IOException, InterruptedException {
@@ -5118,6 +5465,7 @@ public class StreamBufferTest {
      * maxAllocationSize is also only read once via getMaxAllocationSize() in isTrimShouldBeExecuted(),
      * so trim execution is isolated from config changes.
      */
+    @DisplayName("setMaxAllocationSize(): during trim execution — does not affect running trim")
     @Test
     @Timeout(10)
     public void setMaxAllocationSize_duringTrimExecution_doesNotAffectRunningTrim() throws IOException, InterruptedException {
@@ -5177,9 +5525,8 @@ public class StreamBufferTest {
         writerThread.join(2000);
     }
 
-    // </editor-fold>
+    }
 
-    // <editor-fold defaultstate="collapsed" desc="Configuration Changes During Trim">
 
     /**
      * CORRECTNESS TESTS: Configuration changes don't affect running trim operations
@@ -5199,9 +5546,7 @@ public class StreamBufferTest {
      * - New configuration takes effect only in subsequent trim operations
      */
 
-    // </editor-fold>
 
-    // <editor-fold defaultstate="collapsed" desc="Trim Robustness & Edge Cases">
 
     /**
      * ROBUSTNESS TESTS: Edge cases and stress scenarios for trim operation
@@ -5217,6 +5562,5 @@ public class StreamBufferTest {
      * maintaining data integrity and flag consistency.
      */
 
-    // </editor-fold>
 
 }
