@@ -69,6 +69,13 @@ jobs:
         with:
           distribution: 'zulu'
           java-version: '17'
+      - name: Delete old snapshot versions from GitHub Packages
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: 'net.ladenthin.streambuffer'
+          package-type: 'maven'
+          min-versions-to-keep: 0
+        continue-on-error: true
       - name: Publish to GitHub Packages
         run: |
           mvn --batch-mode deploy -s .mvn/settings.xml -Dmaven.test.skip=true
