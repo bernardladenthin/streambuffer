@@ -464,17 +464,18 @@ public class StreamBuffer implements Closeable {
                     tmpBuffer.add(buf);
                 }
                 /**
-                 * Write all previously read parts back to the buffer. The buffer is
-                 * clean and contains no elements because all parts are read out.
+                 * Write all previously read parts back to the buffer directly.
+                 * We are already holding {@link #bufferLock} and the chunks were
+                 * just produced internally, so going through {@link SBOutputStream#write}
+                 * is unnecessary and would fail at {@link #requireNonClosed()} if
+                 * {@link #close()} is invoked concurrently — discarding tmpBuffer
+                 * and losing every byte that trim already drained.
                  */
-                try {
-                    ignoreSafeWrite = true;
-                    while (!tmpBuffer.isEmpty()) {
-                        // pollFirst returns always a non null value, tmpBuffer is only filled with non null values
-                        os.write(tmpBuffer.pollFirst());
-                    }
-                } finally {
-                    ignoreSafeWrite = false;
+                while (!tmpBuffer.isEmpty()) {
+                    // pollFirst returns always a non null value, tmpBuffer is only filled with non null values
+                    final byte[] chunk = tmpBuffer.pollFirst();
+                    buffer.add(chunk);
+                    availableBytes += chunk.length;
                 }
             } finally {
                 isTrimRunning = false;
