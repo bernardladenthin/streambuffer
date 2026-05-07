@@ -34,6 +34,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
@@ -4783,6 +4784,55 @@ public class StreamBufferTest {
             Arrays.equals(actual, expected), is(true));
 
         sb.removeTrimStartSignal(closeOnTrimStart);
+    }
+
+    @DisplayName("isTrimShouldBeExecuted(): nested trim attempt during running trim — guard returns false")
+    @Test
+    public void isTrimShouldBeExecuted_nestedAttemptDuringRunningTrim_isBlockedByGuard() throws IOException {
+        final StreamBuffer sb = new StreamBuffer();
+        final OutputStream os = sb.getOutputStream();
+        final InputStream is = sb.getInputStream();
+        sb.setMaxBufferElements(2);
+
+        final AtomicInteger trimStartCount = new AtomicInteger();
+
+        // Hook runs synchronously on the trim thread inside releaseTrimStartSignals(),
+        // while isTrimRunning == true. On its first invocation it adds more data and
+        // forces a nested write/trim attempt. Without the isTrimRunning guard, the
+        // nested trim would re-fire releaseTrimStartSignals() and count -> 2.
+        final Semaphore hook = new Semaphore(0) {
+            @Override
+            public void release() {
+                if (trimStartCount.incrementAndGet() == 1) {
+                    try {
+                        os.write(new byte[]{10, 11, 12});  // attempts to retrigger trim
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+                super.release();
+            }
+        };
+        sb.addTrimStartSignal(hook);
+
+        os.write(new byte[]{1, 2, 3});
+        os.write(new byte[]{4, 5, 6});      // at limit, no trim yet
+        os.write(new byte[]{7, 8, 9});      // triggers outer trim
+
+        assertThat("isTrimRunning guard must block recursive trim",
+            trimStartCount.get(), is(1));
+
+        // Round-trip sanity: every byte readable in order.
+        final byte[] expected = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
+        final byte[] actual = new byte[expected.length];
+        int n, total = 0;
+        while (total < expected.length && (n = is.read(actual, total, expected.length - total)) > 0) {
+            total += n;
+        }
+        assertThat(total, is(expected.length));
+        assertThat(Arrays.equals(actual, expected), is(true));
+
+        sb.removeTrimStartSignal(hook);
     }
 
     // Test extracted boundary checking methods
