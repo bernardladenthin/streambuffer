@@ -4685,6 +4685,97 @@ public class StreamBufferTest {
         }
     }
 
+    /**
+     * DETERMINISTIC reproduction of the race condition exercised flakily by
+     * {@link #trim_closeCalledDuringTrim_handlesGracefully()}.
+     *
+     * <p>Strategy: hook {@code addTrimStartSignal} with a semaphore whose
+     * {@code release()} synchronously calls {@code sb.close()}. The hook runs
+     * on the trim thread itself, BEFORE the read/write-back phases. By the
+     * time trim reaches its write-back phase, {@code streamClosed} is already
+     * {@code true}, so any internal {@code os.write()} call inside trim will
+     * fail at {@code requireNonClosed()}.
+     *
+     * <p>This is single-threaded — no executor, no latches, no sleeps,
+     * no thread-scheduling timing windows.
+     *
+     * <p>Asserts the two real bugs:
+     * <ol>
+     *   <li>The triggering write must not throw — trim's internal
+     *       reorganization should be insulated from a concurrent close.</li>
+     *   <li>No data loss — every byte written before the close must remain
+     *       readable from the input stream.</li>
+     * </ol>
+     */
+    @DisplayName("trim(): close during trim — write-back must not throw and must not lose data")
+    @Test
+    public void trim_closeDuringTrim_writeBackDoesNotThrowAndPreservesData() throws IOException {
+        // arrange
+        final StreamBuffer sb = new StreamBuffer();
+        final OutputStream os = sb.getOutputStream();
+        final InputStream is = sb.getInputStream();
+
+        // Hook fires synchronously on the trim thread, BEFORE read/write-back.
+        // Calling close() here makes streamClosed=true deterministically before
+        // trim's internal os.write() runs requireNonClosed().
+        final Semaphore closeOnTrimStart = new Semaphore(0) {
+            private boolean fired = false;
+            @Override
+            public void release() {
+                if (!fired) {
+                    fired = true;
+                    try {
+                        sb.close();
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+                super.release();
+            }
+        };
+        sb.addTrimStartSignal(closeOnTrimStart);
+        sb.setMaxBufferElements(2);
+
+        // Pre-populate buffer with two chunks (at limit, no trim yet).
+        os.write(new byte[]{1, 2, 3});
+        os.write(new byte[]{4, 5, 6});
+
+        // act — this third write pushes element count over maxBufferElements,
+        //       trim() runs, hook closes the stream, write-back hits the bug.
+        IOException thrown = null;
+        try {
+            os.write(new byte[]{7, 8, 9});
+        } catch (IOException e) {
+            thrown = e;
+        }
+
+        // assert — bug 1: trim's internal write-back must not surface as a
+        // user-visible IOException on a write that was issued while the stream
+        // was still open.
+        assertThat("Triggering write must not throw — trim's write-back leaked "
+                 + "an IOException from its internal os.write() requireNonClosed() check",
+            thrown, is((IOException) null));
+
+        // assert — bug 2: every byte must still be readable. If trim's
+        // write-back aborted, tmpBuffer was discarded and all 9 bytes are lost.
+        final byte[] expected = {1, 2, 3, 4, 5, 6, 7, 8, 9};
+        final byte[] actual = new byte[expected.length];
+        int total = 0;
+        while (total < expected.length) {
+            final int n = is.read(actual, total, expected.length - total);
+            if (n < 0) {
+                break;
+            }
+            total += n;
+        }
+        assertThat("All bytes written before close must be preserved through trim",
+            total, is(expected.length));
+        assertThat("Buffered bytes must round-trip unchanged",
+            Arrays.equals(actual, expected), is(true));
+
+        sb.removeTrimStartSignal(closeOnTrimStart);
+    }
+
     // Test extracted boundary checking methods
 
     @DisplayName("isAvailableBytesPositive(): zero — returns false")
