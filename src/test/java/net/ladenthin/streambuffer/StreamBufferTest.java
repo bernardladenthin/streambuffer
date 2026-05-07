@@ -4613,16 +4613,25 @@ public class StreamBufferTest {
         final AtomicReference<Exception> thread2Exception = new AtomicReference<>(null);
 
         try {
-            // act — Thread 1: Write data to trigger trim
+            // act — Thread 1: Write data to trigger trim.
+            // Once close() races in, writes correctly throw IOException("Stream closed.")
+            // from the public requireNonClosed() guard — that is expected behaviour and
+            // must not be treated as a test failure.  Only unexpected exceptions are
+            // captured so the assertion below stays meaningful.
             java.util.concurrent.Future<?> trimTask = executor.submit(() -> {
-                try {
-                    // Write enough data to trigger trim on successive writes
-                    // This will take time due to consolidation
-                    for (int i = 0; i < 100; i++) {
+                for (int i = 0; i < 100; i++) {
+                    try {
                         os.write(largeData);
+                    } catch (IOException e) {
+                        if ("Stream closed.".equals(e.getMessage())) {
+                            break; // expected: close() raced ahead — not a bug
+                        }
+                        thread1Exception.set(e);
+                        break;
+                    } catch (Exception e) {
+                        thread1Exception.set(e);
+                        break;
                     }
-                } catch (Exception e) {
-                    thread1Exception.set(e);
                 }
             });
 
