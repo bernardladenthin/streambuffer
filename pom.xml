@@ -57,6 +57,13 @@
         <developerConnection>scm:git:https://github.com/bernardladenthin/streambuffer</developerConnection>
         <url>https://github.com/bernardladenthin/streambuffer</url>
     </scm>
+    <distributionManagement>
+        <repository>
+            <id>github</id>
+            <name>GitHub Packages</name>
+            <url>https://maven.pkg.github.com/bernardladenthin/streambuffer</url>
+        </repository>
+    </distributionManagement>
     <dependencies>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
