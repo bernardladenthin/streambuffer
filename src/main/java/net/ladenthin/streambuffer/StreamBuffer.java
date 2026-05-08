@@ -276,7 +276,7 @@ public class StreamBuffer implements Closeable {
     /**
      * Returns the current number of byte arrays in the internal queue.
      * <strong>Note:</strong> This value can change at any time in concurrent scenarios
-     * due to write/read operations or {@link #trim()} consolidation.
+     * due to {@link java.io.OutputStream#write(int)} / {@link java.io.InputStream#read()} operations or {@link #trim()} consolidation.
      * The caller must not rely on this value remaining constant between method calls.
      *
      * @return the number of byte arrays currently in the queue.
@@ -521,8 +521,8 @@ public class StreamBuffer implements Closeable {
     /**
      * Pure function to decide if trim should execute based on buffer state.
      * Contains all decision logic for the trim decision tree:
-     * - maxBufferElements validity check (≤ 0 is invalid)
-     * - buffer size constraints (must be ≥ 2)
+     * - maxBufferElements validity check (&#x2264; 0 is invalid)
+     * - buffer size constraints (must be &#x2265; 2)
      * - current size vs max limit check (must exceed max)
      * - edge case: consolidation chunk count analysis
      *
@@ -530,13 +530,13 @@ public class StreamBuffer implements Closeable {
      * All parameters are value-based, not references to mutable state.
      *
      * Decision logic:
-     * 1. If maxBufferElements ≤ 0: invalid configuration → return false
-     * 2. If currentBufferSize &lt; 2: buffer too small to consolidate → return false
-     * 3. If currentBufferSize ≤ maxBufferElements: within limit → return false
+     * 1. If maxBufferElements &#x2264; 0: invalid configuration &#x2192; return false
+     * 2. If currentBufferSize &lt; 2: buffer too small to consolidate &#x2192; return false
+     * 3. If currentBufferSize &#x2264; maxBufferElements: within limit &#x2192; return false
      * 4. If edge case applies:
      *    - Calculate resulting chunks: ceil(availableBytes / maxAllocationSize)
-     *    - If resultingChunks ≥ currentBufferSize: consolidation wouldn't reduce → return false
-     * 5. Otherwise: all conditions met → return true
+     *    - If resultingChunks &#x2265; currentBufferSize: consolidation wouldn't reduce &#x2192; return false
+     * 5. Otherwise: all conditions met &#x2192; return true
      *
      * @param currentBufferSize number of byte arrays in buffer Deque
      * @param maxBufferElements maximum allowed elements before trim triggers
@@ -625,8 +625,8 @@ public class StreamBuffer implements Closeable {
      * Result: NO DATA LOSS, NO OVERFLOW - all data is processed correctly.
      *
      * EXAMPLE FLOW (5GB data):
-     *   Iteration 1: available() → clamped to 2,147,483,647 bytes → read and consolidate
-     *   Iteration 2: available() → clamped to remaining bytes → read and consolidate
+     *   Iteration 1: available() &#x2192; clamped to 2,147,483,647 bytes &#x2192; read and consolidate
+     *   Iteration 2: available() &#x2192; clamped to remaining bytes &#x2192; read and consolidate
      *   ... continues until availableBytes == 0
      *
      * This design allows StreamBuffer to theoretically support buffers larger than 2GB
@@ -695,7 +695,7 @@ public class StreamBuffer implements Closeable {
     }
 
     /**
-     * Check if available bytes is positive (boundary: > 0).
+     * Check if available bytes is positive (boundary: &gt; 0).
      * Package-private for direct unit testing of boundary conditions.
      */
     boolean isAvailableBytesPositive(long availableBytes) {
@@ -711,7 +711,7 @@ public class StreamBuffer implements Closeable {
     }
 
     /**
-     * Check if edge case check should be performed (available bytes > 0 AND maxAllocSize &lt; availableBytes).
+     * Check if edge case check should be performed (available bytes &gt; 0 AND maxAllocSize &lt; availableBytes).
      * Package-private for direct unit testing of boundary conditions.
      */
     boolean shouldCheckEdgeCase(long availableBytes, long maxAllocSize) {
@@ -730,7 +730,7 @@ public class StreamBuffer implements Closeable {
     }
 
     /**
-     * Check if available bytes exceeds current max observed (boundary: >).
+     * Check if available bytes exceeds current max observed (boundary: &gt;).
      * Package-private for direct unit testing of boundary conditions.
      */
     boolean shouldUpdateMaxObservedBytes(long availableBytes, long currentMax) {
