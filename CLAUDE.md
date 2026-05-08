@@ -50,3 +50,21 @@ mvn org.pitest:pitest-maven:mutationCoverage
 ### Tests
 
 `src/test/java/net/ladenthin/streambuffer/StreamBufferTest.java` uses JUnit 4 with `DataProviderRunner`. Most tests are parameterized across 3 write variants (`ByteArray`, `Int`, `ByteArrayWithParameter`) defined in `WriteMethod.java`.
+
+## Javadoc Conventions
+
+### HTML Entities
+
+In Javadoc comments, never use bare Unicode characters for operators and symbols. Use HTML entities instead:
+
+| Symbol | HTML entity |
+|---|---|
+| `<` | `&lt;` |
+| `>` | `&gt;` |
+| `≤` | `&#x2264;` |
+| `≥` | `&#x2265;` |
+| `→` | `&#x2192;` |
+| `←` | `&#x2190;` |
+| `≠` | `&#x2260;` |
+
+Use numeric hex entities (`&#xNNNN;`) for any Unicode symbol outside ASCII. Named entities (`&lt;`, `&gt;`) are acceptable for `<` and `>`.
