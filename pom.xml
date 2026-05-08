@@ -129,6 +129,7 @@
                 <version>3.12.0</version>
                 <configuration>
                     <source>${java.version}</source>
+                    <doclint>none</doclint>
                 </configuration>
                 <executions>
                     <execution>
