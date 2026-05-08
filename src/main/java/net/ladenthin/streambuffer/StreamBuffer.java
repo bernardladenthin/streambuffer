@@ -276,7 +276,7 @@ public class StreamBuffer implements Closeable {
     /**
      * Returns the current number of byte arrays in the internal queue.
      * <strong>Note:</strong> This value can change at any time in concurrent scenarios
-     * due to {@link #write(int)} / {@link #read()} operations or {@link #trim()} consolidation.
+     * due to write/read operations or {@link #trim()} consolidation.
      * The caller must not rely on this value remaining constant between method calls.
      *
      * @return the number of byte arrays currently in the queue.
@@ -422,6 +422,8 @@ public class StreamBuffer implements Closeable {
     
     /**
      * Use {@link #tryWaitForEnoughBytes(long)}.
+     *
+     * @throws InterruptedException if the current thread is interrupted
      */
     @Deprecated
     public void blockDataAvailable() throws InterruptedException {
@@ -529,7 +531,7 @@ public class StreamBuffer implements Closeable {
      *
      * Decision logic:
      * 1. If maxBufferElements ≤ 0: invalid configuration → return false
-     * 2. If currentBufferSize < 2: buffer too small to consolidate → return false
+     * 2. If currentBufferSize &lt; 2: buffer too small to consolidate → return false
      * 3. If currentBufferSize ≤ maxBufferElements: within limit → return false
      * 4. If edge case applies:
      *    - Calculate resulting chunks: ceil(availableBytes / maxAllocationSize)
@@ -701,7 +703,7 @@ public class StreamBuffer implements Closeable {
     }
 
     /**
-     * Check if max allocation size is less than available bytes (boundary: <).
+     * Check if max allocation size is less than available bytes (boundary: &lt;).
      * Package-private for direct unit testing of boundary conditions.
      */
     boolean isMaxAllocSizeLessThanAvailable(long maxAllocSize, long availableBytes) {
@@ -709,7 +711,7 @@ public class StreamBuffer implements Closeable {
     }
 
     /**
-     * Check if edge case check should be performed (available bytes > 0 AND maxAllocSize < availableBytes).
+     * Check if edge case check should be performed (available bytes > 0 AND maxAllocSize &lt; availableBytes).
      * Package-private for direct unit testing of boundary conditions.
      */
     boolean shouldCheckEdgeCase(long availableBytes, long maxAllocSize) {
