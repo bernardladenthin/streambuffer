@@ -49,9 +49,64 @@ jobs:
           path: target/site/jacoco/jacoco.xml
           if-no-files-found: ignore
 
+  report:
+    name: Report
+    needs: [test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with: { java-version: '17', distribution: temurin, cache: maven }
+      - uses: actions/download-artifact@v8
+        with: { name: jacoco-report, path: target/site/jacoco/ }
+        continue-on-error: true
+      - uses: advanced-security/maven-dependency-submission-action@v5
+      - name: Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          file: target/site/jacoco/jacoco.xml
+          format: jacoco
+        continue-on-error: true
+      - name: Codecov
+        uses: codecov/codecov-action@v6
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: target/site/jacoco/jacoco.xml
+        continue-on-error: true
+      - name: Run PIT mutation tests
+        run: mvn --batch-mode test-compile org.pitest:pitest-maven:mutationCoverage -Dmaven.javadoc.skip=true
+      - name: Extract PIT survivors
+        if: always()
+        run: |
+          echo "=== PIT Survived Mutations ==="
+          for html_file in $(find target/pit-reports -name "*.html" -type f | sort); do
+            if grep -q "SURVIVED" "$html_file"; then
+              echo "Found survivors in $html_file:"
+              grep -B 2 -A 3 "SURVIVED" "$html_file"
+              echo ""
+            fi
+          done
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with: { name: pit-reports, path: target/pit-reports/ }
+      - name: Run JMH benchmarks
+        run: >
+          mvn --batch-mode exec:java
+          -Dexec.mainClass=org.openjdk.jmh.Main
+          -Dexec.classpathScope=test
+          -Dexec.args="StreamBufferThroughputBenchmark -wi 2 -i 3 -f 0 -rf json -rff target/jmh-results.json"
+          -Dmaven.javadoc.skip=true
+        continue-on-error: true
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with: { name: jmh-results, path: target/jmh-results.json }
+
   publish-snapshot:
     name: Publish Snapshot to Central
-    needs: [test]
+    needs: [report]
     if: >-
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       github.event_name == 'workflow_dispatch'
@@ -75,7 +130,7 @@ jobs:
 
   publish-release:
     name: Publish Release to Central
-    needs: [test]
+    needs: [report]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     environment: maven-central
@@ -114,63 +169,3 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: release-assets/*
-
-  post-publish:
-    name: Post-Publish
-    needs: [test, publish-snapshot, publish-release]
-    if: >-
-      always() &&
-      needs.test.result == 'success' &&
-      (needs.publish-snapshot.result == 'success' ||
-       needs.publish-release.result == 'success')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-java@v5
-        with: { java-version: '17', distribution: temurin, cache: maven }
-      - uses: actions/download-artifact@v8
-        with: { name: jacoco-report, path: target/site/jacoco/ }
-        continue-on-error: true
-      - uses: advanced-security/maven-dependency-submission-action@v5
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v6
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: target/site/jacoco/jacoco.xml
-        continue-on-error: true
-      - name: Coveralls
-        uses: coverallsapp/github-action@v2
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          file: target/site/jacoco/jacoco.xml
-          format: jacoco
-        continue-on-error: true
-      - name: Run PIT mutation tests
-        run: mvn --batch-mode test-compile org.pitest:pitest-maven:mutationCoverage -Dmaven.javadoc.skip=true
-      - name: Extract PIT survivors
-        if: always()
-        run: |
-          echo "=== PIT Survived Mutations ==="
-          for html_file in $(find target/pit-reports -name "*.html" -type f | sort); do
-            if grep -q "SURVIVED" "$html_file"; then
-              echo "Found survivors in $html_file:"
-              grep -B 2 -A 3 "SURVIVED" "$html_file"
-              echo ""
-            fi
-          done
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with: { name: pit-reports, path: target/pit-reports/ }
-      - name: Run JMH benchmarks
-        run: >
-          mvn --batch-mode exec:java
-          -Dexec.mainClass=org.openjdk.jmh.Main
-          -Dexec.classpathScope=test
-          -Dexec.args="StreamBufferThroughputBenchmark -wi 2 -i 3 -f 0 -rf json -rff target/jmh-results.json"
-          -Dmaven.javadoc.skip=true
-        continue-on-error: true
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with: { name: jmh-results, path: target/jmh-results.json }
