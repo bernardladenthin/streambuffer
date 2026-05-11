@@ -151,7 +151,7 @@ jobs:
           mvn --batch-mode exec:java
           -Dexec.mainClass=org.openjdk.jmh.Main
           -Dexec.classpathScope=test
-          -Dexec.args="StreamBufferThroughputBenchmark -wi 2 -i 3 -f 1 -rf json -rff target/jmh-results.json"
+          -Dexec.args="StreamBufferThroughputBenchmark -wi 2 -i 3 -f 0 -rf json -rff target/jmh-results.json"
           -Dmaven.javadoc.skip=true
         continue-on-error: true
       - uses: actions/upload-artifact@v7
