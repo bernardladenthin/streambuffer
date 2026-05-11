@@ -146,3 +146,14 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with: { name: pit-reports, path: target/pit-reports/ }
+      - name: Run JMH benchmarks
+        run: >
+          mvn --batch-mode exec:java
+          -Dexec.mainClass=org.openjdk.jmh.Main
+          -Dexec.classpathScope=test
+          -Dexec.args="StreamBufferThroughputBenchmark -wi 2 -i 3 -f 1 -rf json -rff target/jmh-results.json"
+          -Dmaven.javadoc.skip=true
+        continue-on-error: true
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with: { name: jmh-results, path: target/jmh-results.json }
