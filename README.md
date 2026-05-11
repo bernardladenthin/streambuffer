@@ -23,7 +23,7 @@ Pull it from the central Maven repositories:
 <dependency>
   <groupId>net.ladenthin</groupId>
   <artifactId>streambuffer</artifactId>
-  <version>1.1.0</version>
+  <version>1.2.0</version>
 </dependency>
 ```
 
