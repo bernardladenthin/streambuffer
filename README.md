@@ -1,13 +1,18 @@
-[![Travis build status](https://travis-ci.org/bernardladenthin/streambuffer.svg)](https://travis-ci.org/bernardladenthin/streambuffer)
-[![Maven Central](https://maven-badges.herokuapp.com/maven-central/net.ladenthin/streambuffer/badge.svg)](https://maven-badges.herokuapp.com/maven-central/net.ladenthin/streambuffer)
+<!-- =========================== Build & Environment =========================== -->
+![Java 8+](https://img.shields.io/badge/Java-8%2B-informational)
+[![Publish](https://github.com/bernardladenthin/streambuffer/actions/workflows/publish.yml/badge.svg)](https://github.com/bernardladenthin/streambuffer/actions/workflows/publish.yml)
+[![CodeQL](https://github.com/bernardladenthin/streambuffer/actions/workflows/codeql.yml/badge.svg)](https://github.com/bernardladenthin/streambuffer/actions/workflows/codeql.yml)
+<!-- =========================== Test Coverage =========================== -->
 [![Coverage Status](https://coveralls.io/repos/github/bernardladenthin/streambuffer/badge.svg)](https://coveralls.io/github/bernardladenthin/streambuffer)
 [![codecov](https://codecov.io/gh/bernardladenthin/streambuffer/graph/badge.svg?token=BIO6krrehu)](https://codecov.io/gh/bernardladenthin/streambuffer)
+<!-- =========================== Package & Release =========================== -->
+[![Maven Central](https://img.shields.io/maven-central/v/net.ladenthin/streambuffer)](https://central.sonatype.com/artifact/net.ladenthin/streambuffer)
+<!-- =========================== Security & Compliance =========================== -->
 [![Coverity Scan Build Status](https://scan.coverity.com/projects/5453/badge.svg)](https://scan.coverity.com/projects/5453)
 [![Known Vulnerabilities](https://snyk.io/test/github/bernardladenthin/streambuffer/badge.svg?targetFile=pom.xml)](https://snyk.io/test/github/bernardladenthin/streambuffer?targetFile=pom.xml)
-[![Code Quality: Java](https://img.shields.io/lgtm/grade/java/g/bernardladenthin/streambuffer.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/bernardladenthin/streambuffer/context:java)
-[![Total Alerts](https://img.shields.io/lgtm/alerts/g/bernardladenthin/streambuffer.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/bernardladenthin/streambuffer/alerts)
-[![License](http://img.shields.io/:license-apache-blue.svg)](http://www.apache.org/licenses/LICENSE-2.0.html)
 [![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fbernardladenthin%2Fstreambuffer.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fbernardladenthin%2Fstreambuffer?ref=badge_shield)
+<!-- =========================== License =========================== -->
+[![License](http://img.shields.io/:license-apache-blue.svg)](http://www.apache.org/licenses/LICENSE-2.0.html)
 
 # streambuffer
 
