@@ -16,7 +16,10 @@
 [![Maven Central](https://img.shields.io/maven-central/v/net.ladenthin/streambuffer)](https://central.sonatype.com/artifact/net.ladenthin/streambuffer)  
 
 **License:**  
-[![License](http://img.shields.io/:license-apache-blue.svg)](http://www.apache.org/licenses/LICENSE-2.0.html)
+[![License](http://img.shields.io/:license-apache-blue.svg)](http://www.apache.org/licenses/LICENSE-2.0.html)  
+
+**Community:**  
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/12861/badge)](https://www.bestpractices.dev/projects/12861)
 
 # streambuffer
 
