@@ -1,18 +1,8 @@
-<!-- =========================== Build & Environment =========================== -->
-![Java 8+](https://img.shields.io/badge/Java-8%2B-informational)
-[![Publish](https://github.com/bernardladenthin/streambuffer/actions/workflows/publish.yml/badge.svg)](https://github.com/bernardladenthin/streambuffer/actions/workflows/publish.yml)
-[![CodeQL](https://github.com/bernardladenthin/streambuffer/actions/workflows/codeql.yml/badge.svg)](https://github.com/bernardladenthin/streambuffer/actions/workflows/codeql.yml)
-<!-- =========================== Test Coverage =========================== -->
-[![Coverage Status](https://coveralls.io/repos/github/bernardladenthin/streambuffer/badge.svg)](https://coveralls.io/github/bernardladenthin/streambuffer)
-[![codecov](https://codecov.io/gh/bernardladenthin/streambuffer/graph/badge.svg?token=BIO6krrehu)](https://codecov.io/gh/bernardladenthin/streambuffer)
-<!-- =========================== Package & Release =========================== -->
-[![Maven Central](https://img.shields.io/maven-central/v/net.ladenthin/streambuffer)](https://central.sonatype.com/artifact/net.ladenthin/streambuffer)
-<!-- =========================== Security & Compliance =========================== -->
-[![Coverity Scan Build Status](https://scan.coverity.com/projects/5453/badge.svg)](https://scan.coverity.com/projects/5453)
-[![Known Vulnerabilities](https://snyk.io/test/github/bernardladenthin/streambuffer/badge.svg?targetFile=pom.xml)](https://snyk.io/test/github/bernardladenthin/streambuffer?targetFile=pom.xml)
-[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fbernardladenthin%2Fstreambuffer.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fbernardladenthin%2Fstreambuffer?ref=badge_shield)
-<!-- =========================== License =========================== -->
-[![License](http://img.shields.io/:license-apache-blue.svg)](http://www.apache.org/licenses/LICENSE-2.0.html)
+**Build:** ![Java 8+](https://img.shields.io/badge/Java-8%2B-informational) [![Publish](https://github.com/bernardladenthin/streambuffer/actions/workflows/publish.yml/badge.svg)](https://github.com/bernardladenthin/streambuffer/actions/workflows/publish.yml) [![CodeQL](https://github.com/bernardladenthin/streambuffer/actions/workflows/codeql.yml/badge.svg)](https://github.com/bernardladenthin/streambuffer/actions/workflows/codeql.yml)  
+**Coverage:** [![Coverage Status](https://coveralls.io/repos/github/bernardladenthin/streambuffer/badge.svg)](https://coveralls.io/github/bernardladenthin/streambuffer) [![codecov](https://codecov.io/gh/bernardladenthin/streambuffer/graph/badge.svg?token=BIO6krrehu)](https://codecov.io/gh/bernardladenthin/streambuffer)  
+**Security:** [![Coverity Scan Build Status](https://scan.coverity.com/projects/5453/badge.svg)](https://scan.coverity.com/projects/5453) [![Known Vulnerabilities](https://snyk.io/test/github/bernardladenthin/streambuffer/badge.svg?targetFile=pom.xml)](https://snyk.io/test/github/bernardladenthin/streambuffer?targetFile=pom.xml) [![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fbernardladenthin%2Fstreambuffer.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fbernardladenthin%2Fstreambuffer?ref=badge_shield)  
+**Package:** [![Maven Central](https://img.shields.io/maven-central/v/net.ladenthin/streambuffer)](https://central.sonatype.com/artifact/net.ladenthin/streambuffer)  
+**License:** [![License](http://img.shields.io/:license-apache-blue.svg)](http://www.apache.org/licenses/LICENSE-2.0.html)
 
 # streambuffer
 
