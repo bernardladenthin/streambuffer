@@ -1,0 +1,28 @@
+version = 1
+SPDX-PackageName = "streambuffer"
+SPDX-PackageSupplier = "Bernard Ladenthin <bernard.ladenthin@gmail.com>"
+SPDX-PackageDownloadLocation = "https://github.com/bernardladenthin/streambuffer"
+
+[[annotations]]
+path = ["**.md", "CITATION.cff"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2014-2026 Bernard Ladenthin <bernard.ladenthin@gmail.com>"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = [".github/ISSUE_TEMPLATE/bug_report.md", ".github/ISSUE_TEMPLATE/feature_request.md", ".github/PULL_REQUEST_TEMPLATE.md"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2014-2026 Bernard Ladenthin <bernard.ladenthin@gmail.com>"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = ["docs/RELEASE.md", "docs/history/AUDIT_REMOVED_FEATURES.md", "docs/history/TEST_COVERAGE_ADDITIONS.md"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2014-2026 Bernard Ladenthin <bernard.ladenthin@gmail.com>"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = ".claude/skills/java-tdd-guide/SKILL.md"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Bernard Ladenthin <bernard.ladenthin@gmail.com>"
+SPDX-License-Identifier = "Apache-2.0"
