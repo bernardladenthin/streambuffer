@@ -77,4 +77,4 @@ Tests live in `src/test/java/net/ladenthin/streambuffer/StreamBufferTest.java` a
 
 ## 7. License of Contributions
 
-By submitting a pull request you agree that your contributions will be licensed under the **Apache License, Version 2.0** — the same license that covers this project. See [`LICENSE-2.0.txt`](LICENSE-2.0.txt) for the full text.
+By submitting a pull request you agree that your contributions will be licensed under the **Apache License, Version 2.0** — the same license that covers this project. See [`LICENSE-2.0.txt`](LICENSE) for the full text.
