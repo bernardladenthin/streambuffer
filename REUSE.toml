@@ -1,0 +1,13 @@
+version = 1
+SPDX-PackageName = "streambuffer"
+SPDX-PackageSupplier = "Bernard Ladenthin <bernard.ladenthin@gmail.com>"
+SPDX-PackageDownloadLocation = "https://github.com/bernardladenthin/streambuffer"
+
+[[annotations]]
+path = [
+    "**.md",
+    "CITATION.cff",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2014-2026 Bernard Ladenthin <bernard.ladenthin@gmail.com>"
+SPDX-License-Identifier = "Apache-2.0"
