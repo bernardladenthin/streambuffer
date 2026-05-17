@@ -49,7 +49,7 @@ mvn org.pitest:pitest-maven:mutationCoverage
 
 ### Tests
 
-`src/test/java/net/ladenthin/streambuffer/StreamBufferTest.java` uses JUnit 4 with `DataProviderRunner`. Most tests are parameterized across 3 write variants (`ByteArray`, `Int`, `ByteArrayWithParameter`) defined in `WriteMethod.java`.
+`src/test/java/net/ladenthin/streambuffer/StreamBufferTest.java` uses JUnit 5 (Jupiter) with `@Nested` / `@DisplayName` grouping. Most tests are parameterized across 3 write variants (`ByteArray`, `Int`, `ByteArrayWithParameter`) defined in `WriteMethod.java` via `@ParameterizedTest` + `@EnumSource(WriteMethod.class)`.
 
 ## Javadoc Conventions
 

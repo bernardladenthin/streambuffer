@@ -1,35 +1,30 @@
 # Security Policy
 
-## Supported Versions
+## Supported versions
 
-Only the latest minor release of the current major version receives security fixes.
+Only the latest released version of streambuffer receives security fixes. Once a new release is published, the previous release is no longer supported and users are encouraged to upgrade promptly.
 
-| Version | Supported |
-|---------|-----------|
-| 1.2.x (latest release) | Yes |
-| < 1.2 | No |
+| Version                | Supported |
+|------------------------|-----------|
+| 1.2.x (latest release) | Yes       |
+| < 1.2                  | No        |
 
-Once a new minor or patch release is published, the previous release is no longer supported. Users are encouraged to upgrade promptly.
-
-## Reporting a Vulnerability
+## Reporting a vulnerability — primary channel
 
 **Please do not report security vulnerabilities through public GitHub Issues.**
 
-### Primary: GitHub Private Vulnerability Reporting
-
-Use GitHub's built-in private vulnerability reporting to disclose vulnerabilities confidentially:
+Use GitHub's built-in Private Vulnerability Reporting to disclose vulnerabilities confidentially:
 
 **https://github.com/bernardladenthin/streambuffer/security/advisories/new**
 
 This allows you to submit details privately. A maintainer will review the report and respond through the advisory thread.
 
-### Secondary: Maintainer Email
+## Reporting a vulnerability — fallback
 
-If you are unable to use GitHub's private reporting, you may contact the maintainer directly at:
+If you are unable to use GitHub's private reporting, contact the maintainer directly by email:
 
-**bernard.ladenthin@gmail.com**
-
-> **Note:** This email address is taken from the project's `pom.xml` developer record and has not been separately confirmed as a security contact. GitHub Private Vulnerability Reporting is the preferred channel.
+- **Primary:** bernard.ladenthin@gmail.com
+- **Secondary:** bernard@ladenthin.net
 
 When reporting, please include:
 
@@ -40,16 +35,39 @@ When reporting, please include:
 
 ## Response SLA
 
-We aim to acknowledge vulnerability reports within 14 days of receipt and to provide a remediation timeline within 30 days.
+We aim to:
 
-## Disclosure Policy
+- **Acknowledge** vulnerability reports within **14 days** of receipt.
+- **Provide a remediation timeline** within **30 days** of acknowledgement.
 
-This project follows **coordinated disclosure**:
+## Coordinated disclosure
+
+This project follows **coordinated disclosure** with a **90-day embargo**:
 
 1. The reporter submits the vulnerability privately.
 2. The maintainer investigates and develops a fix.
 3. A patched release is prepared and published.
-4. The vulnerability details remain under embargo until the fix is publicly released.
+4. The vulnerability details remain under embargo until the fix is publicly released, or for a maximum of 90 days from the date of acknowledgement — whichever comes first.
 5. A GitHub Security Advisory is published after the fix is available, crediting the reporter (unless they prefer to remain anonymous).
 
-We ask reporters to honour the embargo period and not disclose vulnerability details publicly until a fix has been released.
+We ask reporters to honour the embargo period and not disclose vulnerability details publicly until a fix has been released or the embargo expires.
+
+## Scope
+
+**In scope:**
+
+- The streambuffer source code under `src/main/java/net/ladenthin/streambuffer/` and its published Maven Central artifact (`net.ladenthin:streambuffer`).
+- Build and release configuration (`pom.xml`, GitHub Actions workflows under `.github/workflows/`) where it affects the integrity of published artifacts.
+
+**Out of scope:**
+
+- Third-party runtime, test, or build dependencies — these are tracked and updated by **Dependabot** and scanned by **CodeQL** (and Snyk / FOSSA). Report dependency CVEs to the upstream project.
+- Issues in the JDK, Maven, or other tools used to build streambuffer.
+
+## Security update notifications
+
+To stay informed about security updates:
+
+- **Watch the repository:** GitHub → *Watch* → *Custom* → enable **Security alerts** and **Releases**.
+- **Subscribe to releases:** https://github.com/bernardladenthin/streambuffer/releases — every fixed release is published here and to Maven Central.
+- **GitHub Security Advisories:** https://github.com/bernardladenthin/streambuffer/security/advisories — public advisories appear here after the embargo lifts.

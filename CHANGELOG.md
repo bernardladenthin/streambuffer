@@ -5,56 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Release Process
-
-> Paste this prompt into a new Claude Code session, fill in the three placeholders, and send it to perform a release.
-
-```
-Release `{PROJECT}` to Maven Central.
-
-**Step 1 — Prepare the release (do immediately):**
-1. Read the current version from `pom.xml` on `main` — it will be `{VERSION}-SNAPSHOT`
-2. Strip `-SNAPSHOT` from `pom.xml` (→ `{VERSION}`)
-3. In `README.md`, update **both**:
-   - The release dependency example to `{VERSION}`
-   - The snapshot dependency example to `{VERSION}-SNAPSHOT` (it should already match, but verify)
-4. Commit both files directly to `main` (no pull request)
-
-**Step 2 — Wait for manual confirmation:**
-I will create the `v{VERSION}` tag and GitHub release manually — wait for me to confirm
-the release is published on Maven Central before proceeding.
-
-**Step 3 — Post-release snapshot bump (after my confirmation):**
-Bump **both** files on `main`:
-- `pom.xml` → `{NEXT_VERSION}-SNAPSHOT`
-- `README.md` snapshot dependency example → `{NEXT_VERSION}-SNAPSHOT`
-
-Commit both changes together directly to `main`.
-
-**Placeholders:**
-
-| Placeholder      | Value                                        |
-|------------------|----------------------------------------------|
-| `{PROJECT}`      | *(project name)*                             |
-| `{VERSION}`      | *(release version, e.g. `1.3.0`)*           |
-| `{NEXT_VERSION}` | *(next snapshot base, e.g. `1.3.1`)*        |
-```
-
----
-
 ## [Unreleased]
 
 ### Added
 - OpenSSF Best Practices badge added to README (project 12861).
 - `CONTRIBUTING.md` with build instructions, test policy, and PR workflow.
 - `SECURITY.md` with vulnerability reporting process and response SLA.
-- `CHANGELOG.md` (this file) seeded from existing git history.
+- `CODE_OF_CONDUCT.md` based on the Contributor Covenant 2.0.
+- `docs/RELEASE.md` describing the Maven Central release process (moved out of `CHANGELOG.md`).
+- Initial `CHANGELOG.md`, retroactively populated from git tags v1.0.0–v1.2.0 and GitHub release notes.
 - Cancellable pipeline start-gate via a `startgate` GitHub Environment with configurable wait timer.
 
 ### Changed
 - CI `publish.yml`: added `check-snapshot`/`check-tag` gate jobs to fix release routing.
 - CI `publish.yml`: `softprops/action-gh-release` bumped from v2 to v3.
 - CI `publish.yml`: `org.codehaus.mojo:exec-maven-plugin` bumped to 3.6.3.
+- Release Process prompt template moved from `CHANGELOG.md` to `docs/RELEASE.md`.
 
 ## [1.2.0] - 2026-05-11
 
@@ -92,5 +58,30 @@ Commit both changes together directly to `main`.
 - JaCoCo re-enabled and JMH run in in-process mode (`-f 0`) to fix CI flakiness.
 - CodeQL action bumped from v3 to v4 with explicit workflow permissions.
 
+## [1.1.0] - 2015-02-03
+
+### Added
+- `setMaxBufferElements(int)` and `setSafeWrite(boolean)` runtime setters allowing reconfiguration after construction (commit `87cdff1`).
+
+### Changed
+- Maven plugins updated to current versions (commit `1fb046f`).
+- README and test improvements (commits `3409a44`, `9c467f1`, `d8a8b9e`, `7fe9577`).
+
+## [1.0.1] - 2014-10-31
+
+### Added
+- `blockDataAvailable()` method (commit `7a780d5`).
+
+### Changed
+- Repository moved to GitHub; version bumped to 1.0.1 (commit `5e3203c`).
+
+## [1.0.0] - 2014-09-17
+
+### Added
+- Initial public release of `net.ladenthin:streambuffer` (commit `64e8739`). Project inception year 2014 (per `pom.xml` `<inceptionYear>`).
+
 [Unreleased]: https://github.com/bernardladenthin/streambuffer/compare/v1.2.0...HEAD
-[1.2.0]: https://github.com/bernardladenthin/streambuffer/releases/tag/v1.2.0
+[1.2.0]: https://github.com/bernardladenthin/streambuffer/compare/v1.1.0...v1.2.0
+[1.1.0]: https://github.com/bernardladenthin/streambuffer/compare/v1.0.1...v1.1.0
+[1.0.1]: https://github.com/bernardladenthin/streambuffer/compare/v1.0.0...v1.0.1
+[1.0.0]: https://github.com/bernardladenthin/streambuffer/releases/tag/v1.0.0

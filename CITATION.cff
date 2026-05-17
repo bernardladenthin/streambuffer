@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: streambuffer
+authors:
+  - family-names: Ladenthin
+    given-names: Bernard
+    email: bernard.ladenthin@gmail.com
+repository-code: "https://github.com/bernardladenthin/streambuffer"
+license: Apache-2.0
+type: software
