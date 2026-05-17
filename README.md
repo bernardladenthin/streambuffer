@@ -14,9 +14,10 @@
 
 **Package:**  
 [![Maven Central](https://img.shields.io/maven-central/v/net.ladenthin/streambuffer)](https://central.sonatype.com/artifact/net.ladenthin/streambuffer)  
+[![Snapshot](https://img.shields.io/badge/snapshot-latest-informational)](https://central.sonatype.com/repository/maven-snapshots/net/ladenthin/streambuffer/)  
 
 **License:**  
-[![License](http://img.shields.io/:license-apache-blue.svg)](http://www.apache.org/licenses/LICENSE-2.0.html)  
+[![License](https://img.shields.io/badge/License-Apache%202.0-orange)](./LICENSE)  
 
 **Community:**  
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/12861/badge)](https://www.bestpractices.dev/projects/12861)
