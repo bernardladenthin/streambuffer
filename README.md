@@ -6,12 +6,15 @@
 **Coverage:**  
 [![Coverage Status](https://coveralls.io/repos/github/bernardladenthin/streambuffer/badge.svg)](https://coveralls.io/github/bernardladenthin/streambuffer)  
 [![codecov](https://codecov.io/gh/bernardladenthin/streambuffer/graph/badge.svg?token=BIO6krrehu)](https://codecov.io/gh/bernardladenthin/streambuffer)  
+[![JaCoCo](https://img.shields.io/codecov/c/github/bernardladenthin/streambuffer?label=JaCoCo&logo=java)](https://codecov.io/gh/bernardladenthin/streambuffer)  
+[![PIT Mutation](https://img.shields.io/badge/PIT%20mutation-100%25-brightgreen)](https://github.com/bernardladenthin/streambuffer/actions/workflows/publish.yml)  
 
 **Security:**  
 [![Coverity Scan Build Status](https://scan.coverity.com/projects/5453/badge.svg)](https://scan.coverity.com/projects/5453)  
 [![Known Vulnerabilities](https://snyk.io/test/github/bernardladenthin/streambuffer/badge.svg?targetFile=pom.xml)](https://snyk.io/test/github/bernardladenthin/streambuffer?targetFile=pom.xml)  
 [![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fbernardladenthin%2Fstreambuffer.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fbernardladenthin%2Fstreambuffer?ref=badge_shield)  
 [![Dependencies](https://img.shields.io/librariesio/github/bernardladenthin/streambuffer)](https://libraries.io/github/bernardladenthin/streambuffer)  
+[![OSV-Scanner](https://github.com/bernardladenthin/streambuffer/actions/workflows/osv-scanner.yml/badge.svg)](https://github.com/bernardladenthin/streambuffer/actions/workflows/osv-scanner.yml)  
 
 **Package:**  
 [![Maven Central](https://img.shields.io/maven-central/v/net.ladenthin/streambuffer)](https://central.sonatype.com/artifact/net.ladenthin/streambuffer)  
@@ -29,7 +32,11 @@
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow.svg)](https://www.conventionalcommits.org/en/v1.0.0/)  
 [![Keep a Changelog](https://img.shields.io/badge/changelog-Keep%20a%20Changelog-blue)](https://keepachangelog.com/en/1.1.0/)  
 [![SemVer](https://img.shields.io/badge/SemVer-2.0.0-blue)](https://semver.org/spec/v2.0.0.html)  
-[![REUSE](https://api.reuse.software/badge/github.com/bernardladenthin/streambuffer)](https://api.reuse.software/info/github.com/bernardladenthin/streambuffer)
+[![REUSE](https://api.reuse.software/badge/github.com/bernardladenthin/streambuffer)](https://api.reuse.software/info/github.com/bernardladenthin/streambuffer)  
+[![Maintained?](https://isitmaintained.com/badge/resolution/bernardladenthin/streambuffer.svg)](https://isitmaintained.com/project/bernardladenthin/streambuffer)  
+[![Issues](https://img.shields.io/github/issues/bernardladenthin/streambuffer)](https://github.com/bernardladenthin/streambuffer/issues)  
+[![Pull Requests](https://img.shields.io/github/issues-pr/bernardladenthin/streambuffer)](https://github.com/bernardladenthin/streambuffer/pulls)  
+[![GitHub Stars](https://img.shields.io/github/stars/bernardladenthin/streambuffer?style=social)](https://github.com/bernardladenthin/streambuffer/stargazers)
 
 # streambuffer
 
