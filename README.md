@@ -1,5 +1,6 @@
 **Build:**  
 ![Java 8+](https://img.shields.io/badge/Java-8%2B-informational)  
+![JUnit](https://img.shields.io/badge/tested%20with-JUnit5-25A162)  
 [![Publish](https://github.com/bernardladenthin/streambuffer/actions/workflows/publish.yml/badge.svg)](https://github.com/bernardladenthin/streambuffer/actions/workflows/publish.yml)  
 [![CodeQL](https://github.com/bernardladenthin/streambuffer/actions/workflows/codeql.yml/badge.svg)](https://github.com/bernardladenthin/streambuffer/actions/workflows/codeql.yml)  
 
@@ -8,6 +9,11 @@
 [![codecov](https://codecov.io/gh/bernardladenthin/streambuffer/graph/badge.svg?token=BIO6krrehu)](https://codecov.io/gh/bernardladenthin/streambuffer)  
 [![JaCoCo](https://img.shields.io/codecov/c/github/bernardladenthin/streambuffer?label=JaCoCo&logo=java)](https://codecov.io/gh/bernardladenthin/streambuffer)  
 [![PIT Mutation](https://img.shields.io/badge/PIT%20mutation-100%25-brightgreen)](https://github.com/bernardladenthin/streambuffer/actions/workflows/publish.yml)  
+
+**Quality:**  
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=bernardladenthin_streambuffer&metric=alert_status)](https://sonarcloud.io/dashboard?id=bernardladenthin_streambuffer)  
+[![Code Smells](https://sonarcloud.io/api/project_badges/measure?project=bernardladenthin_streambuffer&metric=code_smells)](https://sonarcloud.io/dashboard?id=bernardladenthin_streambuffer)  
+[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=bernardladenthin_streambuffer&metric=security_rating)](https://sonarcloud.io/dashboard?id=bernardladenthin_streambuffer)  
 
 **Security:**  
 [![Coverity Scan Build Status](https://scan.coverity.com/projects/5453/badge.svg)](https://scan.coverity.com/projects/5453)  
@@ -27,6 +33,7 @@
 
 **Community:**  
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/12861/badge)](https://www.bestpractices.dev/projects/12861)  
+[![Contribute with Gitpod](https://img.shields.io/badge/Contribute%20with-Gitpod-908a85?logo=gitpod)](https://gitpod.io/#https://github.com/bernardladenthin/streambuffer)  
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/bernardladenthin/streambuffer/badge)](https://scorecard.dev/viewer/?uri=github.com/bernardladenthin/streambuffer)  
 [![Dependabot](https://img.shields.io/badge/Dependabot-enabled-success?logo=dependabot)](./.github/dependabot.yml)  
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow.svg)](https://www.conventionalcommits.org/en/v1.0.0/)  
@@ -36,7 +43,9 @@
 [![Maintained?](https://isitmaintained.com/badge/resolution/bernardladenthin/streambuffer.svg)](https://isitmaintained.com/project/bernardladenthin/streambuffer)  
 [![Issues](https://img.shields.io/github/issues/bernardladenthin/streambuffer)](https://github.com/bernardladenthin/streambuffer/issues)  
 [![Pull Requests](https://img.shields.io/github/issues-pr/bernardladenthin/streambuffer)](https://github.com/bernardladenthin/streambuffer/pulls)  
-[![GitHub Stars](https://img.shields.io/github/stars/bernardladenthin/streambuffer?style=social)](https://github.com/bernardladenthin/streambuffer/stargazers)
+[![GitHub Stars](https://img.shields.io/github/stars/bernardladenthin/streambuffer?style=social)](https://github.com/bernardladenthin/streambuffer/stargazers)  
+[![Treeware](https://img.shields.io/badge/dynamic/json?color=brightgreen&label=Treeware&query=%24.total&url=https%3A%2F%2Fpublic.offset.earth%2Fusers%2Ftreeware%2Ftrees)](https://treeware.earth)  
+[![Stand With Ukraine](https://raw.githubusercontent.com/vshymanskyy/StandWithUkraine/main/badges/StandWithUkraine.svg)](https://stand-with-ukraine.pp.ua)
 
 # streambuffer
 
