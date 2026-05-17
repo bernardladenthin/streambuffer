@@ -11,16 +11,25 @@
 [![Coverity Scan Build Status](https://scan.coverity.com/projects/5453/badge.svg)](https://scan.coverity.com/projects/5453)  
 [![Known Vulnerabilities](https://snyk.io/test/github/bernardladenthin/streambuffer/badge.svg?targetFile=pom.xml)](https://snyk.io/test/github/bernardladenthin/streambuffer?targetFile=pom.xml)  
 [![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fbernardladenthin%2Fstreambuffer.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fbernardladenthin%2Fstreambuffer?ref=badge_shield)  
+[![Dependencies](https://img.shields.io/librariesio/github/bernardladenthin/streambuffer)](https://libraries.io/github/bernardladenthin/streambuffer)  
 
 **Package:**  
 [![Maven Central](https://img.shields.io/maven-central/v/net.ladenthin/streambuffer)](https://central.sonatype.com/artifact/net.ladenthin/streambuffer)  
 [![Snapshot](https://img.shields.io/badge/snapshot-latest-informational)](https://central.sonatype.com/repository/maven-snapshots/net/ladenthin/streambuffer/)  
+![Release Date](https://img.shields.io/github/release-date/bernardladenthin/streambuffer)  
+![Last Commit](https://img.shields.io/github/last-commit/bernardladenthin/streambuffer)  
 
 **License:**  
 [![License](https://img.shields.io/badge/License-Apache%202.0-orange)](./LICENSE)  
 
 **Community:**  
-[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/12861/badge)](https://www.bestpractices.dev/projects/12861)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/12861/badge)](https://www.bestpractices.dev/projects/12861)  
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/bernardladenthin/streambuffer/badge)](https://scorecard.dev/viewer/?uri=github.com/bernardladenthin/streambuffer)  
+[![Dependabot](https://img.shields.io/badge/Dependabot-enabled-success?logo=dependabot)](./.github/dependabot.yml)  
+[![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow.svg)](https://www.conventionalcommits.org/en/v1.0.0/)  
+[![Keep a Changelog](https://img.shields.io/badge/changelog-Keep%20a%20Changelog-blue)](https://keepachangelog.com/en/1.1.0/)  
+[![SemVer](https://img.shields.io/badge/SemVer-2.0.0-blue)](https://semver.org/spec/v2.0.0.html)  
+[![REUSE](https://api.reuse.software/badge/github.com/bernardladenthin/streambuffer)](https://api.reuse.software/info/github.com/bernardladenthin/streambuffer)
 
 # streambuffer
 
