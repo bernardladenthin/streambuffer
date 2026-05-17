@@ -1,10 +1,7 @@
-// @formatter:off
-
-// Copyright 2014 Bernard Ladenthin bernard.ladenthin@gmail.com
 // SPDX-FileCopyrightText: 2014-2026 Bernard Ladenthin <bernard.ladenthin@gmail.com>
+// Copyright 2014 Bernard Ladenthin bernard.ladenthin@gmail.com
 //
 // SPDX-License-Identifier: Apache-2.0
-// @formatter:on
 package net.ladenthin.streambuffer.benchmark;
 
 import net.ladenthin.streambuffer.StreamBuffer;
