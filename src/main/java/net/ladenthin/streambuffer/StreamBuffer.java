@@ -796,6 +796,7 @@ public class StreamBuffer implements Closeable {
                 }
             }
             catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
                 throw new IOException(e);
             }
 
@@ -852,6 +853,7 @@ public class StreamBuffer implements Closeable {
             try {
                 maximumAvailableBytes = tryWaitForEnoughBytes(missingBytes);
             } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
                 throw new IOException(e);
             }
 
