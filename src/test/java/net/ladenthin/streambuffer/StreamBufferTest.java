@@ -2409,7 +2409,7 @@ public class StreamBufferTest {
         final InputStream is = sb.getInputStream();
         final Semaphore started = new Semaphore(0);
         final Throwable[] caught = new Throwable[1];
-        final boolean[] interruptFlagAfterCatch = new boolean[1];
+        final AtomicBoolean interruptFlagAfterCatch = new AtomicBoolean(false);
 
         Thread reader = new Thread(() -> {
             try {
@@ -2417,7 +2417,7 @@ public class StreamBufferTest {
                 is.read(); // will block — no data, not closed
             } catch (IOException e) {
                 caught[0] = e;
-                interruptFlagAfterCatch[0] = Thread.currentThread().isInterrupted();
+                interruptFlagAfterCatch.set(Thread.currentThread().isInterrupted());
             }
         });
 
@@ -2432,7 +2432,7 @@ public class StreamBufferTest {
         assertThat("IOException should be thrown wrapping InterruptedException",
                 caught[0] instanceof IOException, is(true));
         assertThat("Thread interrupt flag must be preserved after wrapping InterruptedException",
-                interruptFlagAfterCatch[0], is(true));
+                interruptFlagAfterCatch.get(), is(true));
     }
 
     @DisplayName("read(): array thread interrupted while waiting for second byte — throws io exception")
@@ -2444,7 +2444,7 @@ public class StreamBufferTest {
         final OutputStream os = sb.getOutputStream();
         final Semaphore started = new Semaphore(0);
         final Throwable[] caught = new Throwable[1];
-        final boolean[] interruptFlagAfterCatch = new boolean[1];
+        final AtomicBoolean interruptFlagAfterCatch = new AtomicBoolean(false);
 
         // write exactly 1 byte so the internal read() at the start of read(b,off,len)
         // succeeds immediately, then tryWaitForEnoughBytes blocks waiting for the second byte
@@ -2456,7 +2456,7 @@ public class StreamBufferTest {
                 is.read(new byte[2], 0, 2);
             } catch (IOException e) {
                 caught[0] = e;
-                interruptFlagAfterCatch[0] = Thread.currentThread().isInterrupted();
+                interruptFlagAfterCatch.set(Thread.currentThread().isInterrupted());
             }
         });
 
@@ -2471,7 +2471,7 @@ public class StreamBufferTest {
         assertThat("IOException should be thrown wrapping InterruptedException",
                 caught[0] instanceof IOException, is(true));
         assertThat("Thread interrupt flag must be preserved after wrapping InterruptedException",
-                interruptFlagAfterCatch[0], is(true));
+                interruptFlagAfterCatch.get(), is(true));
     }
     }
 
