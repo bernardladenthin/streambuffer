@@ -21,6 +21,10 @@ mvn test -Dtest=StreamBufferTest#testSimpleRoundTrip
 mvn org.pitest:pitest-maven:mutationCoverage
 ```
 
+`mvn test` also runs:
+- **jqwik properties** (`StreamBufferProperties`) — picked up by Surefire as a JUnit 5 engine.
+- **jcstress** tests under `net.ladenthin.streambuffer.jcstress` — executed in a forked JVM via `exec-maven-plugin` in the `test` phase (`-m quick` mode).
+
 ## Architecture
 
 `StreamBuffer` is a single-class Java library (`net.ladenthin.streambuffer`) that connects an `OutputStream` and `InputStream` through a dynamic FIFO queue — solving the fixed-buffer and cross-thread-deadlock limitations of Java's `PipedInputStream`/`PipedOutputStream`.
