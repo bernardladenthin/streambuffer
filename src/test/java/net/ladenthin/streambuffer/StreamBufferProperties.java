@@ -97,4 +97,50 @@ public class StreamBufferProperties {
         if (sb.getTotalBytesRead() != expectedRead) return false;
         return sb.getTotalBytesWritten() == sb.getTotalBytesRead() + is.available();
     }
+
+    @Property
+    boolean safeWriteIsolatesFromExternalMutation(
+            @ForAll @Size(min = 1, max = 256) byte[] payload
+    ) throws IOException {
+        StreamBuffer sb = new StreamBuffer();
+        sb.setSafeWrite(true);
+        OutputStream os = sb.getOutputStream();
+        InputStream is = sb.getInputStream();
+
+        byte[] expected = payload.clone();
+        os.write(payload);
+        // Mutate the source after writing; safeWrite=true must have cloned on write.
+        java.util.Arrays.fill(payload, (byte) 0x7F);
+
+        byte[] read = new byte[expected.length];
+        int n = is.read(read, 0, expected.length);
+        if (n != expected.length) return false;
+        return java.util.Arrays.equals(read, expected);
+    }
+
+    @Property
+    boolean trimPreservesContentAcrossMaxBufferElements(
+            @ForAll @Size(min = 1, max = 64) List<@Size(min = 0, max = 64) byte[]> chunks,
+            @ForAll @IntRange(min = 0, max = 16) int maxBufferElements
+    ) throws IOException {
+        StreamBuffer sb = new StreamBuffer();
+        sb.setMaxBufferElements(maxBufferElements);
+        OutputStream os = sb.getOutputStream();
+        InputStream is = sb.getInputStream();
+
+        ByteArrayOutputStream expected = new ByteArrayOutputStream();
+        for (byte[] chunk : chunks) {
+            os.write(chunk);
+            expected.write(chunk);
+        }
+
+        int available = is.available();
+        if (available != expected.size()) return false;
+        if (available == 0) return true;
+
+        byte[] read = new byte[available];
+        int n = is.read(read, 0, available);
+        if (n != available) return false;
+        return java.util.Arrays.equals(read, expected.toByteArray());
+    }
 }

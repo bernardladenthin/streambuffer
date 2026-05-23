@@ -252,7 +252,7 @@ SPDX-License-Identifier: Apache-2.0
                                 <argument>org.openjdk.jcstress.Main</argument>
                                 <argument>-v</argument>
                                 <argument>-m</argument>
-                                <argument>quick</argument>
+                                <argument>default</argument>
                             </arguments>
                         </configuration>
                     </execution>
