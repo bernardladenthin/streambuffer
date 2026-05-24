@@ -11,11 +11,14 @@ import static org.hamcrest.number.OrderingComparison.greaterThan;
 import static org.hamcrest.number.OrderingComparison.greaterThanOrEqualTo;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 import java.io.*;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -38,9 +41,9 @@ public class StreamBufferTest {
 
     static Stream<Arguments> writeMethods() {
         return Stream.of(
-                Arguments.of(WriteMethod.ByteArray),
-                Arguments.of(WriteMethod.Int),
-                Arguments.of(WriteMethod.ByteArrayWithParameter));
+                Arguments.of(WriteMethod.BYTE_ARRAY),
+                Arguments.of(WriteMethod.INT),
+                Arguments.of(WriteMethod.BYTE_ARRAY_WITH_PARAMETER));
     }
 
     /**
@@ -233,8 +236,8 @@ public class StreamBufferTest {
         public void constructor_noArguments_NoExceptionThrown() {
             // arrange
             // act
-            new StreamBuffer();
             // assert — no exception thrown
+            assertDoesNotThrow(() -> new StreamBuffer());
         }
     }
 
@@ -849,16 +852,14 @@ public class StreamBufferTest {
         @DisplayName("write(): closed stream — throw io exception")
         @ParameterizedTest
         @MethodSource("net.ladenthin.streambuffer.StreamBufferTest#writeMethods")
-        public void write_closedStream_throwIOException(WriteMethod writeMethod) {
+        public void write_closedStream_throwIOException(WriteMethod writeMethod) throws IOException {
             // arrange
             StreamBuffer sb = new StreamBuffer();
             OutputStream os = sb.getOutputStream();
+            os.close();
             // act
             // assert
-            assertThrows(IOException.class, () -> {
-                os.close();
-                writeAnyValue(writeMethod, os);
-            });
+            assertThrows(IOException.class, () -> writeAnyValue(writeMethod, os));
         }
 
         @DisplayName("write(): invalid offset — not written")
@@ -896,21 +897,22 @@ public class StreamBufferTest {
         public void write_nullArrayWithOffset_throwsNPE() {
             // arrange
             StreamBuffer sb = new StreamBuffer();
+            OutputStream os = sb.getOutputStream();
             // act
             // assert
-            assertThrows(NullPointerException.class, () -> sb.getOutputStream().write(null, 0, 1));
+            assertThrows(NullPointerException.class, () -> os.write(null, 0, 1));
         }
     }
 
     private void writeAnyValue(WriteMethod writeMethod, OutputStream os) throws IOException {
         switch (writeMethod) {
-            case ByteArray:
+            case BYTE_ARRAY:
                 os.write(new byte[] {anyValue});
                 break;
-            case Int:
+            case INT:
                 os.write(anyValue);
                 break;
-            case ByteArrayWithParameter:
+            case BYTE_ARRAY_WITH_PARAMETER:
                 os.write(new byte[] {anyValue, 0, 1});
                 break;
             default:
@@ -1028,7 +1030,7 @@ public class StreamBufferTest {
                     }
                 }
             });
-            writeAnyValue(WriteMethod.Int, os);
+            writeAnyValue(WriteMethod.INT, os);
             is.read();
 
             // act
@@ -1129,15 +1131,14 @@ public class StreamBufferTest {
 
         @DisplayName("blockDataAvailable(): stream already closed — return")
         @Test
-        public void blockDataAvailable_streamAlreadyClosed_return() throws IOException, InterruptedException {
+        public void blockDataAvailable_streamAlreadyClosed_return() throws IOException {
             // arrange
             final StreamBuffer sb = new StreamBuffer();
+            sb.close();
 
             // act
-            sb.close();
-            sb.blockDataAvailable();
-
-            // assert — no exception thrown
+            // assert — returns immediately without throwing
+            assertDoesNotThrow(() -> sb.blockDataAvailable());
         }
 
         @DisplayName("blockDataAvailable(): data already available — only one wakeup")
@@ -1195,10 +1196,8 @@ public class StreamBufferTest {
             os.write(anyValue);
 
             // act
-            // Should not block since data is already written
-            sb.blockDataAvailable();
-
-            // assert — does not block
+            // assert — does not block since data is already written
+            assertTimeoutPreemptively(Duration.ofSeconds(5), () -> sb.blockDataAvailable());
         }
 
         @DisplayName("blockDataAvailable(): after bytes consumed — blocks again")
@@ -1289,16 +1288,15 @@ public class StreamBufferTest {
 
         @DisplayName("trim(): empty buffer — no exception thrown")
         @Test
-        public void trim_emptyBuffer_noExceptionThrown() throws IOException {
+        public void trim_emptyBuffer_noExceptionThrown() {
             // arrange
             StreamBuffer sb = new StreamBuffer();
             sb.setMaxBufferElements(1);
+            OutputStream os = sb.getOutputStream();
 
             // act
-            // nothing written yet, but trim should not fail
-            sb.getOutputStream().write(new byte[0]);
-
-            // assert — no exception thrown
+            // assert — empty write triggers trim path without throwing
+            assertDoesNotThrow(() -> os.write(new byte[0]));
         }
     }
 
@@ -1307,15 +1305,14 @@ public class StreamBufferTest {
     class CloseTests {
         @DisplayName("close(): multiple calls — no exception thrown")
         @Test
-        public void close_multipleCalls_noExceptionThrown() throws IOException {
+        public void close_multipleCalls_noExceptionThrown() {
             // arrange
             StreamBuffer sb = new StreamBuffer();
 
             // act
-            sb.close();
-            sb.close(); // Should not throw
-
-            // assert — no exception thrown
+            // assert — second close must be idempotent
+            assertDoesNotThrow(() -> sb.close());
+            assertDoesNotThrow(() -> sb.close());
         }
     }
 
@@ -2023,7 +2020,9 @@ public class StreamBufferTest {
             trimmer.join();
             reader.join();
 
-            // assert — no crash or data corruption
+            // assert — reader drained the full stream without crash or corruption
+            assertThat(is.available(), is(0));
+            assertThat(sb.isClosed(), is(true));
         }
     }
 

@@ -36,6 +36,8 @@ public class ConcurrentWriteRace {
         try {
             os.write(A);
         } catch (IOException ignored) {
+            // Writes racing with a concurrent close() may legitimately throw;
+            // the arbiter only checks the final buffer state, not write success.
         }
     }
 
@@ -44,6 +46,7 @@ public class ConcurrentWriteRace {
         try {
             os.write(B);
         } catch (IOException ignored) {
+            // See writerA(): IOException here is an acceptable race outcome.
         }
     }
 
