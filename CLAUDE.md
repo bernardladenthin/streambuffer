@@ -45,6 +45,13 @@ mvn test-compile exec:java \
 `mvn test` also runs:
 - **jqwik properties** (`StreamBufferProperties`) — picked up by Surefire as a JUnit 5 engine.
 - **jcstress** tests under `net.ladenthin.streambuffer.jcstress` — executed in a forked JVM via `exec-maven-plugin` in the `test` phase (`-m quick` mode).
+- **Lincheck** linearizability test (`StreamBufferLincheckTest`) over the non-blocking subset (`write`, `available`, `close`, `isClosed`).
+
+**Opt-in vmlens interleaving analysis:**
+```bash
+mvn -Pvmlens test
+```
+The `vmlens` profile pulls in `com.vmlens:api` and runs the `vmlens-maven-plugin` during the `test` phase. Tests using `com.vmlens.api.AllInterleavings` are then driven through every possible thread interleaving. The profile is off by default — vmlens overhead is too high for every build.
 
 ## Architecture
 
