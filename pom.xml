@@ -27,6 +27,9 @@ SPDX-License-Identifier: Apache-2.0
         <nullaway.version>0.13.4</nullaway.version>
         <spotless.version>2.46.1</spotless.version>
         <palantir-java-format.version>2.66.0</palantir-java-format.version>
+        <spotbugs.version>4.8.6.6</spotbugs.version>
+        <fb-contrib.version>7.6.4</fb-contrib.version>
+        <findsecbugs.version>1.13.0</findsecbugs.version>
         <project.build.outputTimestamp>${git.commit.time}</project.build.outputTimestamp>
     </properties>
     <inceptionYear>2014</inceptionYear>
@@ -304,6 +307,39 @@ SPDX-License-Identifier: Apache-2.0
                                 <argument>default</argument>
                             </arguments>
                         </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>com.github.spotbugs</groupId>
+                <artifactId>spotbugs-maven-plugin</artifactId>
+                <version>${spotbugs.version}</version>
+                <configuration>
+                    <effort>Default</effort>
+                    <threshold>Default</threshold>
+                    <failOnError>true</failOnError>
+                    <includeTests>false</includeTests>
+                    <excludeFilterFile>spotbugs-exclude.xml</excludeFilterFile>
+                    <plugins>
+                        <plugin>
+                            <groupId>com.mebigfatguy.fb-contrib</groupId>
+                            <artifactId>fb-contrib</artifactId>
+                            <version>${fb-contrib.version}</version>
+                        </plugin>
+                        <plugin>
+                            <groupId>com.h3xstream.findsecbugs</groupId>
+                            <artifactId>findsecbugs-plugin</artifactId>
+                            <version>${findsecbugs.version}</version>
+                        </plugin>
+                    </plugins>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>spotbugs-check</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
                     </execution>
                 </executions>
             </plugin>
