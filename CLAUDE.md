@@ -21,6 +21,27 @@ mvn test -Dtest=StreamBufferTest#testSimpleRoundTrip
 mvn org.pitest:pitest-maven:mutationCoverage
 ```
 
+**Run JMH benchmarks:**
+
+JMH benchmarks live in `src/test/java/net/ladenthin/streambuffer/benchmark/` (e.g. `StreamBufferThroughputBenchmark`). They are not executed by `mvn test`; invoke them directly via the `exec-maven-plugin` whose default `mainClass` is `org.openjdk.jmh.Main`:
+
+```bash
+# All benchmarks
+mvn test-compile exec:java
+
+# Filter by regex (class or method name)
+mvn test-compile exec:java -Dexec.args="StreamBufferThroughput"
+
+# Allocation profile (built-in, no extra setup)
+mvn test-compile exec:java -Dexec.args="StreamBufferThroughput -prof gc"
+
+# CPU profile via async-profiler (set ASYNC_PROFILER_LIB to libasyncProfiler.so)
+mvn test-compile exec:java \
+  -Dexec.args="StreamBufferThroughput -prof async:libPath=$ASYNC_PROFILER_LIB;output=flamegraph"
+```
+
+`-prof gc` reports `gc.alloc.rate.norm` (bytes allocated per op) — useful for spotting hidden allocations on the read/write hot paths. `-prof async` produces flamegraphs and requires async-profiler installed locally; CI does not run it.
+
 `mvn test` also runs:
 - **jqwik properties** (`StreamBufferProperties`) — picked up by Surefire as a JUnit 5 engine.
 - **jcstress** tests under `net.ladenthin.streambuffer.jcstress` — executed in a forked JVM via `exec-maven-plugin` in the `test` phase (`-m quick` mode).
