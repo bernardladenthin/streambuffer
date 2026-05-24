@@ -3,23 +3,21 @@
 // SPDX-License-Identifier: Apache-2.0
 package net.ladenthin.streambuffer;
 
-import net.jqwik.api.ForAll;
-import net.jqwik.api.Property;
-import net.jqwik.api.constraints.IntRange;
-import net.jqwik.api.constraints.Size;
-
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.List;
+import net.jqwik.api.ForAll;
+import net.jqwik.api.Property;
+import net.jqwik.api.constraints.IntRange;
+import net.jqwik.api.constraints.Size;
 
 public class StreamBufferProperties {
 
     @Property
     boolean writeAllThenReadAvailableYieldsConcatenation(
-            @ForAll @Size(min = 0, max = 32) List<@Size(min = 0, max = 256) byte[]> chunks
-    ) throws IOException {
+            @ForAll @Size(min = 0, max = 32) List<@Size(min = 0, max = 256) byte[]> chunks) throws IOException {
         StreamBuffer sb = new StreamBuffer();
         OutputStream os = sb.getOutputStream();
         InputStream is = sb.getInputStream();
@@ -45,8 +43,8 @@ public class StreamBufferProperties {
     boolean readChunkSizeDoesNotAffectContent(
             @ForAll @Size(min = 1, max = 1024) byte[] payload,
             @ForAll @IntRange(min = 1, max = 64) int writeChunk,
-            @ForAll @IntRange(min = 1, max = 64) int readChunk
-    ) throws IOException {
+            @ForAll @IntRange(min = 1, max = 64) int readChunk)
+            throws IOException {
         StreamBuffer sb = new StreamBuffer();
         OutputStream os = sb.getOutputStream();
         InputStream is = sb.getInputStream();
@@ -71,8 +69,8 @@ public class StreamBufferProperties {
     @Property
     boolean counterAccountingIsConsistent(
             @ForAll @Size(min = 0, max = 16) List<@Size(min = 0, max = 128) byte[]> writes,
-            @ForAll @IntRange(min = 0, max = 16) int readChunk
-    ) throws IOException {
+            @ForAll @IntRange(min = 0, max = 16) int readChunk)
+            throws IOException {
         StreamBuffer sb = new StreamBuffer();
         OutputStream os = sb.getOutputStream();
         InputStream is = sb.getInputStream();
@@ -99,9 +97,7 @@ public class StreamBufferProperties {
     }
 
     @Property
-    boolean safeWriteIsolatesFromExternalMutation(
-            @ForAll @Size(min = 1, max = 256) byte[] payload
-    ) throws IOException {
+    boolean safeWriteIsolatesFromExternalMutation(@ForAll @Size(min = 1, max = 256) byte[] payload) throws IOException {
         StreamBuffer sb = new StreamBuffer();
         sb.setSafeWrite(true);
         OutputStream os = sb.getOutputStream();
@@ -121,8 +117,8 @@ public class StreamBufferProperties {
     @Property
     boolean trimPreservesContentAcrossMaxBufferElements(
             @ForAll @Size(min = 1, max = 64) List<@Size(min = 0, max = 64) byte[]> chunks,
-            @ForAll @IntRange(min = 0, max = 16) int maxBufferElements
-    ) throws IOException {
+            @ForAll @IntRange(min = 0, max = 16) int maxBufferElements)
+            throws IOException {
         StreamBuffer sb = new StreamBuffer();
         sb.setMaxBufferElements(maxBufferElements);
         OutputStream os = sb.getOutputStream();

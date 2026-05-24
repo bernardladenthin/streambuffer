@@ -25,6 +25,8 @@ SPDX-License-Identifier: Apache-2.0
         <jqwik.version>1.9.2</jqwik.version>
         <errorprone.version>2.49.0</errorprone.version>
         <nullaway.version>0.13.4</nullaway.version>
+        <spotless.version>2.46.1</spotless.version>
+        <palantir-java-format.version>2.66.0</palantir-java-format.version>
         <project.build.outputTimestamp>${git.commit.time}</project.build.outputTimestamp>
     </properties>
     <inceptionYear>2014</inceptionYear>
@@ -302,6 +304,34 @@ SPDX-License-Identifier: Apache-2.0
                                 <argument>default</argument>
                             </arguments>
                         </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+                <version>${spotless.version}</version>
+                <configuration>
+                    <java>
+                        <includes>
+                            <include>src/main/java/**/*.java</include>
+                            <include>src/test/java/**/*.java</include>
+                        </includes>
+                        <palantirJavaFormat>
+                            <version>${palantir-java-format.version}</version>
+                        </palantirJavaFormat>
+                        <removeUnusedImports/>
+                        <trimTrailingWhitespace/>
+                        <endWithNewline/>
+                    </java>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>spotless-check</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
                     </execution>
                 </executions>
             </plugin>

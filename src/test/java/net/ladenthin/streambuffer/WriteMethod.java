@@ -4,5 +4,7 @@
 package net.ladenthin.streambuffer;
 
 public enum WriteMethod {
-    ByteArray, Int, ByteArrayWithParameter;
+    ByteArray,
+    Int,
+    ByteArrayWithParameter;
 }
