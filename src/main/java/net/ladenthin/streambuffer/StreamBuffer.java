@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package net.ladenthin.streambuffer;
 
+import com.google.errorprone.annotations.concurrent.GuardedBy;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
@@ -35,6 +36,7 @@ public class StreamBuffer implements Closeable {
     /**
      * The buffer which contains the raw data.
      */
+    @GuardedBy("bufferLock")
     private final Deque<byte[]> buffer = new LinkedList<>();
 
     /**
@@ -423,6 +425,7 @@ public class StreamBuffer implements Closeable {
      * Sets {@link #isTrimRunning} volatile flag to prevent statistics updates during internal I/O.
      * Respects {@link #maxAllocationSize} limit when allocating byte arrays.
      */
+    @GuardedBy("bufferLock")
     private void trim() throws IOException {
         if (isTrimShouldBeExecuted()) {
             isTrimRunning = true;
@@ -564,6 +567,7 @@ public class StreamBuffer implements Closeable {
         return true;
     }
 
+    @GuardedBy("bufferLock")
     boolean isTrimShouldBeExecuted() {
         /**
          * Prevent recursive trim: if trim is already running, its internal
