@@ -23,8 +23,8 @@ SPDX-License-Identifier: Apache-2.0
         <java.test.version>21</java.test.version>
         <jcstress.version>0.16</jcstress.version>
         <jqwik.version>1.9.2</jqwik.version>
-        <errorprone.version>2.30.0</errorprone.version>
-        <nullaway.version>0.10.26</nullaway.version>
+        <errorprone.version>2.49.0</errorprone.version>
+        <nullaway.version>0.13.4</nullaway.version>
         <project.build.outputTimestamp>${git.commit.time}</project.build.outputTimestamp>
     </properties>
     <inceptionYear>2014</inceptionYear>
@@ -151,6 +151,7 @@ SPDX-License-Identifier: Apache-2.0
                     <encoding>${project.build.sourceEncoding}</encoding>
                     <showWarnings>true</showWarnings>
                     <compilerArgs>
+                        <arg>-XDaddTypeAnnotationsToSymbol=true</arg>
                         <arg>-XDcompilePolicy=simple</arg>
                         <arg>--should-stop=ifError=FLOW</arg>
                         <arg>-Xplugin:ErrorProne -Xep:NullAway:ERROR -XepOpt:NullAway:AnnotatedPackages=net.ladenthin</arg>
@@ -173,6 +174,7 @@ SPDX-License-Identifier: Apache-2.0
                         <id>default-testCompile</id>
                         <configuration>
                             <compilerArgs>
+                                <arg>-XDaddTypeAnnotationsToSymbol=true</arg>
                                 <arg>-XDcompilePolicy=simple</arg>
                                 <arg>--should-stop=ifError=FLOW</arg>
                                 <arg>-Xplugin:ErrorProne -Xep:NullAway:OFF</arg>
