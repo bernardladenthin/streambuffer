@@ -1324,7 +1324,7 @@ public class StreamBufferTest {
     class ConcurrentReadWriteTests {
         @DisplayName("concurrentReadWrite(): stress test — no crash or inconsistency")
         @Test
-        public void concurrentReadWrite_stressTest_noCrashOrInconsistency() throws Throwable {
+        public void concurrentReadWrite_stressTest_noCrashOrInconsistency() throws Exception {
             // arrange
             final StreamBuffer sb = new StreamBuffer();
             final OutputStream os = sb.getOutputStream();
