@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package net.ladenthin.streambuffer;
 
+import static org.awaitility.Awaitility.await;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.not;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -688,7 +689,12 @@ public class StreamBufferTest {
 
             // act
             reader.start();
-            Thread.sleep(500); // Let the read() call block
+            // Deterministic wait: park until the reader is actually blocked
+            // inside read() rather than guessing a sleep duration.
+            await().atMost(java.time.Duration.ofSeconds(5)).until(() -> {
+                Thread.State s = reader.getState();
+                return s == Thread.State.WAITING || s == Thread.State.TIMED_WAITING;
+            });
             sb.close(); // Should unblock the reader
             reader.join(); // Ensure thread completes
 
@@ -1318,7 +1324,7 @@ public class StreamBufferTest {
     class ConcurrentReadWriteTests {
         @DisplayName("concurrentReadWrite(): stress test — no crash or inconsistency")
         @Test
-        public void concurrentReadWrite_stressTest_noCrashOrInconsistency() throws Exception {
+        public void concurrentReadWrite_stressTest_noCrashOrInconsistency() throws Throwable {
             // arrange
             final StreamBuffer sb = new StreamBuffer();
             final OutputStream os = sb.getOutputStream();
@@ -1327,6 +1333,11 @@ public class StreamBufferTest {
             final int iterations = 1000;
             final byte[] written = new byte[iterations];
             final byte[] read = new byte[iterations];
+            // Pipe background-thread IOExceptions back to the test thread.
+            // Without a Waiter, a thrown RuntimeException would only reach
+            // Thread.UncaughtExceptionHandler and the test would later fail
+            // on an assertion mismatch with no trace of the real cause.
+            final net.jodah.concurrentunit.Waiter waiter = new net.jodah.concurrentunit.Waiter();
 
             Thread writer = new Thread(() -> {
                 try {
@@ -1336,7 +1347,7 @@ public class StreamBufferTest {
                         os.write(val);
                     }
                 } catch (IOException e) {
-                    throw new RuntimeException(e);
+                    waiter.fail(e);
                 }
             });
 
@@ -1347,7 +1358,7 @@ public class StreamBufferTest {
                         read[i] = (byte) value;
                     }
                 } catch (IOException e) {
-                    throw new RuntimeException(e);
+                    waiter.fail(e);
                 }
             });
 
@@ -1356,6 +1367,8 @@ public class StreamBufferTest {
             reader.start();
             writer.join();
             reader.join();
+            // Re-raises any waiter.fail(...) call on the test thread.
+            waiter.resume();
 
             // assert
             assertArrayEquals(written, read, "Read data should match written data");
