@@ -444,6 +444,21 @@ SPDX-License-Identifier: Apache-2.0
             <build>
                 <plugins>
                     <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <!--
+                                Lincheck generates its own TestThreadExecution class on the fly.
+                                That bytecode clashes with vmlens's load-time instrumentation
+                                (java.lang.VerifyError). Skip the Lincheck test under vmlens;
+                                the default test job still runs it.
+                            -->
+                            <excludes>
+                                <exclude>**/StreamBufferLincheckTest.java</exclude>
+                            </excludes>
+                        </configuration>
+                    </plugin>
+                    <plugin>
                         <groupId>com.vmlens</groupId>
                         <artifactId>vmlens-maven-plugin</artifactId>
                         <version>${vmlens.version}</version>
