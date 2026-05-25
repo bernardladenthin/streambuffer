@@ -3,6 +3,10 @@
 // SPDX-License-Identifier: Apache-2.0
 package net.ladenthin.streambuffer.jcstress;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.Arrays;
 import net.ladenthin.streambuffer.StreamBuffer;
 import org.openjdk.jcstress.annotations.Actor;
 import org.openjdk.jcstress.annotations.Arbiter;
@@ -13,20 +17,15 @@ import org.openjdk.jcstress.annotations.Outcome;
 import org.openjdk.jcstress.annotations.State;
 import org.openjdk.jcstress.infra.results.Z_Result;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.util.Arrays;
-
 @JCStressTest
 @Description("Two concurrent writers must each appear contiguously in the FIFO; bytes must not interleave.")
-@Outcome(id = "true",  expect = Expect.ACCEPTABLE, desc = "Both payloads intact in some order")
-@Outcome(id = "false", expect = Expect.FORBIDDEN,  desc = "Torn / interleaved write")
+@Outcome(id = "true", expect = Expect.ACCEPTABLE, desc = "Both payloads intact in some order")
+@Outcome(id = "false", expect = Expect.FORBIDDEN, desc = "Torn / interleaved write")
 @State
 public class ConcurrentWriteRace {
 
-    private static final byte[] A = new byte[]{1, 2};
-    private static final byte[] B = new byte[]{3, 4};
+    private static final byte[] A = new byte[] {1, 2};
+    private static final byte[] B = new byte[] {3, 4};
 
     private final StreamBuffer sb = new StreamBuffer();
     private final OutputStream os = sb.getOutputStream();
@@ -34,12 +33,21 @@ public class ConcurrentWriteRace {
 
     @Actor
     public void writerA() {
-        try { os.write(A); } catch (IOException ignored) { }
+        try {
+            os.write(A);
+        } catch (IOException ignored) {
+            // Writes racing with a concurrent close() may legitimately throw;
+            // the arbiter only checks the final buffer state, not write success.
+        }
     }
 
     @Actor
     public void writerB() {
-        try { os.write(B); } catch (IOException ignored) { }
+        try {
+            os.write(B);
+        } catch (IOException ignored) {
+            // See writerA(): IOException here is an acceptable race outcome.
+        }
     }
 
     @Arbiter
@@ -49,8 +57,7 @@ public class ConcurrentWriteRace {
             byte[] all = new byte[available];
             int n = (available == 0) ? 0 : is.read(all, 0, available);
             byte[] got = Arrays.copyOf(all, Math.max(n, 0));
-            r.r1 = Arrays.equals(got, new byte[]{1, 2, 3, 4})
-                || Arrays.equals(got, new byte[]{3, 4, 1, 2});
+            r.r1 = Arrays.equals(got, new byte[] {1, 2, 3, 4}) || Arrays.equals(got, new byte[] {3, 4, 1, 2});
         } catch (IOException e) {
             r.r1 = false;
         }

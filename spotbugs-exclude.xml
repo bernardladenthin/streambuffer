@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+SPDX-FileCopyrightText: 2014-2026 Bernard Ladenthin <bernard.ladenthin@gmail.com>
+
+SPDX-License-Identifier: Apache-2.0
+-->
+<FindBugsFilter
+    xmlns="https://github.com/spotbugs/filter/3.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="https://github.com/spotbugs/filter/3.0.0 https://raw.githubusercontent.com/spotbugs/spotbugs/4.8.6/spotbugs/etc/findbugsfilter.xsd">
+
+    <!--
+        getOutputStream() / getInputStream() intentionally expose the
+        SBOutputStream / SBInputStream fields - those streams ARE the
+        public API of StreamBuffer.
+    -->
+    <Match>
+        <Class name="net.ladenthin.streambuffer.StreamBuffer"/>
+        <Or>
+            <Method name="getOutputStream"/>
+            <Method name="getInputStream"/>
+        </Or>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+</FindBugsFilter>

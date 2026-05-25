@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package net.ladenthin.streambuffer;
 
+import com.google.errorprone.annotations.concurrent.GuardedBy;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
@@ -11,7 +12,6 @@ import java.util.Deque;
 import java.util.LinkedList;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Semaphore;
-
 
 /**
  * A stream buffer is a class to buffer data that has been written to an
@@ -24,7 +24,8 @@ import java.util.concurrent.Semaphore;
  */
 public class StreamBuffer implements Closeable {
 
-    final static String EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION = "Invalid offset or length given to correctOffsetAndLengthToWrite.";
+    static final String EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION =
+            "Invalid offset or length given to correctOffsetAndLengthToWrite.";
 
     /**
      * An object to get an unique access to the {@link #buffer}. It is needed to
@@ -35,6 +36,7 @@ public class StreamBuffer implements Closeable {
     /**
      * The buffer which contains the raw data.
      */
+    @GuardedBy("bufferLock")
     private final Deque<byte[]> buffer = new LinkedList<>();
 
     /**
@@ -383,9 +385,9 @@ public class StreamBuffer implements Closeable {
     public static boolean correctOffsetAndLengthToWrite(byte[] b, int off, int len) {
         if (b == null) {
             throw new NullPointerException();
-        } else if ((off < 0) || (off > b.length) || (len < 0)
-                || ((off + len) > b.length) || ((off + len) < 0)) {
-            throw new IndexOutOfBoundsException(EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION);
+        } else if ((off < 0) || (off > b.length) || (len < 0) || ((off + len) > b.length) || ((off + len) < 0)) {
+            throw new IndexOutOfBoundsException(
+                    EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION);
         } else if (len == 0) {
             return false;
         }
@@ -404,7 +406,7 @@ public class StreamBuffer implements Closeable {
             }
         }
     }
-    
+
     /**
      * Use {@link #tryWaitForEnoughBytes(long)}.
      *
@@ -423,6 +425,7 @@ public class StreamBuffer implements Closeable {
      * Sets {@link #isTrimRunning} volatile flag to prevent statistics updates during internal I/O.
      * Respects {@link #maxAllocationSize} limit when allocating byte arrays.
      */
+    @GuardedBy("bufferLock")
     private void trim() throws IOException {
         if (isTrimShouldBeExecuted()) {
             isTrimRunning = true;
@@ -564,6 +567,7 @@ public class StreamBuffer implements Closeable {
         return true;
     }
 
+    @GuardedBy("bufferLock")
     boolean isTrimShouldBeExecuted() {
         /**
          * Prevent recursive trim: if trim is already running, its internal
@@ -580,12 +584,7 @@ public class StreamBuffer implements Closeable {
         final int maxBufferElements = getMaxBufferElements();
 
         // Delegate to pure decision function
-        return decideTrimExecution(
-            buffer.size(),
-            maxBufferElements,
-            availableBytes,
-            getMaxAllocationSize()
-        );
+        return decideTrimExecution(buffer.size(), maxBufferElements, availableBytes, getMaxAllocationSize());
     }
 
     /**
@@ -700,8 +699,8 @@ public class StreamBuffer implements Closeable {
      * Package-private for direct unit testing of boundary conditions.
      */
     boolean shouldCheckEdgeCase(long availableBytes, long maxAllocSize) {
-        return isAvailableBytesPositive(availableBytes) &&
-               isMaxAllocSizeLessThanAvailable(maxAllocSize, availableBytes);
+        return isAvailableBytesPositive(availableBytes)
+                && isMaxAllocSizeLessThanAvailable(maxAllocSize, availableBytes);
     }
 
     /**
@@ -787,15 +786,14 @@ public class StreamBuffer implements Closeable {
 
         @Override
         public int read() throws IOException {
-            try{
+            try {
                 // we wait for enough bytes (one byte)
                 if (tryWaitForEnoughBytes(1) < 1) {
                     // try to wait, but not enough bytes available
                     // return the end of stream is reached
                     return -1;
                 }
-            }
-            catch (InterruptedException e) {
+            } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new IOException(e);
             }
@@ -867,7 +865,7 @@ public class StreamBuffer implements Closeable {
 
             // some or enough bytes are available, lock and modify the FIFO
             synchronized (bufferLock) {
-                for (;;) {
+                for (; ; ) {
 
                     if (noMoreMissingBytes(missingBytes)) {
                         return copiedBytes;
@@ -877,16 +875,15 @@ public class StreamBuffer implements Closeable {
                     final byte[] first = buffer.getFirst();
                     // get the maximum bytes which can be copied
                     // from the first element
-                    final int maximumBytesToCopy
-                            = first.length - positionAtCurrentBufferEntry;
+                    final int maximumBytesToCopy = first.length - positionAtCurrentBufferEntry;
 
                     // this element can be copied fully to the destination
                     if (missingBytes >= maximumBytesToCopy) {
                         // copy the complete byte[] to the destination
-                        System.arraycopy(first, positionAtCurrentBufferEntry, b,
-                                copiedBytes + off, maximumBytesToCopy);
+                        System.arraycopy(first, positionAtCurrentBufferEntry, b, copiedBytes + off, maximumBytesToCopy);
                         copiedBytes += maximumBytesToCopy;
-                        maximumAvailableBytes = decrementAvailableBytesBudget(maximumAvailableBytes, maximumBytesToCopy);
+                        maximumAvailableBytes =
+                                decrementAvailableBytesBudget(maximumAvailableBytes, maximumBytesToCopy);
                         availableBytes -= maximumBytesToCopy;
                         recordReadStatistics(maximumBytesToCopy);
                         missingBytes -= maximumBytesToCopy;
@@ -896,8 +893,7 @@ public class StreamBuffer implements Closeable {
                         positionAtCurrentBufferEntry = 0;
                     } else {
                         // copy only a part of byte[] to the destination
-                        System.arraycopy(first, positionAtCurrentBufferEntry, b,
-                                copiedBytes + off, missingBytes);
+                        System.arraycopy(first, positionAtCurrentBufferEntry, b, copiedBytes + off, missingBytes);
                         // add the offset
                         positionAtCurrentBufferEntry += missingBytes;
                         copiedBytes += missingBytes;
@@ -923,7 +919,6 @@ public class StreamBuffer implements Closeable {
             // check if we don't need to copy further bytes anymore
             return missingBytes == 0;
         }
-
     }
 
     private class SBOutputStream extends OutputStream {
@@ -936,7 +931,7 @@ public class StreamBuffer implements Closeable {
         public void write(final int b) throws IOException {
             try {
                 ignoreSafeWrite = true;
-                write(new byte[]{(byte) b});
+                write(new byte[] {(byte) b});
             } finally {
                 ignoreSafeWrite = false;
             }
@@ -945,8 +940,7 @@ public class StreamBuffer implements Closeable {
         // please do not override the method "void write(final byte[] b)"
         // the method calls internal "write(b, 0, b.length);"
         @Override
-        public void write(final byte[] b, final int off, final int len)
-                throws IOException {
+        public void write(final byte[] b, final int off, final int len) throws IOException {
             if (!correctOffsetAndLengthToWrite(b, off, len)) {
                 return;
             }

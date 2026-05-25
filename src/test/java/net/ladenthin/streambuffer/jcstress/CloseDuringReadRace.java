@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: Apache-2.0
 package net.ladenthin.streambuffer.jcstress;
 
+import java.io.IOException;
+import java.io.InputStream;
 import net.ladenthin.streambuffer.StreamBuffer;
 import org.openjdk.jcstress.annotations.Actor;
 import org.openjdk.jcstress.annotations.Description;
@@ -13,13 +15,10 @@ import org.openjdk.jcstress.annotations.Outcome;
 import org.openjdk.jcstress.annotations.Signal;
 import org.openjdk.jcstress.annotations.State;
 
-import java.io.IOException;
-import java.io.InputStream;
-
 @JCStressTest(Mode.Termination)
 @Description("A reader blocked in read() must be unblocked when close() is invoked.")
 @Outcome(id = "TERMINATED", expect = Expect.ACCEPTABLE, desc = "close() unblocked the reader")
-@Outcome(id = "STALE",      expect = Expect.FORBIDDEN,  desc = "Reader stuck after close()")
+@Outcome(id = "STALE", expect = Expect.FORBIDDEN, desc = "Reader stuck after close()")
 @State
 public class CloseDuringReadRace {
 
