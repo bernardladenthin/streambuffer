@@ -25,7 +25,7 @@ SPDX-License-Identifier: Apache-2.0
         <jqwik.version>1.9.2</jqwik.version>
         <errorprone.version>2.49.0</errorprone.version>
         <nullaway.version>0.13.4</nullaway.version>
-        <spotless.version>2.46.1</spotless.version>
+        <spotless.version>3.5.1</spotless.version>
         <palantir-java-format.version>2.66.0</palantir-java-format.version>
         <spotbugs.version>4.8.6.6</spotbugs.version>
         <fb-contrib.version>7.6.4</fb-contrib.version>
