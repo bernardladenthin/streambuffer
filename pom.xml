@@ -22,7 +22,7 @@ SPDX-License-Identifier: Apache-2.0
         <java.version>1.8</java.version>
         <java.test.version>21</java.test.version>
         <jcstress.version>0.16</jcstress.version>
-        <jqwik.version>1.9.2</jqwik.version>
+        <jqwik.version>1.10.0</jqwik.version>
         <errorprone.version>2.49.0</errorprone.version>
         <nullaway.version>0.13.4</nullaway.version>
         <spotless.version>2.46.1</spotless.version>
