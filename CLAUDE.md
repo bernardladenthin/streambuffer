@@ -109,3 +109,9 @@ Use numeric hex entities (`&#xNNNN;`) for any Unicode symbol outside ASCII. Name
 - After refactors, run `mvn -B -ntp -DskipTests -Dgpg.skip=true verify` and confirm the BugInstance count is unchanged. A drop means a suppression is now stale and should be deleted; an increase means a new finding needs its own decision (fix vs. suppress).
 - Keep the rationale comment on each `<Match>` accurate — if the original justification no longer applies to the post-refactor code, remove the suppression rather than leave outdated reasoning in place.
 - Never use `--` inside `<!-- ... -->` comment bodies in `spotbugs-exclude.xml` — XML forbids it and the entire filter file silently stops loading (every previously suppressed finding reappears).
+
+## Open TODOs
+
+- **`@VisibleForTesting` audit.** No usages currently. Walk the production tree for package-private/protected methods or fields that exist purely so tests can reach them, and either annotate (`com.google.common.annotations.VisibleForTesting`) or move into the test source tree.
+- **JSpecify null-safety annotations.** NullAway / Error Prone is already wired into the build, but the production code carries no `@Nullable` / `@NonNull` annotations (treated as non-null by default). Review whether any public API surface would benefit from explicit `@Nullable` markers (JSpecify `org.jspecify:jspecify`) for nullable return types or parameters.
+- **No LogCaptor smoke test needed** — this module has no logging code (`org.slf4j.*` not used in `src/main/java/`). If logging is ever introduced, add a LogCaptor smoke test at the same time so the binding/configuration is exercised in tests.
