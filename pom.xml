@@ -21,6 +21,9 @@ SPDX-License-Identifier: Apache-2.0
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <java.version>1.8</java.version>
         <java.test.version>21</java.test.version>
+        <junit.version>6.1.0</junit.version>
+        <hamcrest.version>3.0</hamcrest.version>
+        <jmh.version>1.37</jmh.version>
         <jcstress.version>0.16</jcstress.version>
         <jqwik.version>1.10.0</jqwik.version>
         <errorprone.version>2.49.0</errorprone.version>
@@ -30,8 +33,8 @@ SPDX-License-Identifier: Apache-2.0
         <spotbugs.version>4.9.8.3</spotbugs.version>
         <fb-contrib.version>7.6.4</fb-contrib.version>
         <findsecbugs.version>1.14.0</findsecbugs.version>
-        <archunit.version>1.3.0</archunit.version>
-        <awaitility.version>4.2.2</awaitility.version>
+        <archunit.version>1.4.2</archunit.version>
+        <awaitility.version>4.3.0</awaitility.version>
         <concurrentunit.version>0.4.6</concurrentunit.version>
         <lincheck.version>2.39</lincheck.version>
         <vmlens.version>1.2.28</vmlens.version>
@@ -93,25 +96,25 @@ SPDX-License-Identifier: Apache-2.0
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
-            <version>6.1.0</version>
+            <version>${junit.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.hamcrest</groupId>
             <artifactId>hamcrest</artifactId>
-            <version>3.0</version>
+            <version>${hamcrest.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.openjdk.jmh</groupId>
             <artifactId>jmh-core</artifactId>
-            <version>1.37</version>
+            <version>${jmh.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.openjdk.jmh</groupId>
             <artifactId>jmh-generator-annprocess</artifactId>
-            <version>1.37</version>
+            <version>${jmh.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -227,7 +230,7 @@ SPDX-License-Identifier: Apache-2.0
                                 <path>
                                     <groupId>org.openjdk.jmh</groupId>
                                     <artifactId>jmh-generator-annprocess</artifactId>
-                                    <version>1.37</version>
+                                    <version>${jmh.version}</version>
                                 </path>
                             </annotationProcessorPaths>
                         </configuration>
@@ -266,6 +269,9 @@ SPDX-License-Identifier: Apache-2.0
                 <version>3.12.0</version>
                 <configuration>
                     <source>${java.version}</source>
+                    <failOnError>true</failOnError>
+                    <failOnWarnings>true</failOnWarnings>
+                    <doclint>all</doclint>
                 </configuration>
                 <executions>
                     <execution>
