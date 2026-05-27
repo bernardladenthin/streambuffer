@@ -12,6 +12,7 @@ import java.util.Deque;
 import java.util.LinkedList;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * A stream buffer is a class to buffer data that has been written to an
@@ -100,7 +101,7 @@ public class StreamBuffer implements Closeable {
      * It should be used if the reference to the buffer deque is not reachable out of the scope.
      * It is possible to ignore the safeWrite flag to prevent not necessary clone operations.
      */
-    private boolean ignoreSafeWrite = false;
+    private volatile boolean ignoreSafeWrite = false;
 
     /**
      * The maximum buffer elements. A number of maximum elements to invoke the
@@ -120,13 +121,16 @@ public class StreamBuffer implements Closeable {
 
     /**
      * Cumulative bytes written by the user (excludes internal trim operations).
+     * Uses {@link AtomicLong} because {@code x += len} on a plain {@code volatile} is
+     * non-atomic (read-modify-write) and would lose updates under concurrent writers.
      */
-    private volatile long totalBytesWritten = 0;
+    private final AtomicLong totalBytesWritten = new AtomicLong();
 
     /**
      * Cumulative bytes consumed by user reads and skips (excludes internal trim operations).
+     * See {@link #totalBytesWritten} for the rationale.
      */
-    private volatile long totalBytesRead = 0;
+    private final AtomicLong totalBytesRead = new AtomicLong();
 
     /**
      * Maximum size of a single byte array during consolidation. Default {@link Integer#MAX_VALUE}.
@@ -202,7 +206,7 @@ public class StreamBuffer implements Closeable {
      * @return total bytes written.
      */
     public long getTotalBytesWritten() {
-        return totalBytesWritten;
+        return totalBytesWritten.get();
     }
 
     /**
@@ -212,7 +216,7 @@ public class StreamBuffer implements Closeable {
      * @return total bytes read.
      */
     public long getTotalBytesRead() {
-        return totalBytesRead;
+        return totalBytesRead.get();
     }
 
     /**
@@ -709,7 +713,7 @@ public class StreamBuffer implements Closeable {
      */
     void recordReadStatistics(long bytesRead) {
         if (!isTrimRunning) {
-            totalBytesRead += bytesRead;
+            totalBytesRead.addAndGet(bytesRead);
         }
     }
 
@@ -966,7 +970,7 @@ public class StreamBuffer implements Closeable {
                 // the count must be positive after any write operation
                 assert availableBytes > 0 : "More memory used as a long can count";
                 if (!isTrimRunning) {
-                    totalBytesWritten += len;
+                    totalBytesWritten.addAndGet(len);
                     updateMaxObservedBytesIfNeeded(availableBytes);
                 }
                 trim();
