@@ -44,8 +44,13 @@ mvn test-compile exec:java \
 
 `mvn test` also runs:
 - **jqwik properties** (`StreamBufferProperties`) — picked up by Surefire as a JUnit 5 engine.
-- **jcstress** tests under `net.ladenthin.streambuffer.jcstress` — executed in a forked JVM via `exec-maven-plugin` in the `test` phase (`-m quick` mode).
 - **Lincheck** linearizability test (`StreamBufferLincheckTest`) over the non-blocking subset (`write`, `available`, `close`, `isClosed`).
+
+**Opt-in jcstress concurrency stress tests:**
+```bash
+mvn -Pjcstress test
+```
+jcstress tests under `net.ladenthin.streambuffer.jcstress` live behind the `jcstress` profile. The profile binds `exec-maven-plugin` to the `test` phase to run the jcstress harness in a forked JVM (`-m default`). Off by default because the harness needs annotation-processor-generated test resources that are skipped by `-DskipTests` / `-Dmaven.test.skip=true` (would otherwise NPE) and because the run is slow.
 
 **Opt-in vmlens interleaving analysis:**
 ```bash
