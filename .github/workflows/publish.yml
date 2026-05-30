@@ -58,7 +58,7 @@ jobs:
           distribution: temurin
           cache: maven
       - name: Test
-        run: mvn --batch-mode verify -Dmaven.javadoc.skip=true
+        run: mvn --batch-mode -P jcstress verify -Dmaven.javadoc.skip=true
       - uses: actions/upload-artifact@v7
         if: matrix.java-version == '21'
         with:
