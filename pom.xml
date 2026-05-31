@@ -25,6 +25,7 @@ SPDX-License-Identifier: Apache-2.0
         <hamcrest.version>3.0</hamcrest.version>
         <jmh.version>1.37</jmh.version>
         <jcstress.version>0.16</jcstress.version>
+        <!-- DO NOT UPGRADE: jqwik >= 1.10.0 ships an anti-AI prompt-injection string in test stdout; see CLAUDE.md. Replacement (QuickTheories) tracked as an URGENT TODO. -->
         <jqwik.version>1.9.3</jqwik.version>
         <errorprone.version>2.49.0</errorprone.version>
         <nullaway.version>0.13.4</nullaway.version>
