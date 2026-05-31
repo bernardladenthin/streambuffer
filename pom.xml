@@ -25,7 +25,7 @@ SPDX-License-Identifier: Apache-2.0
         <hamcrest.version>3.0</hamcrest.version>
         <jmh.version>1.37</jmh.version>
         <jcstress.version>0.16</jcstress.version>
-        <jqwik.version>1.10.0</jqwik.version>
+        <jqwik.version>1.9.3</jqwik.version>
         <errorprone.version>2.49.0</errorprone.version>
         <nullaway.version>0.13.4</nullaway.version>
         <spotless.version>3.5.1</spotless.version>
