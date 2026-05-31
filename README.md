@@ -1,6 +1,6 @@
 **Build:**  
 ![Java 8+](https://img.shields.io/badge/Java-8%2B-informational)  
-![JUnit](https://img.shields.io/badge/tested%20with-JUnit5-25A162)  
+![JUnit](https://img.shields.io/badge/tested%20with-JUnit6-25A162)  
 [![jqwik](https://img.shields.io/badge/tested%20with-jqwik-1f6feb)](https://jqwik.net)  
 [![jcstress](https://img.shields.io/badge/tested%20with-jcstress-007396)](https://openjdk.org/projects/code-tools/jcstress/)  
 [![Lincheck](https://img.shields.io/badge/tested%20with-Lincheck-7F52FF)](https://github.com/JetBrains/lincheck)  
@@ -343,7 +343,7 @@ mvn org.pitest:pitest-maven:mutationCoverage
 
 ## Testing
 
-Tests are in `StreamBufferTest` using JUnit 5 (JUnit Jupiter). Most behavioral tests are parameterized across three write strategies:
+Tests are in `StreamBufferTest` using JUnit 6 (JUnit Jupiter). Most behavioral tests are parameterized across three write strategies:
 
 | `WriteMethod` | Description |
 |---------------|-------------|
