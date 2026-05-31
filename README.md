@@ -343,7 +343,9 @@ mvn org.pitest:pitest-maven:mutationCoverage
 
 ## Testing
 
-Tests are in `StreamBufferTest` using JUnit 6 (JUnit Jupiter). Most behavioral tests are parameterized across three write strategies:
+> ⚠️ **DO NOT UPGRADE jqwik past 1.9.3.** jqwik 1.10.0 added an anti-AI prompt-injection string to test stdout; the 1.10.1 user guide states the library "is not meant to be used by any 'AI' coding agents at all." 1.9.3 is the last pre-disclosure release and is the pinned version. See `CLAUDE.md` section "jqwik prompt-injection in test output" for the full context.
+
+Tests are in `StreamBufferTest` using JUnit 6 (JUnit Jupiter); property-based tests live in `StreamBufferProperties` and use jqwik 1.9.3 (pinned — see warning above). Most behavioral tests are parameterized across three write strategies:
 
 | `WriteMethod` | Description |
 |---------------|-------------|
