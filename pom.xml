@@ -379,6 +379,39 @@ SPDX-License-Identifier: Apache-2.0
                 </configuration>
                 <executions>
                     <execution>
+                        <id>default-compile</id>
+                        <configuration>
+                            <!-- The default compile pass targets Java 8 bytecode for the library
+                                 sources. module-info.java cannot be compiled at release 8 (it is a
+                                 Java 9+ construct) and is handled by the separate execution below. -->
+                            <excludes>
+                                <exclude>module-info.java</exclude>
+                            </excludes>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>module-info-compile</id>
+                        <phase>compile</phase>
+                        <goals>
+                            <goal>compile</goal>
+                        </goals>
+                        <configuration>
+                            <!-- module-info.java is the only Java 9+ source in this project; compile
+                                 it at release 9 (the minimum version that understands modules) without
+                                 the Error Prone / NullAway / Checker Framework processors that target
+                                 ordinary source files only. Java 8 runtimes silently ignore the
+                                 resulting module-info.class at the JAR root, so the artifact remains
+                                 backward compatible while exposing a proper module descriptor to
+                                 Java 9+ module-path consumers. -->
+                            <release>9</release>
+                            <includes>
+                                <include>module-info.java</include>
+                            </includes>
+                            <compilerArgs combine.self="override"/>
+                            <annotationProcessorPaths combine.self="override"/>
+                        </configuration>
+                    </execution>
+                    <execution>
                         <id>default-testCompile</id>
                         <configuration>
                             <!-- Lincheck's @Operation reads parameter names from bytecode and treats them
