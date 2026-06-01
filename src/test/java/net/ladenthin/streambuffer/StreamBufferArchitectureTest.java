@@ -67,4 +67,20 @@ public class StreamBufferArchitectureTest {
             .should()
             .dependOnClassesThat()
             .resideInAnyPackage("sun..", "com.sun..", "jdk.internal..");
+
+    /**
+     * Public mutable state forbidden: any non-static field declared
+     * {@code public} must also be {@code final}. Static finals are constants
+     * and are allowed; instance fields exposed publicly without {@code final}
+     * are an encapsulation leak and should use accessors instead.
+     */
+    @ArchTest
+    static final ArchRule noPublicMutableFields = fields()
+            .that()
+            .arePublic()
+            .and()
+            .areNotStatic()
+            .should()
+            .beFinal()
+            .allowEmptyShould(true); // regression guard; passes vacuously today
 }
