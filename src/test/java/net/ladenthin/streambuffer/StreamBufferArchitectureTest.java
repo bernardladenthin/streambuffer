@@ -11,6 +11,7 @@ import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
+import java.util.Random;
 
 @AnalyzeClasses(packages = "net.ladenthin.streambuffer", importOptions = ImportOption.DoNotIncludeTests.class)
 public class StreamBufferArchitectureTest {
@@ -83,4 +84,46 @@ public class StreamBufferArchitectureTest {
             .should()
             .beFinal()
             .allowEmptyShould(true); // regression guard; passes vacuously today
+
+    /**
+     * Production code must not call {@link System#exit(int)}; throw or return non-zero from main instead.
+     */
+    @ArchTest
+    static final ArchRule noSystemExit = noClasses()
+            .that()
+            .resideInAPackage("net.ladenthin.streambuffer..")
+            .should()
+            .callMethod(System.class, "exit", int.class)
+            .allowEmptyShould(true);
+
+    /**
+     * Production code must not construct {@link java.util.Random}; {@code Random} is a non-cryptographic
+     * PRNG (CWE-338). Use {@link java.security.SecureRandom} or {@link java.util.concurrent.ThreadLocalRandom}
+     * depending on whether cryptographic strength or thread-local fast jitter is needed.
+     */
+    @ArchTest
+    static final ArchRule noNewRandom = noClasses()
+            .that()
+            .resideInAPackage("net.ladenthin.streambuffer..")
+            .should()
+            .callConstructor(Random.class)
+            .orShould()
+            .callConstructor(Random.class, long.class)
+            .allowEmptyShould(true);
+
+    /**
+     * Production code must not call {@link Thread#sleep(long)} / {@link Thread#sleep(long, int)};
+     * prefer {@link java.util.concurrent.BlockingQueue#poll(long, java.util.concurrent.TimeUnit)} or
+     * {@link java.util.concurrent.locks.Condition#await(long, java.util.concurrent.TimeUnit)} which
+     * compose with cancellation and produce intent-clear stack traces.
+     */
+    @ArchTest
+    static final ArchRule noThreadSleep = noClasses()
+            .that()
+            .resideInAPackage("net.ladenthin.streambuffer..")
+            .should()
+            .callMethod(Thread.class, "sleep", long.class)
+            .orShould()
+            .callMethod(Thread.class, "sleep", long.class, int.class)
+            .allowEmptyShould(true);
 }
