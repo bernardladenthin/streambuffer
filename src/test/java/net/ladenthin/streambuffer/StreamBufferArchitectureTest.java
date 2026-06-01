@@ -5,6 +5,7 @@ package net.ladenthin.streambuffer;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.fields;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
@@ -40,4 +41,18 @@ public class StreamBufferArchitectureTest {
     @ArchTest
     static final ArchRule dequeFieldsArePrivate =
             fields().that().haveRawType(java.util.Deque.class).should().bePrivate();
+
+    /**
+     * Production code must not use {@code java.util.logging} directly; logging
+     * is delegated to SLF4J. The rule currently has no violations because the
+     * production code has no logging at all (the module is library code with
+     * no built-in tracing); this acts as a regression guard.
+     */
+    @ArchTest
+    static final ArchRule noJavaUtilLogging = noClasses()
+            .that()
+            .resideInAPackage("net.ladenthin.streambuffer..")
+            .should()
+            .dependOnClassesThat()
+            .resideInAPackage("java.util.logging..");
 }
