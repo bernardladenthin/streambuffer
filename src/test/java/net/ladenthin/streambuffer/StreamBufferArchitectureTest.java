@@ -33,7 +33,8 @@ public class StreamBufferArchitectureTest {
                     "net.ladenthin.streambuffer..",
                     "java..",
                     "com.google.errorprone.annotations..",
-                    "org.jspecify.annotations..");
+                    "org.jspecify.annotations..",
+                    "org.checkerframework..");
 
     /**
      * The internal buffer Deque is an implementation detail; no static

@@ -36,6 +36,7 @@ SPDX-License-Identifier: Apache-2.0
         <errorprone.version>2.49.0</errorprone.version>
         <nullaway.version>0.13.4</nullaway.version>
         <jspecify.version>1.0.0</jspecify.version>
+        <checker.version>4.1.0</checker.version>
         <spotless.version>3.5.1</spotless.version>
         <palantir-java-format.version>2.66.0</palantir-java-format.version>
         <spotbugs.version>4.9.8.3</spotbugs.version>
@@ -112,6 +113,12 @@ SPDX-License-Identifier: Apache-2.0
             <groupId>org.jspecify</groupId>
             <artifactId>jspecify</artifactId>
             <version>${jspecify.version}</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.checkerframework</groupId>
+            <artifactId>checker-qual</artifactId>
+            <version>${checker.version}</version>
             <optional>true</optional>
         </dependency>
         <dependency>
@@ -337,6 +344,16 @@ SPDX-License-Identifier: Apache-2.0
                           -Werror would always fail. The warnings remain visible for triage.
                         -->
                         <arg>-Xlint:all,-serial,-options,-classfile</arg>
+                        <!--
+                          Checker Framework Nullness Checker runs as a second nullness pass
+                          alongside NullAway. CF is generics-aware and stricter than NullAway,
+                          so it acts as a second-opinion verifier on the same JSpecify
+                          annotations. Skip-uses=javafx is a stub directive to avoid known
+                          JDK ct.sym noise; ASSUMEPURE silences "method is impure" complaints
+                          on simple getters that have side-effects we know are safe.
+                        -->
+                        <arg>-processor</arg>
+                        <arg>org.checkerframework.checker.nullness.NullnessChecker</arg>
                         <arg>-XDaddTypeAnnotationsToSymbol=true</arg>
                         <arg>-XDcompilePolicy=simple</arg>
                         <arg>--should-stop=ifError=FLOW</arg>
@@ -352,6 +369,11 @@ SPDX-License-Identifier: Apache-2.0
                             <groupId>com.uber.nullaway</groupId>
                             <artifactId>nullaway</artifactId>
                             <version>${nullaway.version}</version>
+                        </path>
+                        <path>
+                            <groupId>org.checkerframework</groupId>
+                            <artifactId>checker</artifactId>
+                            <version>${checker.version}</version>
                         </path>
                     </annotationProcessorPaths>
                 </configuration>
