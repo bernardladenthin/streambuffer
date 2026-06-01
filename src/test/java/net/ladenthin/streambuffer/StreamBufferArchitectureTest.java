@@ -27,7 +27,11 @@ public class StreamBufferArchitectureTest {
             .resideInAPackage("net.ladenthin.streambuffer..")
             .should()
             .onlyDependOnClassesThat()
-            .resideInAnyPackage("net.ladenthin.streambuffer..", "java..", "com.google.errorprone.annotations..");
+            .resideInAnyPackage(
+                    "net.ladenthin.streambuffer..",
+                    "java..",
+                    "com.google.errorprone.annotations..",
+                    "org.jspecify.annotations..");
 
     /**
      * The internal buffer Deque is an implementation detail; no static

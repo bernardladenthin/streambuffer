@@ -318,6 +318,40 @@ If no data is available and the stream is not closed, `read()` blocks the callin
 
 Write operations never block, regardless of how much data is already buffered.
 
+## Runtime dependencies
+
+**streambuffer ships with zero transitive runtime dependencies.** A downstream
+consumer that declares
+
+```xml
+<dependency>
+    <groupId>net.ladenthin</groupId>
+    <artifactId>streambuffer</artifactId>
+    <version>1.3.0</version>
+</dependency>
+```
+
+gets exactly that one artifact on its runtime classpath. `mvn dependency:tree`
+on the consumer side will show no transitive deps from streambuffer.
+
+The two annotation libraries we use at compile time are marked
+`<optional>true</optional>` in our `pom.xml`:
+
+| Dep | Why it's used | What's in the bytecode | Runtime classpath impact |
+|---|---|---|---|
+| `org.jspecify:jspecify` | `@NullMarked` on the package, future `@Nullable` markers | annotation references, `@Retention(CLASS)` | none — JVM never loads these classes |
+| `com.google.errorprone:error_prone_annotations` | `@GuardedBy` on internal lock-protected fields | annotation references, `@Retention(CLASS)` | none — JVM never loads these classes |
+
+Both annotation types have `@Retention(CLASS)`: the references are written into
+streambuffer's `.class` files (so static analyzers like NullAway, IntelliJ, or
+the Checker Framework on a consumer's project can read the contract), but the
+JVM never loads the annotation classes at runtime. The `<optional>true</optional>`
+scope keeps the JARs off downstream runtime classpaths.
+
+If you run static analysis on your own project and want IntelliJ / NullAway to
+see streambuffer's nullness contract, declare `org.jspecify:jspecify` yourself
+explicitly — it is not provided transitively.
+
 ## Build
 
 Requires Java 8 and Maven 3.3.9+.
