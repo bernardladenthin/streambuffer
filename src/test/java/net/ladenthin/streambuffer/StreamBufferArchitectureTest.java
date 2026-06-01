@@ -55,4 +55,16 @@ public class StreamBufferArchitectureTest {
             .should()
             .dependOnClassesThat()
             .resideInAPackage("java.util.logging..");
+
+    /**
+     * Production code must not import unsupported / internal JDK packages.
+     * These are not part of the Java SE API and may change or disappear without notice.
+     */
+    @ArchTest
+    static final ArchRule noInternalJdkImports = noClasses()
+            .that()
+            .resideInAPackage("net.ladenthin.streambuffer..")
+            .should()
+            .dependOnClassesThat()
+            .resideInAnyPackage("sun..", "com.sun..", "jdk.internal..");
 }
