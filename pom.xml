@@ -327,10 +327,20 @@ SPDX-License-Identifier: Apache-2.0
                     <showWarnings>true</showWarnings>
                     <parameters>true</parameters>
                     <compilerArgs>
+                        <!--
+                          -Xlint:all (with -serial, -options, -classfile excluded) makes javac
+                          surface every other category of warning at compile time. We intentionally
+                          do NOT pass -Werror here because the build targets Java 8 (release=8) and
+                          JSpecify's @NullMarked has @Target(MODULE) (Java 9+). javac under
+                          release 8 emits an "unknown enum constant ElementType.MODULE" classfile
+                          read warning that is not suppressible via -Xlint:* exclusions, so
+                          -Werror would always fail. The warnings remain visible for triage.
+                        -->
+                        <arg>-Xlint:all,-serial,-options,-classfile</arg>
                         <arg>-XDaddTypeAnnotationsToSymbol=true</arg>
                         <arg>-XDcompilePolicy=simple</arg>
                         <arg>--should-stop=ifError=FLOW</arg>
-                        <arg>-Xplugin:ErrorProne -Xep:NullAway:ERROR -XepOpt:NullAway:OnlyNullMarked=true -XepOpt:NullAway:JSpecifyMode=true -XepOpt:NullAway:CheckOptionalEmptiness=true -XepOpt:NullAway:AcknowledgeRestrictiveAnnotations=true -XepOpt:NullAway:AcknowledgeAndroidRecent=true -XepOpt:NullAway:AssertsEnabled=true</arg>
+                        <arg>-Xplugin:ErrorProne -Xep:NullAway:ERROR -XepOpt:NullAway:OnlyNullMarked=true -XepOpt:NullAway:JSpecifyMode=true -XepOpt:NullAway:CheckOptionalEmptiness=true -XepOpt:NullAway:AcknowledgeRestrictiveAnnotations=true -XepOpt:NullAway:AcknowledgeAndroidRecent=true -XepOpt:NullAway:AssertsEnabled=true -Xep:BoxedPrimitiveEquality:ERROR -Xep:EqualsHashCode:ERROR -Xep:EqualsIncompatibleType:ERROR -Xep:IdentityBinaryExpression:ERROR -Xep:SelfAssignment:ERROR -Xep:SelfComparison:ERROR -Xep:SelfEquals:ERROR -Xep:DeadException:ERROR -Xep:FormatString:ERROR -Xep:InvalidPatternSyntax:ERROR -Xep:OptionalEquality:ERROR -Xep:ImpossibleNullComparison:ERROR</arg>
                     </compilerArgs>
                     <annotationProcessorPaths>
                         <path>
