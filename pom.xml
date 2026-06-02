@@ -335,15 +335,23 @@ SPDX-License-Identifier: Apache-2.0
                     <parameters>true</parameters>
                     <compilerArgs>
                         <!--
-                          -Xlint:all (with -serial, -options, -classfile excluded) makes javac
-                          surface every other category of warning at compile time. We intentionally
-                          do NOT pass -Werror here because the build targets Java 8 (release=8) and
-                          JSpecify's @NullMarked has @Target(MODULE) (Java 9+). javac under
-                          release 8 emits an "unknown enum constant ElementType.MODULE" classfile
-                          read warning that is not suppressible via -Xlint:* exclusions, so
-                          -Werror would always fail. The warnings remain visible for triage.
+                          -Xlint:all surfaces every category of javac warning. Categories excluded
+                          and why:
+                            -serial    : serialVersionUID warnings on non-Serializable classes (we
+                                         do not opt in to serialization).
+                            -options   : bootclasspath / target-mismatch chatter under release=8.
+                            -classfile : noise when javac reads our own .class output mid-build.
+                            -processing: "No processor claimed any of these annotations"
+                                         (com.google.errorprone.annotations.concurrent.GuardedBy is
+                                         consumed by the Error Prone javac plugin, not by a JSR-269
+                                         annotation processor, so javac emits this informational
+                                         warning every build).
+                          -Werror is on: the ElementType.MODULE blocker is gone now that
+                          @NullMarked lives only in module-info.java (compiled at release 9 in a
+                          separate execution); see module-info.java's javadoc.
                         -->
-                        <arg>-Xlint:all,-serial,-options,-classfile</arg>
+                        <arg>-Xlint:all,-serial,-options,-classfile,-processing</arg>
+                        <arg>-Werror</arg>
                         <!--
                           Checker Framework Nullness Checker runs as a second nullness pass
                           alongside NullAway. CF is generics-aware and stricter than NullAway,

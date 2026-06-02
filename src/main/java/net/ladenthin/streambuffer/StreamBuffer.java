@@ -9,7 +9,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Deque;
-import java.util.LinkedList;
+import java.util.ArrayDeque;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicLong;
@@ -38,7 +38,7 @@ public class StreamBuffer implements Closeable {
      * The buffer which contains the raw data.
      */
     @GuardedBy("bufferLock")
-    private final Deque<byte[]> buffer = new LinkedList<>();
+    private final Deque<byte[]> buffer = new ArrayDeque<>();
 
     /**
      * A {@link Semaphore} to signal that data are added to the {@link #buffer}.
@@ -429,6 +429,12 @@ public class StreamBuffer implements Closeable {
      * Sets {@link #isTrimRunning} volatile flag to prevent statistics updates during internal I/O.
      * Respects {@link #maxAllocationSize} limit when allocating byte arrays.
      */
+    // Non-atomic update on the volatile availableBytes field at the
+    // "availableBytes += chunk.length" line is safe because the entire method
+    // body runs under bufferLock (see @GuardedBy and the synchronized block
+    // in the caller). volatile guarantees visibility to readers outside the
+    // lock; bufferLock guarantees atomicity of the read-modify-write.
+    @SuppressWarnings("NonAtomicVolatileUpdate")
     @GuardedBy("bufferLock")
     private void trim() throws IOException {
         if (isTrimShouldBeExecuted()) {
@@ -436,13 +442,13 @@ public class StreamBuffer implements Closeable {
             try {
                 releaseTrimStartSignals();
 
-                /**
+                /*
                  * Need to store more bufs, may it is not possible to read out all
                  * data at once. The available method only returns an int value
                  * instead a long value. Store all read parts of the full buffer in
                  * a deque.
                  */
-                final Deque<byte[]> tmpBuffer = new LinkedList<>();
+                final Deque<byte[]> tmpBuffer = new ArrayDeque<>();
 
                 int available;
                 // empty the current buffer, read out all bytes
@@ -457,13 +463,13 @@ public class StreamBuffer implements Closeable {
                     assert read == toAllocate : "Read not enough bytes from buffer.";
                     tmpBuffer.add(buf);
                 }
-                /**
+                /*
                  * Write all previously read parts back to the buffer directly.
-                 * We are already holding {@link #bufferLock} and the chunks were
-                 * just produced internally, so going through {@link SBOutputStream#write}
-                 * is unnecessary and would fail at {@link #requireNonClosed()} if
-                 * {@link #close()} is invoked concurrently — discarding tmpBuffer
-                 * and losing every byte that trim already drained.
+                 * We are already holding bufferLock and the chunks were
+                 * just produced internally, so going through SBOutputStream#write
+                 * is unnecessary and would fail at requireNonClosed() if close()
+                 * is invoked concurrently — discarding tmpBuffer and losing
+                 * every byte that trim already drained.
                  */
                 while (!tmpBuffer.isEmpty()) {
                     // Deque.pollFirst is declared @Nullable; the !isEmpty guard above
@@ -581,7 +587,7 @@ public class StreamBuffer implements Closeable {
 
     @GuardedBy("bufferLock")
     boolean isTrimShouldBeExecuted() {
-        /**
+        /*
          * Prevent recursive trim: if trim is already running, its internal
          * writes must never trigger another trim (infinite recursion / stack overflow).
          */
@@ -589,9 +595,9 @@ public class StreamBuffer implements Closeable {
             return false;
         }
 
-        /**
+        /*
          * To be thread safe, cache the maxBufferElements value. May the method
-         * {@link #setMaxBufferElements(int)} was invoked from outside by another thread.
+         * setMaxBufferElements(int) was invoked from outside by another thread.
          */
         final int maxBufferElements = getMaxBufferElements();
 
@@ -761,11 +767,9 @@ public class StreamBuffer implements Closeable {
      * {@link InputStream} or the stream was closed. This method could must be called
      * from one thread only (same thread as read methods, do not call this method during read operations).
      * It's not allowed to use this method to notify multiple threads.
-     * @throws java.lang.InterruptedException if the current thread is interrupted
-     *
      * @param bytes the number of bytes waiting for.
-     * @throws IOException If the thread is interrupted.
      * @return The available bytes.
+     * @throws InterruptedException if the current thread is interrupted while waiting.
      */
     private long tryWaitForEnoughBytes(final long bytes) throws InterruptedException {
         // we can only wait for a positive number of bytes
@@ -988,6 +992,7 @@ public class StreamBuffer implements Closeable {
         }
     }
 
+    @Override
     public void close() throws IOException {
         closeAll();
     }
