@@ -8,8 +8,8 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.Deque;
 import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicLong;
@@ -1074,5 +1074,4 @@ public class StreamBuffer implements Closeable {
     public OutputStream getOutputStream() {
         return os;
     }
-
 }

@@ -7,8 +7,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import org.jetbrains.kotlinx.lincheck.LinChecker;
-import org.jetbrains.lincheck.datastructures.Operation;
 import org.jetbrains.lincheck.datastructures.ModelCheckingOptions;
+import org.jetbrains.lincheck.datastructures.Operation;
 import org.junit.jupiter.api.Test;
 
 /**

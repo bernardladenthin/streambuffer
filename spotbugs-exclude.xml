@@ -22,4 +22,23 @@ SPDX-License-Identifier: Apache-2.0
         </Or>
         <Bug pattern="EI_EXPOSE_REP"/>
     </Match>
+
+    <!--
+        trim() drains the buffer into a temporary ArrayDeque before
+        consolidating it back. SpotBugs PSC_PRESIZE_COLLECTIONS suggests
+        passing an initial capacity hint, but a tight bound here would
+        require ceil(availableBytes / maxAllocationSize) over two volatile
+        long fields. That arithmetic produces equivalent mutants (ArrayDeque
+        tolerates any non-negative initial capacity, so the capacity hint
+        is unobservable through tests) and would break the package's 100 %
+        PIT mutation threshold. trim() is also not a hot path - it runs at
+        most once per maxBufferElements writes (default 100), so the
+        ArrayDeque default growth 16-32-64 is negligible against the
+        surrounding I/O.
+    -->
+    <Match>
+        <Class name="net.ladenthin.streambuffer.StreamBuffer"/>
+        <Method name="trim"/>
+        <Bug pattern="PSC_PRESIZE_COLLECTIONS"/>
+    </Match>
 </FindBugsFilter>

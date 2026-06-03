@@ -77,8 +77,7 @@ public class StreamBufferArchitectureTest {
      * are an encapsulation leak and should use accessors instead.
      */
     @ArchTest
-    static final ArchRule noPublicMutableFields = fields()
-            .that()
+    static final ArchRule noPublicMutableFields = fields().that()
             .arePublic()
             .and()
             .areNotStatic()
