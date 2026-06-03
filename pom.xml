@@ -45,7 +45,7 @@ SPDX-License-Identifier: Apache-2.0
         <archunit.version>1.4.2</archunit.version>
         <awaitility.version>4.3.0</awaitility.version>
         <concurrentunit.version>0.4.6</concurrentunit.version>
-        <lincheck.version>2.39</lincheck.version>
+        <lincheck.version>3.6</lincheck.version>
         <vmlens.version>1.2.28</vmlens.version>
         <project.build.outputTimestamp>${git.commit.time}</project.build.outputTimestamp>
     </properties>
@@ -176,8 +176,8 @@ SPDX-License-Identifier: Apache-2.0
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>org.jetbrains.kotlinx</groupId>
-            <artifactId>lincheck-jvm</artifactId>
+            <groupId>org.jetbrains.lincheck</groupId>
+            <artifactId>lincheck</artifactId>
             <version>${lincheck.version}</version>
             <scope>test</scope>
         </dependency>
