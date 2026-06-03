@@ -10,25 +10,30 @@ SPDX-License-Identifier: Apache-2.0
     <groupId>net.ladenthin</groupId>
     <artifactId>streambuffer</artifactId>
     <version>1.3.0-SNAPSHOT</version>
-    <prerequisites>
-        <maven>3.3.9</maven>
-    </prerequisites>
     <packaging>jar</packaging>
     <name>streambuffer</name>
     <description>A stream buffer is a class to buffer data that has been written to an OutputStream and provide the data in an InputStream.</description>
     <url>https://github.com/bernardladenthin/streambuffer</url>
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <java.version>1.8</java.version>
+        <java.version>8</java.version>
         <java.test.version>21</java.test.version>
         <junit.version>6.1.0</junit.version>
         <hamcrest.version>3.0</hamcrest.version>
         <jmh.version>1.37</jmh.version>
         <jcstress.version>0.16</jcstress.version>
-        <!-- DO NOT UPGRADE: jqwik >= 1.10.0 ships an anti-AI prompt-injection string in test stdout; see CLAUDE.md. Replacement (QuickTheories) tracked as an URGENT TODO. -->
+        <!-- DO NOT UPGRADE jqwik past 1.9.3. jqwik 1.10.0 added a deliberate
+             anti-AI prompt-injection string to test stdout; the 1.10.1 user
+             guide states the library "is not meant to be used by any 'AI'
+             coding agents at all." 1.9.3 is the last pre-disclosure release
+             and is the pinned version for this repo. Any CI / Dependabot /
+             contributor PR that bumps this MUST be rejected. See CLAUDE.md
+             section "jqwik prompt-injection in test output" for full context. -->
         <jqwik.version>1.9.3</jqwik.version>
         <errorprone.version>2.49.0</errorprone.version>
         <nullaway.version>0.13.4</nullaway.version>
+        <jspecify.version>1.0.0</jspecify.version>
+        <checker.version>4.1.0</checker.version>
         <spotless.version>3.5.1</spotless.version>
         <palantir-java-format.version>2.66.0</palantir-java-format.version>
         <spotbugs.version>4.9.8.3</spotbugs.version>
@@ -37,7 +42,7 @@ SPDX-License-Identifier: Apache-2.0
         <archunit.version>1.4.2</archunit.version>
         <awaitility.version>4.3.0</awaitility.version>
         <concurrentunit.version>0.4.6</concurrentunit.version>
-        <lincheck.version>2.39</lincheck.version>
+        <lincheck.version>3.6</lincheck.version>
         <vmlens.version>1.2.28</vmlens.version>
         <project.build.outputTimestamp>${git.commit.time}</project.build.outputTimestamp>
     </properties>
@@ -89,10 +94,29 @@ SPDX-License-Identifier: Apache-2.0
         </snapshotRepository>
     </distributionManagement>
     <dependencies>
+        <!-- Annotation-only deps below are marked <optional>true</optional> so they
+             do NOT propagate onto downstream consumers' runtime classpaths. The
+             annotations have @Retention(CLASS); their references stay in this
+             artifact's bytecode but the JVM never loads them at runtime. Result:
+             streambuffer's published artifact carries zero transitive runtime
+             dependencies. See README "Runtime dependencies" section. -->
         <dependency>
             <groupId>com.google.errorprone</groupId>
             <artifactId>error_prone_annotations</artifactId>
             <version>${errorprone.version}</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.jspecify</groupId>
+            <artifactId>jspecify</artifactId>
+            <version>${jspecify.version}</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.checkerframework</groupId>
+            <artifactId>checker-qual</artifactId>
+            <version>${checker.version}</version>
+            <optional>true</optional>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
@@ -149,8 +173,8 @@ SPDX-License-Identifier: Apache-2.0
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>org.jetbrains.kotlinx</groupId>
-            <artifactId>lincheck-jvm</artifactId>
+            <groupId>org.jetbrains.lincheck</groupId>
+            <artifactId>lincheck</artifactId>
             <version>${lincheck.version}</version>
             <scope>test</scope>
         </dependency>
@@ -209,6 +233,11 @@ SPDX-License-Identifier: Apache-2.0
                     <version>3.5.5</version>
                 </plugin>
                 <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-enforcer-plugin</artifactId>
+                    <version>3.6.3</version>
+                </plugin>
+                <plugin>
                     <groupId>org.codehaus.mojo</groupId>
                     <artifactId>exec-maven-plugin</artifactId>
                     <version>3.6.3</version>
@@ -231,6 +260,44 @@ SPDX-License-Identifier: Apache-2.0
             </plugins>
         </pluginManagement>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>enforce</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <requireMavenVersion>
+                                    <version>[3.6.3,)</version>
+                                </requireMavenVersion>
+                                <requireJavaVersion>
+                                    <version>[1.8,)</version>
+                                </requireJavaVersion>
+                                <dependencyConvergence/>
+                                <bannedDependencies>
+                                    <excludes>
+                                        <!-- Use SLF4J directly; never commons-logging. -->
+                                        <exclude>commons-logging:commons-logging</exclude>
+                                        <!-- Legacy / EoL logging frameworks. -->
+                                        <exclude>log4j:log4j</exclude>
+                                        <!-- Old hamcrest split artifacts; use hamcrest:hamcrest 2.x+. -->
+                                        <exclude>org.hamcrest:hamcrest-core</exclude>
+                                        <exclude>org.hamcrest:hamcrest-library</exclude>
+                                        <exclude>org.hamcrest:hamcrest-all</exclude>
+                                        <!-- Legacy JUnit 3 / 4; we use Jupiter (junit:junit-jupiter). -->
+                                        <exclude>junit:junit</exclude>
+                                        <exclude>junit:junit-dep</exclude>
+                                    </excludes>
+                                </bannedDependencies>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>io.github.git-commit-id</groupId>
                 <artifactId>git-commit-id-maven-plugin</artifactId>
@@ -258,17 +325,44 @@ SPDX-License-Identifier: Apache-2.0
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <configuration>
-                    <source>${java.version}</source>
-                    <target>${java.version}</target>
-                    <testSource>${java.test.version}</testSource>
-                    <testTarget>${java.test.version}</testTarget>
+                    <release>${java.version}</release>
+                    <testRelease>${java.test.version}</testRelease>
                     <encoding>${project.build.sourceEncoding}</encoding>
                     <showWarnings>true</showWarnings>
+                    <parameters>true</parameters>
                     <compilerArgs>
+                        <!--
+                          -Xlint:all surfaces every category of javac warning. Categories excluded
+                          and why:
+                            -serial    : serialVersionUID warnings on non-Serializable classes (we
+                                         do not opt in to serialization).
+                            -options   : bootclasspath / target-mismatch chatter under release=8.
+                            -classfile : noise when javac reads our own .class output mid-build.
+                            -processing: "No processor claimed any of these annotations"
+                                         (com.google.errorprone.annotations.concurrent.GuardedBy is
+                                         consumed by the Error Prone javac plugin, not by a JSR-269
+                                         annotation processor, so javac emits this informational
+                                         warning every build).
+                          -Werror is on: the ElementType.MODULE blocker is gone now that
+                          @NullMarked lives only in module-info.java (compiled at release 9 in a
+                          separate execution); see module-info.java's javadoc.
+                        -->
+                        <arg>-Xlint:all,-serial,-options,-classfile,-processing</arg>
+                        <arg>-Werror</arg>
+                        <!--
+                          Checker Framework Nullness Checker runs as a second nullness pass
+                          alongside NullAway. CF is generics-aware and stricter than NullAway,
+                          so it acts as a second-opinion verifier on the same JSpecify
+                          annotations. Skip-uses=javafx is a stub directive to avoid known
+                          JDK ct.sym noise; ASSUMEPURE silences "method is impure" complaints
+                          on simple getters that have side-effects we know are safe.
+                        -->
+                        <arg>-processor</arg>
+                        <arg>org.checkerframework.checker.nullness.NullnessChecker</arg>
                         <arg>-XDaddTypeAnnotationsToSymbol=true</arg>
                         <arg>-XDcompilePolicy=simple</arg>
                         <arg>--should-stop=ifError=FLOW</arg>
-                        <arg>-Xplugin:ErrorProne -Xep:NullAway:ERROR -XepOpt:NullAway:AnnotatedPackages=net.ladenthin</arg>
+                        <arg>-Xplugin:ErrorProne -Xep:NullAway:ERROR -XepOpt:NullAway:OnlyNullMarked=true -XepOpt:NullAway:JSpecifyMode=true -XepOpt:NullAway:CheckOptionalEmptiness=true -XepOpt:NullAway:AcknowledgeRestrictiveAnnotations=true -XepOpt:NullAway:AcknowledgeAndroidRecent=true -XepOpt:NullAway:AssertsEnabled=true -Xep:BoxedPrimitiveEquality:ERROR -Xep:EqualsHashCode:ERROR -Xep:EqualsIncompatibleType:ERROR -Xep:IdentityBinaryExpression:ERROR -Xep:SelfAssignment:ERROR -Xep:SelfComparison:ERROR -Xep:SelfEquals:ERROR -Xep:DeadException:ERROR -Xep:FormatString:ERROR -Xep:InvalidPatternSyntax:ERROR -Xep:OptionalEquality:ERROR -Xep:ImpossibleNullComparison:ERROR</arg>
                     </compilerArgs>
                     <annotationProcessorPaths>
                         <path>
@@ -281,13 +375,56 @@ SPDX-License-Identifier: Apache-2.0
                             <artifactId>nullaway</artifactId>
                             <version>${nullaway.version}</version>
                         </path>
+                        <path>
+                            <groupId>org.checkerframework</groupId>
+                            <artifactId>checker</artifactId>
+                            <version>${checker.version}</version>
+                        </path>
                     </annotationProcessorPaths>
                 </configuration>
                 <executions>
                     <execution>
+                        <id>default-compile</id>
+                        <configuration>
+                            <!-- The default compile pass targets Java 8 bytecode for the library
+                                 sources. module-info.java cannot be compiled at release 8 (it is a
+                                 Java 9+ construct) and is handled by the separate execution below. -->
+                            <excludes>
+                                <exclude>module-info.java</exclude>
+                            </excludes>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>module-info-compile</id>
+                        <phase>compile</phase>
+                        <goals>
+                            <goal>compile</goal>
+                        </goals>
+                        <configuration>
+                            <!-- module-info.java is the only Java 9+ source in this project; compile
+                                 it at release 9 (the minimum version that understands modules) without
+                                 the Error Prone / NullAway / Checker Framework processors that target
+                                 ordinary source files only. Java 8 runtimes silently ignore the
+                                 resulting module-info.class at the JAR root, so the artifact remains
+                                 backward compatible while exposing a proper module descriptor to
+                                 Java 9+ module-path consumers. -->
+                            <release>9</release>
+                            <includes>
+                                <include>module-info.java</include>
+                            </includes>
+                            <compilerArgs combine.self="override"/>
+                            <annotationProcessorPaths combine.self="override"/>
+                        </configuration>
+                    </execution>
+                    <execution>
                         <id>default-testCompile</id>
                         <configuration>
-                            <compilerArgs>
+                            <!-- Lincheck's @Operation reads parameter names from bytecode and treats them
+                                 as expected generator names; turn off -parameters for test compile to
+                                 keep parameter names erased and let Lincheck fall back to type-based
+                                 generator matching. Main compile keeps -parameters via the parent config. -->
+                            <parameters>false</parameters>
+                            <compilerArgs combine.self="override">
                                 <arg>-XDaddTypeAnnotationsToSymbol=true</arg>
                                 <arg>-XDcompilePolicy=simple</arg>
                                 <arg>--should-stop=ifError=FLOW</arg>

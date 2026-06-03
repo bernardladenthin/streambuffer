@@ -8,8 +8,8 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.ArrayDeque;
 import java.util.Deque;
-import java.util.LinkedList;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicLong;
@@ -25,8 +25,8 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public class StreamBuffer implements Closeable {
 
-    static final String EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION =
-            "Invalid offset or length given to correctOffsetAndLengthToWrite.";
+    static final String EXCEPTION_MESSAGE_VALIDATE_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION =
+            "Invalid offset or length given to validateOffsetAndLengthToWrite.";
 
     /**
      * An object to get an unique access to the {@link #buffer}. It is needed to
@@ -38,7 +38,7 @@ public class StreamBuffer implements Closeable {
      * The buffer which contains the raw data.
      */
     @GuardedBy("bufferLock")
-    private final Deque<byte[]> buffer = new LinkedList<>();
+    private final Deque<byte[]> buffer = new ArrayDeque<>();
 
     /**
      * A {@link Semaphore} to signal that data are added to the {@link #buffer}.
@@ -167,7 +167,7 @@ public class StreamBuffer implements Closeable {
     }
 
     /**
-     * Set a secure or unsercure write operation.
+     * Set a secure or unsecure write operation.
      *
      * @param safeWrite A flag to enable a safe write. If safe write is enabled,
      * modifiable byte arrays are cloned before they are written. Benefit: It
@@ -217,6 +217,24 @@ public class StreamBuffer implements Closeable {
      */
     public long getTotalBytesRead() {
         return totalBytesRead.get();
+    }
+
+    /**
+     * Returns the exact number of bytes currently buffered.
+     *
+     * <p>Unlike {@link SBInputStream#available()}, which is clamped to
+     * {@link Integer#MAX_VALUE} to honour the {@link InputStream#available()}
+     * contract, this method returns the full {@code long} count and is therefore
+     * the correct accessor when the buffer holds more than 2 GB.</p>
+     *
+     * <p>The value reflects a single volatile read and may be stale by the time
+     * the caller acts on it; concurrent writes or reads can change it
+     * immediately after this method returns.</p>
+     *
+     * @return the number of buffered bytes (never negative)
+     */
+    public long getAvailableBytesExact() {
+        return availableBytes;
     }
 
     /**
@@ -365,7 +383,7 @@ public class StreamBuffer implements Closeable {
      * @throws NullPointerException if the array is null
      * @throws IndexOutOfBoundsException if the index is not correct
      */
-    public static boolean correctOffsetAndLengthToRead(byte[] b, int off, int len) {
+    public static boolean validateOffsetAndLengthToRead(byte[] b, int off, int len) {
         if (b == null) {
             throw new NullPointerException();
         } else if (off < 0 || len < 0 || len > b.length - off) {
@@ -386,12 +404,12 @@ public class StreamBuffer implements Closeable {
      * @throws NullPointerException if the array is null
      * @throws IndexOutOfBoundsException if the offset or length is not invalid
      */
-    public static boolean correctOffsetAndLengthToWrite(byte[] b, int off, int len) {
+    public static boolean validateOffsetAndLengthToWrite(byte[] b, int off, int len) {
         if (b == null) {
             throw new NullPointerException();
         } else if ((off < 0) || (off > b.length) || (len < 0) || ((off + len) > b.length) || ((off + len) < 0)) {
             throw new IndexOutOfBoundsException(
-                    EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION);
+                    EXCEPTION_MESSAGE_VALIDATE_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION);
         } else if (len == 0) {
             return false;
         }
@@ -412,16 +430,6 @@ public class StreamBuffer implements Closeable {
     }
 
     /**
-     * Use {@link #tryWaitForEnoughBytes(long)}.
-     *
-     * @throws InterruptedException if the current thread is interrupted
-     */
-    @Deprecated
-    public void blockDataAvailable() throws InterruptedException {
-        tryWaitForEnoughBytes(1);
-    }
-
-    /**
      * This method trims the buffer. This method can be invoked after every
      * write operation. The method checks itself if the buffer should be trimmed
      * or not.
@@ -429,20 +437,26 @@ public class StreamBuffer implements Closeable {
      * Sets {@link #isTrimRunning} volatile flag to prevent statistics updates during internal I/O.
      * Respects {@link #maxAllocationSize} limit when allocating byte arrays.
      */
+    // Non-atomic update on the volatile availableBytes field at the
+    // "availableBytes += chunk.length" line is safe because the entire method
+    // body runs under bufferLock (see @GuardedBy and the synchronized block
+    // in the caller). volatile guarantees visibility to readers outside the
+    // lock; bufferLock guarantees atomicity of the read-modify-write.
+    @SuppressWarnings("NonAtomicVolatileUpdate")
     @GuardedBy("bufferLock")
     private void trim() throws IOException {
-        if (isTrimShouldBeExecuted()) {
+        if (shouldTrim()) {
             isTrimRunning = true;
             try {
                 releaseTrimStartSignals();
 
-                /**
+                /*
                  * Need to store more bufs, may it is not possible to read out all
                  * data at once. The available method only returns an int value
                  * instead a long value. Store all read parts of the full buffer in
                  * a deque.
                  */
-                final Deque<byte[]> tmpBuffer = new LinkedList<>();
+                final Deque<byte[]> tmpBuffer = new ArrayDeque<>();
 
                 int available;
                 // empty the current buffer, read out all bytes
@@ -457,17 +471,25 @@ public class StreamBuffer implements Closeable {
                     assert read == toAllocate : "Read not enough bytes from buffer.";
                     tmpBuffer.add(buf);
                 }
-                /**
+                /*
                  * Write all previously read parts back to the buffer directly.
-                 * We are already holding {@link #bufferLock} and the chunks were
-                 * just produced internally, so going through {@link SBOutputStream#write}
-                 * is unnecessary and would fail at {@link #requireNonClosed()} if
-                 * {@link #close()} is invoked concurrently — discarding tmpBuffer
-                 * and losing every byte that trim already drained.
+                 * We are already holding bufferLock and the chunks were
+                 * just produced internally, so going through SBOutputStream#write
+                 * is unnecessary and would fail at requireNonClosed() if close()
+                 * is invoked concurrently — discarding tmpBuffer and losing
+                 * every byte that trim already drained.
                  */
                 while (!tmpBuffer.isEmpty()) {
-                    // pollFirst returns always a non null value, tmpBuffer is only filled with non null values
+                    // Deque.pollFirst is declared @Nullable; the !isEmpty guard above
+                    // makes it non-null here in practice, but neither NullAway's flow
+                    // analyzer nor the Checker Framework Nullness Checker bridge that
+                    // loop-guard reasoning, so we make the non-null contract explicit.
                     final byte[] chunk = tmpBuffer.pollFirst();
+                    if (chunk == null) {
+                        throw new java.util.NoSuchElementException(
+                                "tmpBuffer.pollFirst() returned null despite a successful isEmpty() check; "
+                                        + "indicates a concurrent modification of tmpBuffer.");
+                    }
                     buffer.add(chunk);
                     availableBytes += chunk.length;
                 }
@@ -572,8 +594,8 @@ public class StreamBuffer implements Closeable {
     }
 
     @GuardedBy("bufferLock")
-    boolean isTrimShouldBeExecuted() {
-        /**
+    boolean shouldTrim() {
+        /*
          * Prevent recursive trim: if trim is already running, its internal
          * writes must never trigger another trim (infinite recursion / stack overflow).
          */
@@ -581,9 +603,9 @@ public class StreamBuffer implements Closeable {
             return false;
         }
 
-        /**
+        /*
          * To be thread safe, cache the maxBufferElements value. May the method
-         * {@link #setMaxBufferElements(int)} was invoked from outside by another thread.
+         * setMaxBufferElements(int) was invoked from outside by another thread.
          */
         final int maxBufferElements = getMaxBufferElements();
 
@@ -746,20 +768,18 @@ public class StreamBuffer implements Closeable {
     }
 
     /**
-     * This method blocks until the stream is closed or enough bytes are
-     * available, which can be read from the buffer.
+     * Blocks until at least {@code bytes} bytes are available, or the stream is closed.
+     * If the stream is closed before {@code bytes} bytes arrive, returns the actual
+     * number of bytes that did arrive (which may be less than {@code bytes}).
      *
-     * This method is blocking until data is available on the
-     * {@link InputStream} or the stream was closed. This method could must be called
-     * from one thread only (same thread as read methods, do not call this method during read operations).
-     * It's not allowed to use this method to notify multiple threads.
-     * @throws java.lang.InterruptedException if the current thread is interrupted
+     * <p>Must be called from a single reader thread; do not interleave with
+     * {@link InputStream#read read()} on the same {@link StreamBuffer}.</p>
      *
-     * @param bytes the number of bytes waiting for.
-     * @throws IOException If the thread is interrupted.
-     * @return The available bytes.
+     * @param bytes minimum number of bytes to wait for (must be &#x2265; 1)
+     * @return the number of bytes available now
+     * @throws InterruptedException if the current thread is interrupted while waiting
      */
-    private long tryWaitForEnoughBytes(final long bytes) throws InterruptedException {
+    public long waitForAtLeast(final long bytes) throws InterruptedException {
         // we can only wait for a positive number of bytes
         assert bytes > 0 : "Number of bytes are negative or zero : " + bytes;
 
@@ -777,6 +797,18 @@ public class StreamBuffer implements Closeable {
         return availableBytes;
     }
 
+    /**
+     * Convenience: blocks until at least one byte is available, or the stream is
+     * closed without data. Equivalent to {@link #waitForAtLeast(long) waitForAtLeast(1L)}.
+     *
+     * @return the number of bytes available now (&#x2265; 1 if data arrived;
+     *         0 if the stream closed first without data)
+     * @throws InterruptedException if the current thread is interrupted while waiting
+     */
+    public long waitForAnyData() throws InterruptedException {
+        return waitForAtLeast(1L);
+    }
+
     private class SBInputStream extends InputStream {
         @Override
         public int available() throws IOException {
@@ -791,8 +823,7 @@ public class StreamBuffer implements Closeable {
         @Override
         public int read() throws IOException {
             try {
-                // we wait for enough bytes (one byte)
-                if (tryWaitForEnoughBytes(1) < 1) {
+                if (waitForAnyData() < 1) {
                     // try to wait, but not enough bytes available
                     // return the end of stream is reached
                     return -1;
@@ -829,7 +860,7 @@ public class StreamBuffer implements Closeable {
         // the method calls internal "read(b, 0, b.length)"
         @Override
         public int read(final byte b[], final int off, final int len) throws IOException {
-            if (!correctOffsetAndLengthToRead(b, off, len)) {
+            if (!validateOffsetAndLengthToRead(b, off, len)) {
                 return 0;
             }
 
@@ -847,13 +878,13 @@ public class StreamBuffer implements Closeable {
             int copiedBytes = 1;
 
             int missingBytes = len - copiedBytes;
-            if (noMoreMissingBytes(missingBytes)) {
+            if (hasNoMissingBytes(missingBytes)) {
                 return copiedBytes;
             }
 
             long maximumAvailableBytes;
             try {
-                maximumAvailableBytes = tryWaitForEnoughBytes(missingBytes);
+                maximumAvailableBytes = waitForAtLeast(missingBytes);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new IOException(e);
@@ -871,7 +902,7 @@ public class StreamBuffer implements Closeable {
             synchronized (bufferLock) {
                 for (; ; ) {
 
-                    if (noMoreMissingBytes(missingBytes)) {
+                    if (hasNoMissingBytes(missingBytes)) {
                         return copiedBytes;
                     }
 
@@ -917,7 +948,7 @@ public class StreamBuffer implements Closeable {
          * @param missingBytes number of missing bytes.
          * @return <code>true</code> if no more bytes are missing, otherwise <code>false</code>.
          */
-        private boolean noMoreMissingBytes(int missingBytes) {
+        private boolean hasNoMissingBytes(int missingBytes) {
             assert missingBytes >= 0 : "Copied more bytes as given";
 
             // check if we don't need to copy further bytes anymore
@@ -945,7 +976,7 @@ public class StreamBuffer implements Closeable {
         // the method calls internal "write(b, 0, b.length);"
         @Override
         public void write(final byte[] b, final int off, final int len) throws IOException {
-            if (!correctOffsetAndLengthToWrite(b, off, len)) {
+            if (!validateOffsetAndLengthToWrite(b, off, len)) {
                 return;
             }
             requireNonClosed();
@@ -980,6 +1011,7 @@ public class StreamBuffer implements Closeable {
         }
     }
 
+    @Override
     public void close() throws IOException {
         closeAll();
     }
@@ -1041,16 +1073,5 @@ public class StreamBuffer implements Closeable {
      */
     public OutputStream getOutputStream() {
         return os;
-    }
-
-    /**
-     * Returns the number of elements in the buffer.
-     *
-     * @return the number of elements in the buffer.
-     */
-    public int getBufferSize() {
-        synchronized (bufferLock) {
-            return buffer.size();
-        }
     }
 }

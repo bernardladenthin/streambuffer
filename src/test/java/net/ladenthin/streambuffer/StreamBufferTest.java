@@ -300,7 +300,7 @@ public class StreamBufferTest {
             sb.getOutputStream().write(anyValue);
 
             // assert
-            assertThat(sb.getBufferSize(), is(3));
+            assertThat(sb.getBufferElementCount(), is(3));
         }
     }
 
@@ -425,11 +425,11 @@ public class StreamBufferTest {
     }
 
     @Nested
-    @DisplayName("getBufferSize()")
-    class GetBufferSizeTests {
-        @DisplayName("getBufferSize(): reach max buffer elements — trim called")
+    @DisplayName("getBufferElementCount()")
+    class GetBufferElementCountTests {
+        @DisplayName("getBufferElementCount(): reach max buffer elements — trim called")
         @Test
-        public void getBufferSize_reachMaxBufferElements_trimCalled() throws Exception {
+        public void getBufferElementCount_reachMaxBufferElements_trimCalled() throws Exception {
             // arrange
             StreamBuffer sb = new StreamBuffer();
             sb.setMaxBufferElements(1);
@@ -441,13 +441,13 @@ public class StreamBufferTest {
             sb.getOutputStream().write(anyValue);
 
             // assert
-            int result = sb.getBufferSize();
+            int result = sb.getBufferElementCount();
             assertThat(result, is(1));
         }
 
-        @DisplayName("getBufferSize(): reach max buffer elements — trim buffer right values")
+        @DisplayName("getBufferElementCount(): reach max buffer elements — trim buffer right values")
         @Test
-        public void getBufferSize_reachMaxBufferElements_trimBufferRightValues() throws Exception {
+        public void getBufferElementCount_reachMaxBufferElements_trimBufferRightValues() throws Exception {
             // arrange
             StreamBuffer sb = new StreamBuffer();
             InputStream is = sb.getInputStream();
@@ -465,9 +465,9 @@ public class StreamBufferTest {
             assertThat(read, is(new byte[] {1, 2, 3, 4, 5, 6}));
         }
 
-        @DisplayName("getBufferSize(): write some elements — trim not called")
+        @DisplayName("getBufferElementCount(): write some elements — trim not called")
         @Test
-        public void getBufferSize_writeSomeElements_trimNotCalled() throws Exception {
+        public void getBufferElementCount_writeSomeElements_trimNotCalled() throws Exception {
             // arrange
             StreamBuffer sb = new StreamBuffer();
             sb.setMaxBufferElements(4);
@@ -480,7 +480,7 @@ public class StreamBufferTest {
             sb.getOutputStream().write(anyValue);
 
             // assert
-            assertThat(sb.getBufferSize(), is(3));
+            assertThat(sb.getBufferElementCount(), is(3));
         }
     }
 
@@ -773,7 +773,7 @@ public class StreamBufferTest {
                     ex.getMessage(),
                     is(
                             StreamBuffer
-                                    .EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
+                                    .EXCEPTION_MESSAGE_VALIDATE_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
         }
 
         @DisplayName("write(): length greater than destination — throw index out of bounds exception")
@@ -792,7 +792,7 @@ public class StreamBufferTest {
                     ex.getMessage(),
                     is(
                             StreamBuffer
-                                    .EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
+                                    .EXCEPTION_MESSAGE_VALIDATE_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
         }
 
         @DisplayName("write(): negative length — throw index out of bounds exception")
@@ -811,7 +811,7 @@ public class StreamBufferTest {
                     ex.getMessage(),
                     is(
                             StreamBuffer
-                                    .EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
+                                    .EXCEPTION_MESSAGE_VALIDATE_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
         }
 
         @DisplayName("write(): negative offset — throw index out of bounds exception")
@@ -830,7 +830,7 @@ public class StreamBufferTest {
                     ex.getMessage(),
                     is(
                             StreamBuffer
-                                    .EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
+                                    .EXCEPTION_MESSAGE_VALIDATE_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
         }
 
         @DisplayName("write(): with valid offset — partial write successful")
@@ -874,7 +874,7 @@ public class StreamBufferTest {
             os.write(new byte[] {anyValue}, invalidOffset, 0);
 
             // assert
-            assertThat(sb.getBufferSize(), is(0));
+            assertThat(sb.getBufferElementCount(), is(0));
         }
 
         @DisplayName("write(): invalid length — not written")
@@ -889,7 +889,7 @@ public class StreamBufferTest {
             os.write(new byte[] {anyValue}, 0, invalidLength);
 
             // assert
-            assertThat(sb.getBufferSize(), is(0));
+            assertThat(sb.getBufferElementCount(), is(0));
         }
 
         @DisplayName("write(): null array with offset — throws npe")
@@ -977,12 +977,12 @@ public class StreamBufferTest {
     }
 
     @Nested
-    @DisplayName("blockDataAvailable()")
-    class BlockDataAvailableTests {
-        @DisplayName("blockDataAvailable(): data written before — no waiting")
+    @DisplayName("waitForAnyData()")
+    class WaitForAnyDataTests {
+        @DisplayName("waitForAnyData(): data written before — no waiting")
         @ParameterizedTest
         @MethodSource("net.ladenthin.streambuffer.StreamBufferTest#writeMethods")
-        public void blockDataAvailable_dataWrittenBefore_noWaiting(WriteMethod writeMethod)
+        public void waitForAnyData_dataWrittenBefore_noWaiting(WriteMethod writeMethod)
                 throws IOException, InterruptedException {
             // arrange
             final StreamBuffer sb = new StreamBuffer();
@@ -992,7 +992,7 @@ public class StreamBufferTest {
 
                 public void run() {
                     try {
-                        sb.blockDataAvailable();
+                        sb.waitForAnyData();
                         after.release();
                     } catch (InterruptedException ex) {
                         throw new RuntimeException(ex);
@@ -1009,10 +1009,10 @@ public class StreamBufferTest {
             assertThat(after.tryAcquire(10, TimeUnit.SECONDS), is(true));
         }
 
-        @DisplayName("blockDataAvailable(): data written before and read afterwards — waiting")
+        @DisplayName("waitForAnyData(): data written before and read afterwards — waiting")
         @Test
         @Timeout(value = 1, unit = TimeUnit.HOURS)
-        public void blockDataAvailable_dataWrittenBeforeAndReadAfterwards_waiting()
+        public void waitForAnyData_dataWrittenBeforeAndReadAfterwards_waiting()
                 throws IOException, InterruptedException {
             // arrange
             final StreamBuffer sb = new StreamBuffer();
@@ -1023,7 +1023,7 @@ public class StreamBufferTest {
 
                 public void run() {
                     try {
-                        sb.blockDataAvailable();
+                        sb.waitForAnyData();
                         after.release();
                     } catch (InterruptedException ex) {
                         throw new RuntimeException(ex);
@@ -1041,10 +1041,10 @@ public class StreamBufferTest {
             assertThat(after.tryAcquire(10, TimeUnit.SECONDS), is(false));
         }
 
-        @DisplayName("blockDataAvailable(): stream untouched — waiting")
+        @DisplayName("waitForAnyData(): stream untouched — waiting")
         @Test
         @Timeout(value = 1, unit = TimeUnit.HOURS)
-        public void blockDataAvailable_streamUntouched_waiting() throws IOException, InterruptedException {
+        public void waitForAnyData_streamUntouched_waiting() throws IOException, InterruptedException {
             // arrange
             final StreamBuffer sb = new StreamBuffer();
             final Semaphore after = new Semaphore(0);
@@ -1052,7 +1052,7 @@ public class StreamBufferTest {
 
                 public void run() {
                     try {
-                        sb.blockDataAvailable();
+                        sb.waitForAnyData();
                         after.release();
                     } catch (InterruptedException ex) {
                         throw new RuntimeException(ex);
@@ -1069,10 +1069,10 @@ public class StreamBufferTest {
             assertThat(after.tryAcquire(10, TimeUnit.SECONDS), is(false));
         }
 
-        @DisplayName("blockDataAvailable(): write to stream — return")
+        @DisplayName("waitForAnyData(): write to stream — return")
         @ParameterizedTest
         @MethodSource("net.ladenthin.streambuffer.StreamBufferTest#writeMethods")
-        public void blockDataAvailable_writeToStream_return(WriteMethod writeMethod)
+        public void waitForAnyData_writeToStream_return(WriteMethod writeMethod)
                 throws IOException, InterruptedException {
             // arrange
             final StreamBuffer sb = new StreamBuffer();
@@ -1082,7 +1082,7 @@ public class StreamBufferTest {
 
                 public void run() {
                     try {
-                        sb.blockDataAvailable();
+                        sb.waitForAnyData();
                         after.release();
                     } catch (InterruptedException ex) {
                         throw new RuntimeException(ex);
@@ -1100,9 +1100,9 @@ public class StreamBufferTest {
             assertThat(after.tryAcquire(10, TimeUnit.SECONDS), is(true));
         }
 
-        @DisplayName("blockDataAvailable(): close stream — return")
+        @DisplayName("waitForAnyData(): close stream — return")
         @Test
-        public void blockDataAvailable_closeStream_return() throws IOException, InterruptedException {
+        public void waitForAnyData_closeStream_return() throws IOException, InterruptedException {
             // arrange
             final StreamBuffer sb = new StreamBuffer();
             OutputStream os = sb.getOutputStream();
@@ -1111,7 +1111,7 @@ public class StreamBufferTest {
 
                 public void run() {
                     try {
-                        sb.blockDataAvailable();
+                        sb.waitForAnyData();
                         after.release();
                     } catch (InterruptedException ex) {
                         throw new RuntimeException(ex);
@@ -1129,21 +1129,21 @@ public class StreamBufferTest {
             assertThat(after.tryAcquire(10, TimeUnit.SECONDS), is(true));
         }
 
-        @DisplayName("blockDataAvailable(): stream already closed — return")
+        @DisplayName("waitForAnyData(): stream already closed — return")
         @Test
-        public void blockDataAvailable_streamAlreadyClosed_return() throws IOException {
+        public void waitForAnyData_streamAlreadyClosed_return() throws IOException {
             // arrange
             final StreamBuffer sb = new StreamBuffer();
             sb.close();
 
             // act
             // assert — returns immediately without throwing
-            assertDoesNotThrow(() -> sb.blockDataAvailable());
+            assertDoesNotThrow(() -> sb.waitForAnyData());
         }
 
-        @DisplayName("blockDataAvailable(): data already available — only one wakeup")
+        @DisplayName("waitForAnyData(): data already available — only one wakeup")
         @Test
-        public void blockDataAvailable_dataAlreadyAvailable_onlyOneWakeup() throws Exception {
+        public void waitForAnyData_dataAlreadyAvailable_onlyOneWakeup() throws Exception {
             // arrange
             final StreamBuffer sb = new StreamBuffer();
             OutputStream os = sb.getOutputStream();
@@ -1157,7 +1157,7 @@ public class StreamBufferTest {
             Thread consumer1 = new Thread(() -> {
                 try {
                     ready.release();
-                    sb.blockDataAvailable();
+                    sb.waitForAnyData();
                     done.release();
                 } catch (InterruptedException e) {
                     throw new RuntimeException(e);
@@ -1167,7 +1167,7 @@ public class StreamBufferTest {
             Thread consumer2 = new Thread(() -> {
                 try {
                     ready.release();
-                    sb.blockDataAvailable();
+                    sb.waitForAnyData();
                     done.release();
                 } catch (InterruptedException e) {
                     throw new RuntimeException(e);
@@ -1186,9 +1186,9 @@ public class StreamBufferTest {
             assertThat("Only one thread should proceed due to single permit", acquired, is(1));
         }
 
-        @DisplayName("blockDataAvailable(): multiple writes before call — does not block")
+        @DisplayName("waitForAnyData(): multiple writes before call — does not block")
         @Test
-        public void blockDataAvailable_multipleWritesBeforeCall_doesNotBlock() throws Exception {
+        public void waitForAnyData_multipleWritesBeforeCall_doesNotBlock() throws Exception {
             // arrange
             final StreamBuffer sb = new StreamBuffer();
             OutputStream os = sb.getOutputStream();
@@ -1197,12 +1197,12 @@ public class StreamBufferTest {
 
             // act
             // assert — does not block since data is already written
-            assertTimeoutPreemptively(Duration.ofSeconds(5), () -> sb.blockDataAvailable());
+            assertTimeoutPreemptively(Duration.ofSeconds(5), () -> sb.waitForAnyData());
         }
 
-        @DisplayName("blockDataAvailable(): after bytes consumed — blocks again")
+        @DisplayName("waitForAnyData(): after bytes consumed — blocks again")
         @Test
-        public void blockDataAvailable_afterBytesConsumed_blocksAgain() throws Exception {
+        public void waitForAnyData_afterBytesConsumed_blocksAgain() throws Exception {
             // arrange
             final StreamBuffer sb = new StreamBuffer();
             OutputStream os = sb.getOutputStream();
@@ -1214,7 +1214,7 @@ public class StreamBufferTest {
             final Semaphore signal = new Semaphore(0);
             Thread thread = new Thread(() -> {
                 try {
-                    sb.blockDataAvailable();
+                    sb.waitForAnyData();
                     signal.release();
                 } catch (InterruptedException e) {
                     throw new RuntimeException(e);
@@ -1397,72 +1397,72 @@ public class StreamBufferTest {
     }
 
     @Nested
-    @DisplayName("correctOffsetAndLengthToRead()")
+    @DisplayName("validateOffsetAndLengthToRead()")
     class CorrectOffsetAndLengthToReadTests {
-        @DisplayName("correctOffsetAndLengthToRead(): null array — throws null pointer exception")
+        @DisplayName("validateOffsetAndLengthToRead(): null array — throws null pointer exception")
         @Test
-        public void correctOffsetAndLengthToRead_nullArray_throwsNullPointerException() {
+        public void validateOffsetAndLengthToRead_nullArray_throwsNullPointerException() {
             // arrange
             // act
             // assert — exception thrown is the assertion
-            assertThrows(NullPointerException.class, () -> StreamBuffer.correctOffsetAndLengthToRead(null, 0, 1));
+            assertThrows(NullPointerException.class, () -> StreamBuffer.validateOffsetAndLengthToRead(null, 0, 1));
         }
 
-        @DisplayName("correctOffsetAndLengthToRead(): negative offset — throws index out of bounds exception")
+        @DisplayName("validateOffsetAndLengthToRead(): negative offset — throws index out of bounds exception")
         @Test
-        public void correctOffsetAndLengthToRead_negativeOffset_throwsIndexOutOfBoundsException() {
+        public void validateOffsetAndLengthToRead_negativeOffset_throwsIndexOutOfBoundsException() {
             // arrange
             byte[] b = new byte[5];
 
             // act
-            assertThrows(IndexOutOfBoundsException.class, () -> StreamBuffer.correctOffsetAndLengthToRead(b, -1, 1));
+            assertThrows(IndexOutOfBoundsException.class, () -> StreamBuffer.validateOffsetAndLengthToRead(b, -1, 1));
             // assert — exception thrown is the assertion
         }
 
-        @DisplayName("correctOffsetAndLengthToRead(): negative length — throws index out of bounds exception")
+        @DisplayName("validateOffsetAndLengthToRead(): negative length — throws index out of bounds exception")
         @Test
-        public void correctOffsetAndLengthToRead_negativeLength_throwsIndexOutOfBoundsException() {
+        public void validateOffsetAndLengthToRead_negativeLength_throwsIndexOutOfBoundsException() {
             // arrange
             byte[] b = new byte[5];
 
             // act
-            assertThrows(IndexOutOfBoundsException.class, () -> StreamBuffer.correctOffsetAndLengthToRead(b, 0, -1));
+            assertThrows(IndexOutOfBoundsException.class, () -> StreamBuffer.validateOffsetAndLengthToRead(b, 0, -1));
             // assert — exception thrown is the assertion
         }
 
         @DisplayName(
-                "correctOffsetAndLengthToRead(): length exceeds remaining array — throws index out of bounds exception")
+                "validateOffsetAndLengthToRead(): length exceeds remaining array — throws index out of bounds exception")
         @Test
-        public void correctOffsetAndLengthToRead_lengthExceedsRemainingArray_throwsIndexOutOfBoundsException() {
+        public void validateOffsetAndLengthToRead_lengthExceedsRemainingArray_throwsIndexOutOfBoundsException() {
             // arrange
             byte[] b = new byte[5];
 
             // act
-            assertThrows(IndexOutOfBoundsException.class, () -> StreamBuffer.correctOffsetAndLengthToRead(b, 3, 3));
+            assertThrows(IndexOutOfBoundsException.class, () -> StreamBuffer.validateOffsetAndLengthToRead(b, 3, 3));
             // assert — exception thrown is the assertion
         }
 
-        @DisplayName("correctOffsetAndLengthToRead(): zero length — returns false")
+        @DisplayName("validateOffsetAndLengthToRead(): zero length — returns false")
         @Test
-        public void correctOffsetAndLengthToRead_zeroLength_returnsFalse() {
+        public void validateOffsetAndLengthToRead_zeroLength_returnsFalse() {
             // arrange
             byte[] b = new byte[5];
 
             // act
-            boolean result = StreamBuffer.correctOffsetAndLengthToRead(b, 0, 0);
+            boolean result = StreamBuffer.validateOffsetAndLengthToRead(b, 0, 0);
 
             // assert
             assertThat(result, is(false));
         }
 
-        @DisplayName("correctOffsetAndLengthToRead(): valid parameters — returns true")
+        @DisplayName("validateOffsetAndLengthToRead(): valid parameters — returns true")
         @Test
-        public void correctOffsetAndLengthToRead_validParameters_returnsTrue() {
+        public void validateOffsetAndLengthToRead_validParameters_returnsTrue() {
             // arrange
             byte[] b = new byte[5];
 
             // act
-            boolean result = StreamBuffer.correctOffsetAndLengthToRead(b, 1, 3);
+            boolean result = StreamBuffer.validateOffsetAndLengthToRead(b, 1, 3);
 
             // assert
             assertThat(result, is(true));
@@ -1470,108 +1470,108 @@ public class StreamBufferTest {
     }
 
     @Nested
-    @DisplayName("correctOffsetAndLengthToWrite()")
+    @DisplayName("validateOffsetAndLengthToWrite()")
     class CorrectOffsetAndLengthToWriteTests {
-        @DisplayName("correctOffsetAndLengthToWrite(): null array — throws null pointer exception")
+        @DisplayName("validateOffsetAndLengthToWrite(): null array — throws null pointer exception")
         @Test
-        public void correctOffsetAndLengthToWrite_nullArray_throwsNullPointerException() {
+        public void validateOffsetAndLengthToWrite_nullArray_throwsNullPointerException() {
             // arrange
             // act
             // assert — exception thrown is the assertion
-            assertThrows(NullPointerException.class, () -> StreamBuffer.correctOffsetAndLengthToWrite(null, 0, 1));
+            assertThrows(NullPointerException.class, () -> StreamBuffer.validateOffsetAndLengthToWrite(null, 0, 1));
         }
 
-        @DisplayName("correctOffsetAndLengthToWrite(): negative offset — throws index out of bounds exception")
+        @DisplayName("validateOffsetAndLengthToWrite(): negative offset — throws index out of bounds exception")
         @Test
-        public void correctOffsetAndLengthToWrite_negativeOffset_throwsIndexOutOfBoundsException() {
+        public void validateOffsetAndLengthToWrite_negativeOffset_throwsIndexOutOfBoundsException() {
             // arrange
             byte[] b = new byte[5];
 
             // act
             IndexOutOfBoundsException ex = assertThrows(
-                    IndexOutOfBoundsException.class, () -> StreamBuffer.correctOffsetAndLengthToWrite(b, -1, 1));
+                    IndexOutOfBoundsException.class, () -> StreamBuffer.validateOffsetAndLengthToWrite(b, -1, 1));
             // assert
             assertThat(
                     ex.getMessage(),
                     is(
                             StreamBuffer
-                                    .EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
+                                    .EXCEPTION_MESSAGE_VALIDATE_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
         }
 
-        @DisplayName("correctOffsetAndLengthToWrite(): negative length — throws index out of bounds exception")
+        @DisplayName("validateOffsetAndLengthToWrite(): negative length — throws index out of bounds exception")
         @Test
-        public void correctOffsetAndLengthToWrite_negativeLength_throwsIndexOutOfBoundsException() {
+        public void validateOffsetAndLengthToWrite_negativeLength_throwsIndexOutOfBoundsException() {
             // arrange
             byte[] b = new byte[5];
 
             // act
             IndexOutOfBoundsException ex = assertThrows(
-                    IndexOutOfBoundsException.class, () -> StreamBuffer.correctOffsetAndLengthToWrite(b, 0, -1));
+                    IndexOutOfBoundsException.class, () -> StreamBuffer.validateOffsetAndLengthToWrite(b, 0, -1));
             // assert
             assertThat(
                     ex.getMessage(),
                     is(
                             StreamBuffer
-                                    .EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
+                                    .EXCEPTION_MESSAGE_VALIDATE_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
         }
 
         @DisplayName(
-                "correctOffsetAndLengthToWrite(): offset exceeds array length — throws index out of bounds exception")
+                "validateOffsetAndLengthToWrite(): offset exceeds array length — throws index out of bounds exception")
         @Test
-        public void correctOffsetAndLengthToWrite_offsetExceedsArrayLength_throwsIndexOutOfBoundsException() {
+        public void validateOffsetAndLengthToWrite_offsetExceedsArrayLength_throwsIndexOutOfBoundsException() {
             // arrange
             byte[] b = new byte[1];
 
             // act
             IndexOutOfBoundsException ex = assertThrows(
-                    IndexOutOfBoundsException.class, () -> StreamBuffer.correctOffsetAndLengthToWrite(b, 2, 1));
+                    IndexOutOfBoundsException.class, () -> StreamBuffer.validateOffsetAndLengthToWrite(b, 2, 1));
             // assert
             assertThat(
                     ex.getMessage(),
                     is(
                             StreamBuffer
-                                    .EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
+                                    .EXCEPTION_MESSAGE_VALIDATE_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
         }
 
         @DisplayName(
-                "correctOffsetAndLengthToWrite(): length exceeds remaining array — throws index out of bounds exception")
+                "validateOffsetAndLengthToWrite(): length exceeds remaining array — throws index out of bounds exception")
         @Test
-        public void correctOffsetAndLengthToWrite_lengthExceedsRemainingArray_throwsIndexOutOfBoundsException() {
+        public void validateOffsetAndLengthToWrite_lengthExceedsRemainingArray_throwsIndexOutOfBoundsException() {
             // arrange
             byte[] b = new byte[5];
 
             // act
             IndexOutOfBoundsException ex = assertThrows(
-                    IndexOutOfBoundsException.class, () -> StreamBuffer.correctOffsetAndLengthToWrite(b, 3, 3));
+                    IndexOutOfBoundsException.class, () -> StreamBuffer.validateOffsetAndLengthToWrite(b, 3, 3));
             // assert
             assertThat(
                     ex.getMessage(),
                     is(
                             StreamBuffer
-                                    .EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
+                                    .EXCEPTION_MESSAGE_VALIDATE_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
         }
 
-        @DisplayName("correctOffsetAndLengthToWrite(): zero length — returns false")
+        @DisplayName("validateOffsetAndLengthToWrite(): zero length — returns false")
         @Test
-        public void correctOffsetAndLengthToWrite_zeroLength_returnsFalse() {
+        public void validateOffsetAndLengthToWrite_zeroLength_returnsFalse() {
             // arrange
             byte[] b = new byte[5];
 
             // act
-            boolean result = StreamBuffer.correctOffsetAndLengthToWrite(b, 0, 0);
+            boolean result = StreamBuffer.validateOffsetAndLengthToWrite(b, 0, 0);
 
             // assert
             assertThat(result, is(false));
         }
 
-        @DisplayName("correctOffsetAndLengthToWrite(): valid parameters — returns true")
+        @DisplayName("validateOffsetAndLengthToWrite(): valid parameters — returns true")
         @Test
-        public void correctOffsetAndLengthToWrite_validParameters_returnsTrue() {
+        public void validateOffsetAndLengthToWrite_validParameters_returnsTrue() {
             // arrange
             byte[] b = new byte[5];
 
             // act
-            boolean result = StreamBuffer.correctOffsetAndLengthToWrite(b, 1, 3);
+            boolean result = StreamBuffer.validateOffsetAndLengthToWrite(b, 1, 3);
 
             // assert
             assertThat(result, is(true));
@@ -1579,11 +1579,11 @@ public class StreamBufferTest {
     }
 
     @Nested
-    @DisplayName("isTrimShouldBeExecuted() — boundary")
+    @DisplayName("shouldTrim() — boundary")
     class IsTrimShouldBeExecutedBoundaryTests {
-        @DisplayName("getBufferSize(): exactly at max buffer elements — trim not called")
+        @DisplayName("getBufferElementCount(): exactly at max buffer elements — trim not called")
         @Test
-        public void getBufferSize_exactlyAtMaxBufferElements_trimNotCalled() throws IOException {
+        public void getBufferElementCount_exactlyAtMaxBufferElements_trimNotCalled() throws IOException {
             // arrange
             StreamBuffer sb = new StreamBuffer();
             sb.setMaxBufferElements(2);
@@ -1593,12 +1593,12 @@ public class StreamBufferTest {
             sb.getOutputStream().write(anyValue);
 
             // assert
-            assertThat(sb.getBufferSize(), is(2));
+            assertThat(sb.getBufferElementCount(), is(2));
         }
 
-        @DisplayName("getBufferSize(): one above max buffer elements — trim called")
+        @DisplayName("getBufferElementCount(): one above max buffer elements — trim called")
         @Test
-        public void getBufferSize_oneAboveMaxBufferElements_trimCalled() throws IOException {
+        public void getBufferElementCount_oneAboveMaxBufferElements_trimCalled() throws IOException {
             // arrange
             StreamBuffer sb = new StreamBuffer();
             sb.setMaxBufferElements(2);
@@ -1609,7 +1609,7 @@ public class StreamBufferTest {
             sb.getOutputStream().write(anyValue);
 
             // assert
-            assertThat(sb.getBufferSize(), is(1));
+            assertThat(sb.getBufferElementCount(), is(1));
         }
     }
 
@@ -1812,7 +1812,7 @@ public class StreamBufferTest {
             // act
             reader.start();
             readerStarted.acquire();
-            Thread.sleep(500); // let reader block in tryWaitForEnoughBytes
+            Thread.sleep(500); // let reader block in waitForAtLeast
             os.write(new byte[] {1, 2, 3});
             os.close(); // unblocks reader with only 3 bytes available
 
@@ -2270,23 +2270,23 @@ public class StreamBufferTest {
     }
 
     @Nested
-    @DisplayName("correctOffsetAndLengthToWrite() — integer overflow")
+    @DisplayName("validateOffsetAndLengthToWrite() — integer overflow")
     class CorrectOffsetAndLengthToWriteIntegerOverflowTests {
-        @DisplayName("correctOffsetAndLengthToWrite(): integer overflow — throws index out of bounds exception")
+        @DisplayName("validateOffsetAndLengthToWrite(): integer overflow — throws index out of bounds exception")
         @Test
-        public void correctOffsetAndLengthToWrite_integerOverflow_throwsIndexOutOfBoundsException() {
+        public void validateOffsetAndLengthToWrite_integerOverflow_throwsIndexOutOfBoundsException() {
             // arrange
             byte[] b = new byte[10];
 
             // act — Integer.MAX_VALUE + 1 overflows to negative
             IndexOutOfBoundsException ex = assertThrows(
                     IndexOutOfBoundsException.class,
-                    () -> StreamBuffer.correctOffsetAndLengthToWrite(b, Integer.MAX_VALUE, 1));
+                    () -> StreamBuffer.validateOffsetAndLengthToWrite(b, Integer.MAX_VALUE, 1));
             assertThat(
                     ex.getMessage(),
                     is(
                             StreamBuffer
-                                    .EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
+                                    .EXCEPTION_MESSAGE_VALIDATE_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
         }
     }
 
@@ -2370,7 +2370,7 @@ public class StreamBufferTest {
             }
 
             // assert — all entries remain un-trimmed (each write(int) adds one entry)
-            assertThat(sb.getBufferSize(), is(greaterThan(1)));
+            assertThat(sb.getBufferElementCount(), is(greaterThan(1)));
         }
     }
 
@@ -2465,7 +2465,7 @@ public class StreamBufferTest {
             final AtomicBoolean interruptFlagAfterCatch = new AtomicBoolean(false);
 
             // write exactly 1 byte so the internal read() at the start of read(b,off,len)
-            // succeeds immediately, then tryWaitForEnoughBytes blocks waiting for the second byte
+            // succeeds immediately, then waitForAtLeast blocks waiting for the second byte
             os.write(42);
 
             Thread reader = new Thread(() -> {
@@ -2481,7 +2481,7 @@ public class StreamBufferTest {
             // act
             reader.start();
             started.acquire(); // wait for thread to start
-            Thread.sleep(500); // let it block inside tryWaitForEnoughBytes
+            Thread.sleep(500); // let it block inside waitForAtLeast
             reader.interrupt();
             reader.join();
 
@@ -2498,30 +2498,30 @@ public class StreamBufferTest {
     }
 
     @Nested
-    @DisplayName("correctOffsetAndLengthToRead() — empty array")
+    @DisplayName("validateOffsetAndLengthToRead() — empty array")
     class CorrectOffsetAndLengthToReadEmptyArrayTests {
         @DisplayName(
-                "correctOffsetAndLengthToRead(): empty array with positive length — throws index out of bounds exception")
+                "validateOffsetAndLengthToRead(): empty array with positive length — throws index out of bounds exception")
         @Test
-        public void correctOffsetAndLengthToRead_emptyArrayWithPositiveLength_throwsIndexOutOfBoundsException() {
+        public void validateOffsetAndLengthToRead_emptyArrayWithPositiveLength_throwsIndexOutOfBoundsException() {
             // arrange
             // act
             // assert — exception thrown is the assertion
             assertThrows(
                     IndexOutOfBoundsException.class,
-                    () -> StreamBuffer.correctOffsetAndLengthToRead(new byte[0], 0, 1));
+                    () -> StreamBuffer.validateOffsetAndLengthToRead(new byte[0], 0, 1));
         }
     }
 
     @Nested
-    @DisplayName("correctOffsetAndLengthToWrite() — empty array")
+    @DisplayName("validateOffsetAndLengthToWrite() — empty array")
     class CorrectOffsetAndLengthToWriteEmptyArrayTests {
-        @DisplayName("correctOffsetAndLengthToWrite(): empty array zero length — returns false")
+        @DisplayName("validateOffsetAndLengthToWrite(): empty array zero length — returns false")
         @Test
-        public void correctOffsetAndLengthToWrite_emptyArrayZeroLength_returnsFalse() {
+        public void validateOffsetAndLengthToWrite_emptyArrayZeroLength_returnsFalse() {
             // arrange
             // act
-            boolean result = StreamBuffer.correctOffsetAndLengthToWrite(new byte[0], 0, 0);
+            boolean result = StreamBuffer.validateOffsetAndLengthToWrite(new byte[0], 0, 0);
 
             // assert
             assertThat(result, is(false));
@@ -2529,16 +2529,16 @@ public class StreamBufferTest {
     }
 
     @Nested
-    @DisplayName("getBufferSize() — initial state")
-    class GetBufferSizeInitialTests {
-        @DisplayName("getBufferSize(): empty buffer — returns zero")
+    @DisplayName("getBufferElementCount() — initial state")
+    class GetBufferElementCountInitialTests {
+        @DisplayName("getBufferElementCount(): empty buffer — returns zero")
         @Test
-        public void getBufferSize_emptyBuffer_returnsZero() {
+        public void getBufferElementCount_emptyBuffer_returnsZero() {
             // arrange
             StreamBuffer sb = new StreamBuffer();
 
             // act
-            int result = sb.getBufferSize();
+            int result = sb.getBufferElementCount();
 
             // assert
             assertThat(result, is(0));
@@ -2546,11 +2546,11 @@ public class StreamBufferTest {
     }
 
     @Nested
-    @DisplayName("isTrimShouldBeExecuted() — zero boundary")
+    @DisplayName("shouldTrim() — zero boundary")
     class IsTrimShouldBeExecutedZeroBoundaryTests {
-        @DisplayName("getBufferSize(): max buffer elements zero with multiple entries — no trim executed")
+        @DisplayName("getBufferElementCount(): max buffer elements zero with multiple entries — no trim executed")
         @Test
-        public void getBufferSize_maxBufferElementsZeroWithMultipleEntries_noTrimExecuted() throws IOException {
+        public void getBufferElementCount_maxBufferElementsZeroWithMultipleEntries_noTrimExecuted() throws IOException {
             // arrange
             StreamBuffer sb = new StreamBuffer();
             sb.setMaxBufferElements(0);
@@ -2561,13 +2561,13 @@ public class StreamBufferTest {
             sb.getOutputStream().write(new byte[] {3});
 
             // assert
-            assertThat(sb.getBufferSize(), is(3));
+            assertThat(sb.getBufferElementCount(), is(3));
         }
     }
 
     @Nested
-    @DisplayName("tryWaitForEnoughBytes() — closed stream")
-    class TryWaitForEnoughBytesClosedStreamTests {
+    @DisplayName("waitForAtLeast() — closed stream")
+    class WaitForAtLeastClosedStreamTests {
         @DisplayName("read(): closed stream with two bytes — read array returns both bytes")
         @Test
         public void read_closedStreamWithTwoBytes_readArrayReturnsBothBytes() throws IOException {
@@ -2609,17 +2609,17 @@ public class StreamBufferTest {
             assertAll(
                     () -> assertThat(bytesRead, is(3)),
                     () -> assertThat(dest, is(new byte[] {1, 2, 3})),
-                    () -> assertThat(sb.getBufferSize(), is(0)),
+                    () -> assertThat(sb.getBufferElementCount(), is(0)),
                     () -> assertThat(sb.getInputStream().available(), is(0)));
         }
     }
 
     @Nested
-    @DisplayName("isTrimShouldBeExecuted() — direct")
+    @DisplayName("shouldTrim() — direct")
     class IsTrimShouldBeExecutedDirectTests {
-        @DisplayName("isTrimShouldBeExecuted(): buffer size two max elements one — returns true")
+        @DisplayName("shouldTrim(): buffer size two max elements one — returns true")
         @Test
-        public void isTrimShouldBeExecuted_bufferSizeTwoMaxElementsOne_returnsTrue() throws IOException {
+        public void shouldTrim_bufferSizeTwoMaxElementsOne_returnsTrue() throws IOException {
             // arrange — disable trim while writing so we can control buffer.size() independently
             StreamBuffer sb = new StreamBuffer();
             sb.setMaxBufferElements(0);
@@ -2630,7 +2630,7 @@ public class StreamBufferTest {
 
             // act + assert — original: (2 >= 2) && (2 > 1) = true
             //                mutant:   (2 >  2) && (2 > 1) = false  → mutation killed
-            assertThat(sb.isTrimShouldBeExecuted(), is(true));
+            assertThat(sb.shouldTrim(), is(true));
         }
     }
 
@@ -2685,29 +2685,29 @@ public class StreamBufferTest {
     }
 
     @Nested
-    @DisplayName("isTrimShouldBeExecuted() — size-two boundary")
+    @DisplayName("shouldTrim() — size-two boundary")
     class IsTrimShouldBeExecutedSizeTwoBoundaryTests {
-        @DisplayName("getBufferSize(): two entries with max buffer elements one — trim called")
+        @DisplayName("getBufferElementCount(): two entries with max buffer elements one — trim called")
         @Test
-        public void getBufferSize_twoEntriesWithMaxBufferElementsOne_trimCalled() throws IOException {
+        public void getBufferElementCount_twoEntriesWithMaxBufferElementsOne_trimCalled() throws IOException {
             // arrange
             StreamBuffer sb = new StreamBuffer();
             sb.setMaxBufferElements(1);
 
             // act — exactly two separate entries: buffer.size() == 2 > maxBufferElements == 1
             // original: buffer.size() >= 2 → true → trim fires
-            // mutant:   buffer.size() >  2 → false → trim skipped → getBufferSize() stays 2
+            // mutant:   buffer.size() >  2 → false → trim skipped → getBufferElementCount() stays 2
             sb.getOutputStream().write(new byte[] {1});
             sb.getOutputStream().write(new byte[] {2});
 
             // assert
-            assertThat(sb.getBufferSize(), is(1));
+            assertThat(sb.getBufferElementCount(), is(1));
         }
     }
 
     @Nested
-    @DisplayName("tryWaitForEnoughBytes() — open stream")
-    class TryWaitForEnoughBytesOpenStreamTests {
+    @DisplayName("waitForAtLeast() — open stream")
+    class WaitForAtLeastOpenStreamTests {
         @DisplayName("read(): multiple bytes single entry open stream — returns all requested bytes")
         @Test
         public void read_multipleBytesSingleEntryOpenStream_returnsAllRequestedBytes() throws IOException {
@@ -2715,7 +2715,7 @@ public class StreamBufferTest {
             StreamBuffer sb = new StreamBuffer();
             sb.getOutputStream().write(new byte[] {1, 2, 3, 4, 5});
 
-            // act — tryWaitForEnoughBytes(4) takes the "already enough" path and must return availableBytes (4)
+            // act — waitForAtLeast(4) takes the "already enough" path and must return availableBytes (4)
             // mutant returns 0 → read(b, 0, 5) short-circuits and returns only 1 (the first byte)
             byte[] dest = new byte[5];
             int bytesRead = sb.getInputStream().read(dest, 0, 5);
@@ -3048,6 +3048,47 @@ public class StreamBufferTest {
                     () -> assertThat(sb.getBufferElementCount(), is(1)),
                     () -> assertThat(sb.isTrimRunning(), is(false)) // trim should be complete
                     );
+        }
+    }
+
+    @Nested
+    @DisplayName("getAvailableBytesExact() — long-precision live byte count")
+    class GetAvailableBytesExactTests {
+
+        @DisplayName("getAvailableBytesExact(): initial state — returns zero")
+        @Test
+        public void getAvailableBytesExact_initial_returnsZero() {
+            // arrange
+            StreamBuffer sb = new StreamBuffer();
+
+            // act + assert
+            assertThat(sb.getAvailableBytesExact(), is(0L));
+        }
+
+        @DisplayName("getAvailableBytesExact(): after write — returns exact byte count")
+        @Test
+        public void getAvailableBytesExact_afterWrite_returnsExactByteCount() throws IOException {
+            // arrange
+            StreamBuffer sb = new StreamBuffer();
+            sb.getOutputStream().write(new byte[] {1, 2, 3, 4, 5});
+
+            // act + assert
+            assertThat(sb.getAvailableBytesExact(), is(5L));
+        }
+
+        @DisplayName("getAvailableBytesExact(): after partial read — reflects remaining bytes")
+        @Test
+        public void getAvailableBytesExact_afterPartialRead_reflectsRemainingBytes() throws IOException {
+            // arrange
+            StreamBuffer sb = new StreamBuffer();
+            sb.getOutputStream().write(new byte[] {1, 2, 3, 4, 5});
+            int firstByte = sb.getInputStream().read(); // consumes 1 byte
+
+            // pre-assert
+            assertThat(firstByte, is(1));
+
+            // act + assert
+            assertThat(sb.getAvailableBytesExact(), is(4L));
         }
     }
 
@@ -3515,13 +3556,13 @@ public class StreamBufferTest {
             }
 
             // assert — trim should not execute with maxBufferElements=0
-            assertThat(sb.isTrimShouldBeExecuted(), is(false));
+            assertThat(sb.shouldTrim(), is(false));
         }
 
         @DisplayName("trimCondition(): all checks pass — returns true")
         @Test
         public void trimCondition_allChecksPass_returnsTrue() throws IOException {
-            // arrange — Force all conditions in isTrimShouldBeExecuted to pass
+            // arrange — Force all conditions in shouldTrim to pass
             final StreamBuffer sb = new StreamBuffer();
             sb.setMaxBufferElements(3);
             sb.setMaxAllocationSize(50); // Small allocation size to prevent consolidating all chunks
@@ -3529,7 +3570,7 @@ public class StreamBufferTest {
 
             // act — Write 8 chunks of 100 bytes (800 bytes total)
             // This creates buffer.size() = 8 > maxBufferElements(3)
-            // When isTrimShouldBeExecuted() is called:
+            // When shouldTrim() is called:
             // - buffer.size() (8) > maxBufferElements (3)? YES
             // - availableBytes (800) > 0 && maxAllocSize (50) < availableBytes (800)? YES
             // - resultingChunks = ceil(800/50) = 16
@@ -3543,7 +3584,7 @@ public class StreamBufferTest {
             // Reset maxAllocationSize to default (large) to allow consolidation
             sb.setMaxAllocationSize(Integer.MAX_VALUE);
             // Now with default maxAllocSize, edge case logic is skipped and returns true
-            assertThat(sb.isTrimShouldBeExecuted(), is(true));
+            assertThat(sb.shouldTrim(), is(true));
         }
 
         @DisplayName("trimCondition(): available bytes zero — skips trim check")
@@ -3560,7 +3601,7 @@ public class StreamBufferTest {
             is.read(); // Consume the byte
 
             // assert — No available bytes, so edge case trim check should be skipped
-            assertThat(sb.isTrimShouldBeExecuted(), is(false));
+            assertThat(sb.shouldTrim(), is(false));
         }
 
         @DisplayName("trimCondition(): resulting chunks equal buffer size — does not trim")
@@ -3579,7 +3620,7 @@ public class StreamBufferTest {
 
             // assert — resultingChunks = ceil(500/100) = 5, buffer.size() = 5
             // So 5 >= 5, trim should NOT execute (kills >= vs > mutation)
-            assertThat(sb.isTrimShouldBeExecuted(), is(false));
+            assertThat(sb.shouldTrim(), is(false));
         }
 
         @DisplayName("trimCondition(): max alloc size greater or equal — skips trim check")
@@ -3598,7 +3639,7 @@ public class StreamBufferTest {
 
             // assert — Since maxAllocSize >= availableBytes, edge case check is skipped
             // AND data is small relative to limit, trim should not execute
-            assertThat(sb.isTrimShouldBeExecuted(), is(false));
+            assertThat(sb.shouldTrim(), is(false));
         }
 
         @DisplayName("trimCondition(): max alloc size less than available — checks chunks")
@@ -3793,9 +3834,9 @@ public class StreamBufferTest {
                     });
         }
 
-        @DisplayName("isTrimShouldBeExecuted(): all conditions pass — returns true")
+        @DisplayName("shouldTrim(): all conditions pass — returns true")
         @Test
-        public void isTrimShouldBeExecuted_allConditionsPass_returnsTrue() throws IOException {
+        public void shouldTrim_allConditionsPass_returnsTrue() throws IOException {
             // arrange
             final StreamBuffer sb = new StreamBuffer();
             final OutputStream os = sb.getOutputStream();
@@ -3814,12 +3855,12 @@ public class StreamBufferTest {
 
             // act & assert
             // All conditions pass: isTrimRunning=false, buffer has enough chunks, edge case ok
-            assertThat(sb.isTrimShouldBeExecuted(), is(true)); // Kills mutation of final return true
+            assertThat(sb.shouldTrim(), is(true)); // Kills mutation of final return true
         }
 
-        @DisplayName("isTrimShouldBeExecuted(): or condition first check — returns false")
+        @DisplayName("shouldTrim(): or condition first check — returns false")
         @Test
-        public void isTrimShouldBeExecuted_orConditionFirstCheck_returnsFalse() throws IOException {
+        public void shouldTrim_orConditionFirstCheck_returnsFalse() throws IOException {
             // arrange
             final StreamBuffer sb = new StreamBuffer();
 
@@ -3834,12 +3875,12 @@ public class StreamBufferTest {
 
             // act & assert
             // First OR condition is true: maxBufferElements <= 0
-            assertThat(sb.isTrimShouldBeExecuted(), is(false)); // Kills first return false in OR
+            assertThat(sb.shouldTrim(), is(false)); // Kills first return false in OR
         }
 
-        @DisplayName("isTrimShouldBeExecuted(): edge case returns false")
+        @DisplayName("shouldTrim(): edge case returns false")
         @Test
-        public void isTrimShouldBeExecuted_edgeCaseReturnsFalse() throws IOException {
+        public void shouldTrim_edgeCaseReturnsFalse() throws IOException {
             // arrange
             final StreamBuffer sb = new StreamBuffer();
             sb.setMaxBufferElements(3);
@@ -3855,12 +3896,12 @@ public class StreamBufferTest {
 
             // act & assert
             // Edge case check should trigger and return false
-            assertThat(sb.isTrimShouldBeExecuted(), is(false)); // Kills edge case return false
+            assertThat(sb.shouldTrim(), is(false)); // Kills edge case return false
         }
 
-        @DisplayName("isTrimShouldBeExecuted(): or condition second check — returns false")
+        @DisplayName("shouldTrim(): or condition second check — returns false")
         @Test
-        public void isTrimShouldBeExecuted_orConditionSecondCheck_returnsFalse() throws IOException {
+        public void shouldTrim_orConditionSecondCheck_returnsFalse() throws IOException {
             // arrange
             final StreamBuffer sb = new StreamBuffer();
 
@@ -3870,12 +3911,12 @@ public class StreamBufferTest {
 
             // act & assert
             // Second OR condition is true: buffer.size() < 2
-            assertThat(sb.isTrimShouldBeExecuted(), is(false)); // Kills second return false in OR
+            assertThat(sb.shouldTrim(), is(false)); // Kills second return false in OR
         }
 
-        @DisplayName("isTrimShouldBeExecuted(): or condition third check — returns false")
+        @DisplayName("shouldTrim(): or condition third check — returns false")
         @Test
-        public void isTrimShouldBeExecuted_orConditionThirdCheck_returnsFalse() throws IOException {
+        public void shouldTrim_orConditionThirdCheck_returnsFalse() throws IOException {
             // arrange
             final StreamBuffer sb = new StreamBuffer();
             sb.setMaxBufferElements(100); // Set high enough to not trigger trim
@@ -3888,7 +3929,7 @@ public class StreamBufferTest {
 
             // act & assert
             // Third OR condition is true: buffer.size() (likely 2) <= maxBufferElements (100)
-            assertThat(sb.isTrimShouldBeExecuted(), is(false)); // Kills third condition return false
+            assertThat(sb.shouldTrim(), is(false)); // Kills third condition return false
         }
 
         @DisplayName("shouldCheckEdgeCase(): boundary available bytes — zero")
@@ -4178,7 +4219,7 @@ public class StreamBufferTest {
          * IMPLEMENTATION RISK:
          * releaseTrimStartSignals() is called OUTSIDE the try block:
          * ```
-         * if (isTrimShouldBeExecuted()) {
+         * if (shouldTrim()) {
          *     isTrimRunning = true;
          *     releaseTrimStartSignals();  // ← OUTSIDE try-finally (line 442)
          *     try {
@@ -4786,9 +4827,9 @@ public class StreamBufferTest {
             sb.removeTrimStartSignal(closeOnTrimStart);
         }
 
-        @DisplayName("isTrimShouldBeExecuted(): nested trim attempt during running trim — guard returns false")
+        @DisplayName("shouldTrim(): nested trim attempt during running trim — guard returns false")
         @Test
-        public void isTrimShouldBeExecuted_nestedAttemptDuringRunningTrim_isBlockedByGuard() throws IOException {
+        public void shouldTrim_nestedAttemptDuringRunningTrim_isBlockedByGuard() throws IOException {
             final StreamBuffer sb = new StreamBuffer();
             final OutputStream os = sb.getOutputStream();
             final InputStream is = sb.getInputStream();
@@ -5497,7 +5538,7 @@ public class StreamBufferTest {
          *
          * IMPLEMENTATION VERIFICATION:
          * The trim decision logic caches configuration values BEFORE trim starts:
-         * - isTrimShouldBeExecuted() calls: final int maxBufferElements = getMaxBufferElements()
+         * - shouldTrim() calls: final int maxBufferElements = getMaxBufferElements()
          * - This cached value is passed to decideTrimExecution() as a parameter
          * - During trim execution, only the cached value is used, not the volatile field
          *
@@ -5610,7 +5651,7 @@ public class StreamBufferTest {
          * (the chunk size limit during consolidation) don't affect the currently executing trim.
          *
          * IMPLEMENTATION DETAIL:
-         * maxAllocationSize is also only read once via getMaxAllocationSize() in isTrimShouldBeExecuted(),
+         * maxAllocationSize is also only read once via getMaxAllocationSize() in shouldTrim(),
          * so trim execution is isolated from config changes.
          */
         @DisplayName("setMaxAllocationSize(): during trim execution — does not affect running trim")
@@ -5682,7 +5723,7 @@ public class StreamBufferTest {
      * Configuration only influences trim DECISIONS, not trim EXECUTION.
      *
      * Implementation: Configuration values are cached before trim execution:
-     * - final int maxBufferElements = getMaxBufferElements() (cached in isTrimShouldBeExecuted)
+     * - final int maxBufferElements = getMaxBufferElements() (cached in shouldTrim)
      * - trim uses cached value, not the volatile field, so concurrent changes are isolated
      *
      * Tests verify:

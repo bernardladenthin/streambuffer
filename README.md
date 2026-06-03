@@ -1,12 +1,18 @@
 **Build:**  
 ![Java 8+](https://img.shields.io/badge/Java-8%2B-informational)  
-![JUnit](https://img.shields.io/badge/tested%20with-JUnit5-25A162)  
+[![JPMS](https://img.shields.io/badge/JPMS-modular%20JAR-25A162)](https://openjdk.org/projects/jigsaw/)  
+![JUnit](https://img.shields.io/badge/tested%20with-JUnit6-25A162)  
+[![JSpecify](https://img.shields.io/badge/JSpecify-1.0.0%20%40NullMarked-25A162)](https://jspecify.dev)  
+[![NullAway](https://img.shields.io/badge/NullAway-strict%20JSpecify-25A162)](https://github.com/uber/NullAway)  
+[![Checker Framework](https://img.shields.io/badge/Checker%20Framework-Nullness-25A162)](https://checkerframework.org)  
+[![Error Prone](https://img.shields.io/badge/Error%20Prone-12%20patterns%20at%20ERROR-25A162)](https://errorprone.info)  
+[![Maven Enforcer](https://img.shields.io/badge/Maven%20Enforcer-strict-25A162)](https://maven.apache.org/enforcer/)  
 [![jqwik](https://img.shields.io/badge/tested%20with-jqwik-1f6feb)](https://jqwik.net)  
+[![ArchUnit](https://img.shields.io/badge/tested%20with-ArchUnit-c71a36)](https://www.archunit.org)  
+[![SpotBugs](https://img.shields.io/badge/analyzed%20with-SpotBugs-3b5998)](https://spotbugs.github.io)  
 [![jcstress](https://img.shields.io/badge/tested%20with-jcstress-007396)](https://openjdk.org/projects/code-tools/jcstress/)  
 [![Lincheck](https://img.shields.io/badge/tested%20with-Lincheck-7F52FF)](https://github.com/JetBrains/lincheck)  
 [![vmlens](https://img.shields.io/badge/tested%20with-vmlens-ff6f00)](https://vmlens.com)  
-[![ArchUnit](https://img.shields.io/badge/tested%20with-ArchUnit-c71a36)](https://www.archunit.org)  
-[![SpotBugs](https://img.shields.io/badge/analyzed%20with-SpotBugs-3b5998)](https://spotbugs.github.io)  
 [![JMH](https://img.shields.io/badge/benchmarked%20with-JMH-25A162)](https://openjdk.org/projects/code-tools/jmh/)  
 [![Publish](https://github.com/bernardladenthin/streambuffer/actions/workflows/publish.yml/badge.svg)](https://github.com/bernardladenthin/streambuffer/actions/workflows/publish.yml)  
 [![CodeQL](https://github.com/bernardladenthin/streambuffer/actions/workflows/codeql.yml/badge.svg)](https://github.com/bernardladenthin/streambuffer/actions/workflows/codeql.yml)  
@@ -318,6 +324,40 @@ If no data is available and the stream is not closed, `read()` blocks the callin
 
 Write operations never block, regardless of how much data is already buffered.
 
+## Runtime dependencies
+
+**streambuffer ships with zero transitive runtime dependencies.** A downstream
+consumer that declares
+
+```xml
+<dependency>
+    <groupId>net.ladenthin</groupId>
+    <artifactId>streambuffer</artifactId>
+    <version>1.3.0</version>
+</dependency>
+```
+
+gets exactly that one artifact on its runtime classpath. `mvn dependency:tree`
+on the consumer side will show no transitive deps from streambuffer.
+
+The two annotation libraries we use at compile time are marked
+`<optional>true</optional>` in our `pom.xml`:
+
+| Dep | Why it's used | What's in the bytecode | Runtime classpath impact |
+|---|---|---|---|
+| `org.jspecify:jspecify` | `@NullMarked` on the package, future `@Nullable` markers | annotation references, `@Retention(CLASS)` | none — JVM never loads these classes |
+| `com.google.errorprone:error_prone_annotations` | `@GuardedBy` on internal lock-protected fields | annotation references, `@Retention(CLASS)` | none — JVM never loads these classes |
+
+Both annotation types have `@Retention(CLASS)`: the references are written into
+streambuffer's `.class` files (so static analyzers like NullAway, IntelliJ, or
+the Checker Framework on a consumer's project can read the contract), but the
+JVM never loads the annotation classes at runtime. The `<optional>true</optional>`
+scope keeps the JARs off downstream runtime classpaths.
+
+If you run static analysis on your own project and want IntelliJ / NullAway to
+see streambuffer's nullness contract, declare `org.jspecify:jspecify` yourself
+explicitly — it is not provided transitively.
+
 ## Build
 
 Requires Java 8 and Maven 3.3.9+.
@@ -343,7 +383,9 @@ mvn org.pitest:pitest-maven:mutationCoverage
 
 ## Testing
 
-Tests are in `StreamBufferTest` using JUnit 5 (JUnit Jupiter). Most behavioral tests are parameterized across three write strategies:
+> ⚠️ **DO NOT UPGRADE jqwik past 1.9.3.** jqwik 1.10.0 added an anti-AI prompt-injection string to test stdout; the 1.10.1 user guide states the library "is not meant to be used by any 'AI' coding agents at all." 1.9.3 is the last pre-disclosure release and is the pinned version. See `CLAUDE.md` section "jqwik prompt-injection in test output" for the full context.
+
+Tests are in `StreamBufferTest` using JUnit 6 (JUnit Jupiter); property-based tests live in `StreamBufferProperties` and use jqwik 1.9.3 (pinned — see warning above). Most behavioral tests are parameterized across three write strategies:
 
 | `WriteMethod` | Description |
 |---------------|-------------|
