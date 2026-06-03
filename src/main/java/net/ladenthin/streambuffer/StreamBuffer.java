@@ -412,16 +412,6 @@ public class StreamBuffer implements Closeable {
     }
 
     /**
-     * Use {@link #tryWaitForEnoughBytes(long)}.
-     *
-     * @throws InterruptedException if the current thread is interrupted
-     */
-    @Deprecated
-    public void blockDataAvailable() throws InterruptedException {
-        tryWaitForEnoughBytes(1);
-    }
-
-    /**
      * This method trims the buffer. This method can be invoked after every
      * write operation. The method checks itself if the buffer should be trimmed
      * or not.
@@ -760,18 +750,18 @@ public class StreamBuffer implements Closeable {
     }
 
     /**
-     * This method blocks until the stream is closed or enough bytes are
-     * available, which can be read from the buffer.
+     * Blocks until at least {@code bytes} bytes are available, or the stream is closed.
+     * If the stream is closed before {@code bytes} bytes arrive, returns the actual
+     * number of bytes that did arrive (which may be less than {@code bytes}).
      *
-     * This method is blocking until data is available on the
-     * {@link InputStream} or the stream was closed. This method could must be called
-     * from one thread only (same thread as read methods, do not call this method during read operations).
-     * It's not allowed to use this method to notify multiple threads.
-     * @param bytes the number of bytes waiting for.
-     * @return The available bytes.
-     * @throws InterruptedException if the current thread is interrupted while waiting.
+     * <p>Must be called from a single reader thread; do not interleave with
+     * {@link InputStream#read read()} on the same {@link StreamBuffer}.</p>
+     *
+     * @param bytes minimum number of bytes to wait for (must be &#x2265; 1)
+     * @return the number of bytes available now
+     * @throws InterruptedException if the current thread is interrupted while waiting
      */
-    private long tryWaitForEnoughBytes(final long bytes) throws InterruptedException {
+    public long waitForAtLeast(final long bytes) throws InterruptedException {
         // we can only wait for a positive number of bytes
         assert bytes > 0 : "Number of bytes are negative or zero : " + bytes;
 
@@ -789,6 +779,18 @@ public class StreamBuffer implements Closeable {
         return availableBytes;
     }
 
+    /**
+     * Convenience: blocks until at least one byte is available, or the stream is
+     * closed without data. Equivalent to {@link #waitForAtLeast(long) waitForAtLeast(1L)}.
+     *
+     * @return the number of bytes available now (&#x2265; 1 if data arrived;
+     *         0 if the stream closed first without data)
+     * @throws InterruptedException if the current thread is interrupted while waiting
+     */
+    public long waitForAnyData() throws InterruptedException {
+        return waitForAtLeast(1L);
+    }
+
     private class SBInputStream extends InputStream {
         @Override
         public int available() throws IOException {
@@ -803,8 +805,7 @@ public class StreamBuffer implements Closeable {
         @Override
         public int read() throws IOException {
             try {
-                // we wait for enough bytes (one byte)
-                if (tryWaitForEnoughBytes(1) < 1) {
+                if (waitForAnyData() < 1) {
                     // try to wait, but not enough bytes available
                     // return the end of stream is reached
                     return -1;
@@ -859,13 +860,13 @@ public class StreamBuffer implements Closeable {
             int copiedBytes = 1;
 
             int missingBytes = len - copiedBytes;
-            if (noMoreMissingBytes(missingBytes)) {
+            if (hasNoMissingBytes(missingBytes)) {
                 return copiedBytes;
             }
 
             long maximumAvailableBytes;
             try {
-                maximumAvailableBytes = tryWaitForEnoughBytes(missingBytes);
+                maximumAvailableBytes = waitForAtLeast(missingBytes);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new IOException(e);
@@ -883,7 +884,7 @@ public class StreamBuffer implements Closeable {
             synchronized (bufferLock) {
                 for (; ; ) {
 
-                    if (noMoreMissingBytes(missingBytes)) {
+                    if (hasNoMissingBytes(missingBytes)) {
                         return copiedBytes;
                     }
 
@@ -929,7 +930,7 @@ public class StreamBuffer implements Closeable {
          * @param missingBytes number of missing bytes.
          * @return <code>true</code> if no more bytes are missing, otherwise <code>false</code>.
          */
-        private boolean noMoreMissingBytes(int missingBytes) {
+        private boolean hasNoMissingBytes(int missingBytes) {
             assert missingBytes >= 0 : "Copied more bytes as given";
 
             // check if we don't need to copy further bytes anymore
@@ -1056,14 +1057,4 @@ public class StreamBuffer implements Closeable {
         return os;
     }
 
-    /**
-     * Returns the number of elements in the buffer.
-     *
-     * @return the number of elements in the buffer.
-     */
-    public int getBufferSize() {
-        synchronized (bufferLock) {
-            return buffer.size();
-        }
-    }
 }

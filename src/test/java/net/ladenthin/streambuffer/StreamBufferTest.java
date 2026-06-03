@@ -300,7 +300,7 @@ public class StreamBufferTest {
             sb.getOutputStream().write(anyValue);
 
             // assert
-            assertThat(sb.getBufferSize(), is(3));
+            assertThat(sb.getBufferElementCount(), is(3));
         }
     }
 
@@ -425,11 +425,11 @@ public class StreamBufferTest {
     }
 
     @Nested
-    @DisplayName("getBufferSize()")
-    class GetBufferSizeTests {
-        @DisplayName("getBufferSize(): reach max buffer elements — trim called")
+    @DisplayName("getBufferElementCount()")
+    class GetBufferElementCountTests {
+        @DisplayName("getBufferElementCount(): reach max buffer elements — trim called")
         @Test
-        public void getBufferSize_reachMaxBufferElements_trimCalled() throws Exception {
+        public void getBufferElementCount_reachMaxBufferElements_trimCalled() throws Exception {
             // arrange
             StreamBuffer sb = new StreamBuffer();
             sb.setMaxBufferElements(1);
@@ -441,13 +441,13 @@ public class StreamBufferTest {
             sb.getOutputStream().write(anyValue);
 
             // assert
-            int result = sb.getBufferSize();
+            int result = sb.getBufferElementCount();
             assertThat(result, is(1));
         }
 
-        @DisplayName("getBufferSize(): reach max buffer elements — trim buffer right values")
+        @DisplayName("getBufferElementCount(): reach max buffer elements — trim buffer right values")
         @Test
-        public void getBufferSize_reachMaxBufferElements_trimBufferRightValues() throws Exception {
+        public void getBufferElementCount_reachMaxBufferElements_trimBufferRightValues() throws Exception {
             // arrange
             StreamBuffer sb = new StreamBuffer();
             InputStream is = sb.getInputStream();
@@ -465,9 +465,9 @@ public class StreamBufferTest {
             assertThat(read, is(new byte[] {1, 2, 3, 4, 5, 6}));
         }
 
-        @DisplayName("getBufferSize(): write some elements — trim not called")
+        @DisplayName("getBufferElementCount(): write some elements — trim not called")
         @Test
-        public void getBufferSize_writeSomeElements_trimNotCalled() throws Exception {
+        public void getBufferElementCount_writeSomeElements_trimNotCalled() throws Exception {
             // arrange
             StreamBuffer sb = new StreamBuffer();
             sb.setMaxBufferElements(4);
@@ -480,7 +480,7 @@ public class StreamBufferTest {
             sb.getOutputStream().write(anyValue);
 
             // assert
-            assertThat(sb.getBufferSize(), is(3));
+            assertThat(sb.getBufferElementCount(), is(3));
         }
     }
 
@@ -874,7 +874,7 @@ public class StreamBufferTest {
             os.write(new byte[] {anyValue}, invalidOffset, 0);
 
             // assert
-            assertThat(sb.getBufferSize(), is(0));
+            assertThat(sb.getBufferElementCount(), is(0));
         }
 
         @DisplayName("write(): invalid length — not written")
@@ -889,7 +889,7 @@ public class StreamBufferTest {
             os.write(new byte[] {anyValue}, 0, invalidLength);
 
             // assert
-            assertThat(sb.getBufferSize(), is(0));
+            assertThat(sb.getBufferElementCount(), is(0));
         }
 
         @DisplayName("write(): null array with offset — throws npe")
@@ -977,12 +977,12 @@ public class StreamBufferTest {
     }
 
     @Nested
-    @DisplayName("blockDataAvailable()")
-    class BlockDataAvailableTests {
-        @DisplayName("blockDataAvailable(): data written before — no waiting")
+    @DisplayName("waitForAnyData()")
+    class WaitForAnyDataTests {
+        @DisplayName("waitForAnyData(): data written before — no waiting")
         @ParameterizedTest
         @MethodSource("net.ladenthin.streambuffer.StreamBufferTest#writeMethods")
-        public void blockDataAvailable_dataWrittenBefore_noWaiting(WriteMethod writeMethod)
+        public void waitForAnyData_dataWrittenBefore_noWaiting(WriteMethod writeMethod)
                 throws IOException, InterruptedException {
             // arrange
             final StreamBuffer sb = new StreamBuffer();
@@ -992,7 +992,7 @@ public class StreamBufferTest {
 
                 public void run() {
                     try {
-                        sb.blockDataAvailable();
+                        sb.waitForAnyData();
                         after.release();
                     } catch (InterruptedException ex) {
                         throw new RuntimeException(ex);
@@ -1009,10 +1009,10 @@ public class StreamBufferTest {
             assertThat(after.tryAcquire(10, TimeUnit.SECONDS), is(true));
         }
 
-        @DisplayName("blockDataAvailable(): data written before and read afterwards — waiting")
+        @DisplayName("waitForAnyData(): data written before and read afterwards — waiting")
         @Test
         @Timeout(value = 1, unit = TimeUnit.HOURS)
-        public void blockDataAvailable_dataWrittenBeforeAndReadAfterwards_waiting()
+        public void waitForAnyData_dataWrittenBeforeAndReadAfterwards_waiting()
                 throws IOException, InterruptedException {
             // arrange
             final StreamBuffer sb = new StreamBuffer();
@@ -1023,7 +1023,7 @@ public class StreamBufferTest {
 
                 public void run() {
                     try {
-                        sb.blockDataAvailable();
+                        sb.waitForAnyData();
                         after.release();
                     } catch (InterruptedException ex) {
                         throw new RuntimeException(ex);
@@ -1041,10 +1041,10 @@ public class StreamBufferTest {
             assertThat(after.tryAcquire(10, TimeUnit.SECONDS), is(false));
         }
 
-        @DisplayName("blockDataAvailable(): stream untouched — waiting")
+        @DisplayName("waitForAnyData(): stream untouched — waiting")
         @Test
         @Timeout(value = 1, unit = TimeUnit.HOURS)
-        public void blockDataAvailable_streamUntouched_waiting() throws IOException, InterruptedException {
+        public void waitForAnyData_streamUntouched_waiting() throws IOException, InterruptedException {
             // arrange
             final StreamBuffer sb = new StreamBuffer();
             final Semaphore after = new Semaphore(0);
@@ -1052,7 +1052,7 @@ public class StreamBufferTest {
 
                 public void run() {
                     try {
-                        sb.blockDataAvailable();
+                        sb.waitForAnyData();
                         after.release();
                     } catch (InterruptedException ex) {
                         throw new RuntimeException(ex);
@@ -1069,10 +1069,10 @@ public class StreamBufferTest {
             assertThat(after.tryAcquire(10, TimeUnit.SECONDS), is(false));
         }
 
-        @DisplayName("blockDataAvailable(): write to stream — return")
+        @DisplayName("waitForAnyData(): write to stream — return")
         @ParameterizedTest
         @MethodSource("net.ladenthin.streambuffer.StreamBufferTest#writeMethods")
-        public void blockDataAvailable_writeToStream_return(WriteMethod writeMethod)
+        public void waitForAnyData_writeToStream_return(WriteMethod writeMethod)
                 throws IOException, InterruptedException {
             // arrange
             final StreamBuffer sb = new StreamBuffer();
@@ -1082,7 +1082,7 @@ public class StreamBufferTest {
 
                 public void run() {
                     try {
-                        sb.blockDataAvailable();
+                        sb.waitForAnyData();
                         after.release();
                     } catch (InterruptedException ex) {
                         throw new RuntimeException(ex);
@@ -1100,9 +1100,9 @@ public class StreamBufferTest {
             assertThat(after.tryAcquire(10, TimeUnit.SECONDS), is(true));
         }
 
-        @DisplayName("blockDataAvailable(): close stream — return")
+        @DisplayName("waitForAnyData(): close stream — return")
         @Test
-        public void blockDataAvailable_closeStream_return() throws IOException, InterruptedException {
+        public void waitForAnyData_closeStream_return() throws IOException, InterruptedException {
             // arrange
             final StreamBuffer sb = new StreamBuffer();
             OutputStream os = sb.getOutputStream();
@@ -1111,7 +1111,7 @@ public class StreamBufferTest {
 
                 public void run() {
                     try {
-                        sb.blockDataAvailable();
+                        sb.waitForAnyData();
                         after.release();
                     } catch (InterruptedException ex) {
                         throw new RuntimeException(ex);
@@ -1129,21 +1129,21 @@ public class StreamBufferTest {
             assertThat(after.tryAcquire(10, TimeUnit.SECONDS), is(true));
         }
 
-        @DisplayName("blockDataAvailable(): stream already closed — return")
+        @DisplayName("waitForAnyData(): stream already closed — return")
         @Test
-        public void blockDataAvailable_streamAlreadyClosed_return() throws IOException {
+        public void waitForAnyData_streamAlreadyClosed_return() throws IOException {
             // arrange
             final StreamBuffer sb = new StreamBuffer();
             sb.close();
 
             // act
             // assert — returns immediately without throwing
-            assertDoesNotThrow(() -> sb.blockDataAvailable());
+            assertDoesNotThrow(() -> sb.waitForAnyData());
         }
 
-        @DisplayName("blockDataAvailable(): data already available — only one wakeup")
+        @DisplayName("waitForAnyData(): data already available — only one wakeup")
         @Test
-        public void blockDataAvailable_dataAlreadyAvailable_onlyOneWakeup() throws Exception {
+        public void waitForAnyData_dataAlreadyAvailable_onlyOneWakeup() throws Exception {
             // arrange
             final StreamBuffer sb = new StreamBuffer();
             OutputStream os = sb.getOutputStream();
@@ -1157,7 +1157,7 @@ public class StreamBufferTest {
             Thread consumer1 = new Thread(() -> {
                 try {
                     ready.release();
-                    sb.blockDataAvailable();
+                    sb.waitForAnyData();
                     done.release();
                 } catch (InterruptedException e) {
                     throw new RuntimeException(e);
@@ -1167,7 +1167,7 @@ public class StreamBufferTest {
             Thread consumer2 = new Thread(() -> {
                 try {
                     ready.release();
-                    sb.blockDataAvailable();
+                    sb.waitForAnyData();
                     done.release();
                 } catch (InterruptedException e) {
                     throw new RuntimeException(e);
@@ -1186,9 +1186,9 @@ public class StreamBufferTest {
             assertThat("Only one thread should proceed due to single permit", acquired, is(1));
         }
 
-        @DisplayName("blockDataAvailable(): multiple writes before call — does not block")
+        @DisplayName("waitForAnyData(): multiple writes before call — does not block")
         @Test
-        public void blockDataAvailable_multipleWritesBeforeCall_doesNotBlock() throws Exception {
+        public void waitForAnyData_multipleWritesBeforeCall_doesNotBlock() throws Exception {
             // arrange
             final StreamBuffer sb = new StreamBuffer();
             OutputStream os = sb.getOutputStream();
@@ -1197,12 +1197,12 @@ public class StreamBufferTest {
 
             // act
             // assert — does not block since data is already written
-            assertTimeoutPreemptively(Duration.ofSeconds(5), () -> sb.blockDataAvailable());
+            assertTimeoutPreemptively(Duration.ofSeconds(5), () -> sb.waitForAnyData());
         }
 
-        @DisplayName("blockDataAvailable(): after bytes consumed — blocks again")
+        @DisplayName("waitForAnyData(): after bytes consumed — blocks again")
         @Test
-        public void blockDataAvailable_afterBytesConsumed_blocksAgain() throws Exception {
+        public void waitForAnyData_afterBytesConsumed_blocksAgain() throws Exception {
             // arrange
             final StreamBuffer sb = new StreamBuffer();
             OutputStream os = sb.getOutputStream();
@@ -1214,7 +1214,7 @@ public class StreamBufferTest {
             final Semaphore signal = new Semaphore(0);
             Thread thread = new Thread(() -> {
                 try {
-                    sb.blockDataAvailable();
+                    sb.waitForAnyData();
                     signal.release();
                 } catch (InterruptedException e) {
                     throw new RuntimeException(e);
@@ -1581,9 +1581,9 @@ public class StreamBufferTest {
     @Nested
     @DisplayName("shouldTrim() — boundary")
     class IsTrimShouldBeExecutedBoundaryTests {
-        @DisplayName("getBufferSize(): exactly at max buffer elements — trim not called")
+        @DisplayName("getBufferElementCount(): exactly at max buffer elements — trim not called")
         @Test
-        public void getBufferSize_exactlyAtMaxBufferElements_trimNotCalled() throws IOException {
+        public void getBufferElementCount_exactlyAtMaxBufferElements_trimNotCalled() throws IOException {
             // arrange
             StreamBuffer sb = new StreamBuffer();
             sb.setMaxBufferElements(2);
@@ -1593,12 +1593,12 @@ public class StreamBufferTest {
             sb.getOutputStream().write(anyValue);
 
             // assert
-            assertThat(sb.getBufferSize(), is(2));
+            assertThat(sb.getBufferElementCount(), is(2));
         }
 
-        @DisplayName("getBufferSize(): one above max buffer elements — trim called")
+        @DisplayName("getBufferElementCount(): one above max buffer elements — trim called")
         @Test
-        public void getBufferSize_oneAboveMaxBufferElements_trimCalled() throws IOException {
+        public void getBufferElementCount_oneAboveMaxBufferElements_trimCalled() throws IOException {
             // arrange
             StreamBuffer sb = new StreamBuffer();
             sb.setMaxBufferElements(2);
@@ -1609,7 +1609,7 @@ public class StreamBufferTest {
             sb.getOutputStream().write(anyValue);
 
             // assert
-            assertThat(sb.getBufferSize(), is(1));
+            assertThat(sb.getBufferElementCount(), is(1));
         }
     }
 
@@ -1812,7 +1812,7 @@ public class StreamBufferTest {
             // act
             reader.start();
             readerStarted.acquire();
-            Thread.sleep(500); // let reader block in tryWaitForEnoughBytes
+            Thread.sleep(500); // let reader block in waitForAtLeast
             os.write(new byte[] {1, 2, 3});
             os.close(); // unblocks reader with only 3 bytes available
 
@@ -2370,7 +2370,7 @@ public class StreamBufferTest {
             }
 
             // assert — all entries remain un-trimmed (each write(int) adds one entry)
-            assertThat(sb.getBufferSize(), is(greaterThan(1)));
+            assertThat(sb.getBufferElementCount(), is(greaterThan(1)));
         }
     }
 
@@ -2465,7 +2465,7 @@ public class StreamBufferTest {
             final AtomicBoolean interruptFlagAfterCatch = new AtomicBoolean(false);
 
             // write exactly 1 byte so the internal read() at the start of read(b,off,len)
-            // succeeds immediately, then tryWaitForEnoughBytes blocks waiting for the second byte
+            // succeeds immediately, then waitForAtLeast blocks waiting for the second byte
             os.write(42);
 
             Thread reader = new Thread(() -> {
@@ -2481,7 +2481,7 @@ public class StreamBufferTest {
             // act
             reader.start();
             started.acquire(); // wait for thread to start
-            Thread.sleep(500); // let it block inside tryWaitForEnoughBytes
+            Thread.sleep(500); // let it block inside waitForAtLeast
             reader.interrupt();
             reader.join();
 
@@ -2529,16 +2529,16 @@ public class StreamBufferTest {
     }
 
     @Nested
-    @DisplayName("getBufferSize() — initial state")
-    class GetBufferSizeInitialTests {
-        @DisplayName("getBufferSize(): empty buffer — returns zero")
+    @DisplayName("getBufferElementCount() — initial state")
+    class GetBufferElementCountInitialTests {
+        @DisplayName("getBufferElementCount(): empty buffer — returns zero")
         @Test
-        public void getBufferSize_emptyBuffer_returnsZero() {
+        public void getBufferElementCount_emptyBuffer_returnsZero() {
             // arrange
             StreamBuffer sb = new StreamBuffer();
 
             // act
-            int result = sb.getBufferSize();
+            int result = sb.getBufferElementCount();
 
             // assert
             assertThat(result, is(0));
@@ -2548,9 +2548,9 @@ public class StreamBufferTest {
     @Nested
     @DisplayName("shouldTrim() — zero boundary")
     class IsTrimShouldBeExecutedZeroBoundaryTests {
-        @DisplayName("getBufferSize(): max buffer elements zero with multiple entries — no trim executed")
+        @DisplayName("getBufferElementCount(): max buffer elements zero with multiple entries — no trim executed")
         @Test
-        public void getBufferSize_maxBufferElementsZeroWithMultipleEntries_noTrimExecuted() throws IOException {
+        public void getBufferElementCount_maxBufferElementsZeroWithMultipleEntries_noTrimExecuted() throws IOException {
             // arrange
             StreamBuffer sb = new StreamBuffer();
             sb.setMaxBufferElements(0);
@@ -2561,13 +2561,13 @@ public class StreamBufferTest {
             sb.getOutputStream().write(new byte[] {3});
 
             // assert
-            assertThat(sb.getBufferSize(), is(3));
+            assertThat(sb.getBufferElementCount(), is(3));
         }
     }
 
     @Nested
-    @DisplayName("tryWaitForEnoughBytes() — closed stream")
-    class TryWaitForEnoughBytesClosedStreamTests {
+    @DisplayName("waitForAtLeast() — closed stream")
+    class WaitForAtLeastClosedStreamTests {
         @DisplayName("read(): closed stream with two bytes — read array returns both bytes")
         @Test
         public void read_closedStreamWithTwoBytes_readArrayReturnsBothBytes() throws IOException {
@@ -2609,7 +2609,7 @@ public class StreamBufferTest {
             assertAll(
                     () -> assertThat(bytesRead, is(3)),
                     () -> assertThat(dest, is(new byte[] {1, 2, 3})),
-                    () -> assertThat(sb.getBufferSize(), is(0)),
+                    () -> assertThat(sb.getBufferElementCount(), is(0)),
                     () -> assertThat(sb.getInputStream().available(), is(0)));
         }
     }
@@ -2687,27 +2687,27 @@ public class StreamBufferTest {
     @Nested
     @DisplayName("shouldTrim() — size-two boundary")
     class IsTrimShouldBeExecutedSizeTwoBoundaryTests {
-        @DisplayName("getBufferSize(): two entries with max buffer elements one — trim called")
+        @DisplayName("getBufferElementCount(): two entries with max buffer elements one — trim called")
         @Test
-        public void getBufferSize_twoEntriesWithMaxBufferElementsOne_trimCalled() throws IOException {
+        public void getBufferElementCount_twoEntriesWithMaxBufferElementsOne_trimCalled() throws IOException {
             // arrange
             StreamBuffer sb = new StreamBuffer();
             sb.setMaxBufferElements(1);
 
             // act — exactly two separate entries: buffer.size() == 2 > maxBufferElements == 1
             // original: buffer.size() >= 2 → true → trim fires
-            // mutant:   buffer.size() >  2 → false → trim skipped → getBufferSize() stays 2
+            // mutant:   buffer.size() >  2 → false → trim skipped → getBufferElementCount() stays 2
             sb.getOutputStream().write(new byte[] {1});
             sb.getOutputStream().write(new byte[] {2});
 
             // assert
-            assertThat(sb.getBufferSize(), is(1));
+            assertThat(sb.getBufferElementCount(), is(1));
         }
     }
 
     @Nested
-    @DisplayName("tryWaitForEnoughBytes() — open stream")
-    class TryWaitForEnoughBytesOpenStreamTests {
+    @DisplayName("waitForAtLeast() — open stream")
+    class WaitForAtLeastOpenStreamTests {
         @DisplayName("read(): multiple bytes single entry open stream — returns all requested bytes")
         @Test
         public void read_multipleBytesSingleEntryOpenStream_returnsAllRequestedBytes() throws IOException {
@@ -2715,7 +2715,7 @@ public class StreamBufferTest {
             StreamBuffer sb = new StreamBuffer();
             sb.getOutputStream().write(new byte[] {1, 2, 3, 4, 5});
 
-            // act — tryWaitForEnoughBytes(4) takes the "already enough" path and must return availableBytes (4)
+            // act — waitForAtLeast(4) takes the "already enough" path and must return availableBytes (4)
             // mutant returns 0 → read(b, 0, 5) short-circuits and returns only 1 (the first byte)
             byte[] dest = new byte[5];
             int bytesRead = sb.getInputStream().read(dest, 0, 5);
