@@ -10,9 +10,6 @@ SPDX-License-Identifier: Apache-2.0
     <groupId>net.ladenthin</groupId>
     <artifactId>streambuffer</artifactId>
     <version>1.3.0-SNAPSHOT</version>
-    <prerequisites>
-        <maven>3.3.9</maven>
-    </prerequisites>
     <packaging>jar</packaging>
     <name>streambuffer</name>
     <description>A stream buffer is a class to buffer data that has been written to an OutputStream and provide the data in an InputStream.</description>
