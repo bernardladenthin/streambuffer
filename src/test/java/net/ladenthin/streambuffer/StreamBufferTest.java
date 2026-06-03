@@ -3052,6 +3052,47 @@ public class StreamBufferTest {
     }
 
     @Nested
+    @DisplayName("getAvailableBytesExact() — long-precision live byte count")
+    class GetAvailableBytesExactTests {
+
+        @DisplayName("getAvailableBytesExact(): initial state — returns zero")
+        @Test
+        public void getAvailableBytesExact_initial_returnsZero() {
+            // arrange
+            StreamBuffer sb = new StreamBuffer();
+
+            // act + assert
+            assertThat(sb.getAvailableBytesExact(), is(0L));
+        }
+
+        @DisplayName("getAvailableBytesExact(): after write — returns exact byte count")
+        @Test
+        public void getAvailableBytesExact_afterWrite_returnsExactByteCount() throws IOException {
+            // arrange
+            StreamBuffer sb = new StreamBuffer();
+            sb.getOutputStream().write(new byte[] {1, 2, 3, 4, 5});
+
+            // act + assert
+            assertThat(sb.getAvailableBytesExact(), is(5L));
+        }
+
+        @DisplayName("getAvailableBytesExact(): after partial read — reflects remaining bytes")
+        @Test
+        public void getAvailableBytesExact_afterPartialRead_reflectsRemainingBytes() throws IOException {
+            // arrange
+            StreamBuffer sb = new StreamBuffer();
+            sb.getOutputStream().write(new byte[] {1, 2, 3, 4, 5});
+            int firstByte = sb.getInputStream().read(); // consumes 1 byte
+
+            // pre-assert
+            assertThat(firstByte, is(1));
+
+            // act + assert
+            assertThat(sb.getAvailableBytesExact(), is(4L));
+        }
+    }
+
+    @Nested
     @DisplayName("buffer element count and trim state")
     class BufferElementCountAndTrimStateTests {
 

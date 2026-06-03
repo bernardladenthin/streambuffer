@@ -220,6 +220,24 @@ public class StreamBuffer implements Closeable {
     }
 
     /**
+     * Returns the exact number of bytes currently buffered.
+     *
+     * <p>Unlike {@link SBInputStream#available()}, which is clamped to
+     * {@link Integer#MAX_VALUE} to honour the {@link InputStream#available()}
+     * contract, this method returns the full {@code long} count and is therefore
+     * the correct accessor when the buffer holds more than 2 GB.</p>
+     *
+     * <p>The value reflects a single volatile read and may be stale by the time
+     * the caller acts on it; concurrent writes or reads can change it
+     * immediately after this method returns.</p>
+     *
+     * @return the number of buffered bytes (never negative)
+     */
+    public long getAvailableBytesExact() {
+        return availableBytes;
+    }
+
+    /**
      * Returns the peak value of available bytes ever observed.
      *
      * @return maximum observed available bytes.
