@@ -81,7 +81,7 @@ The `vmlens` profile pulls in `com.vmlens:api` and runs the `vmlens-maven-plugin
 
 - **`positionAtCurrentBufferEntry`** — tracks read offset within the head byte array, enabling partial reads without copying
 - **`safeWrite`** (default: `false`) — when `true`, clones input arrays on write to protect against external mutation
-- **Buffer trimming** — when `Deque` size exceeds `maxBufferElements` (default: 100), all buffered data is consolidated into a single byte array; `isTrimShouldBeExecuted()` controls this
+- **Buffer trimming** — when `Deque` size exceeds `maxBufferElements` (default: 100), all buffered data is consolidated into a single byte array; `shouldTrim()` controls this
 - **`available()`** returns `Integer.MAX_VALUE` when `availableBytes > Integer.MAX_VALUE`, supporting >2GB buffers
 
 ### Tests

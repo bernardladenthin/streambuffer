@@ -25,8 +25,8 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public class StreamBuffer implements Closeable {
 
-    static final String EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION =
-            "Invalid offset or length given to correctOffsetAndLengthToWrite.";
+    static final String EXCEPTION_MESSAGE_VALIDATE_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION =
+            "Invalid offset or length given to validateOffsetAndLengthToWrite.";
 
     /**
      * An object to get an unique access to the {@link #buffer}. It is needed to
@@ -365,7 +365,7 @@ public class StreamBuffer implements Closeable {
      * @throws NullPointerException if the array is null
      * @throws IndexOutOfBoundsException if the index is not correct
      */
-    public static boolean correctOffsetAndLengthToRead(byte[] b, int off, int len) {
+    public static boolean validateOffsetAndLengthToRead(byte[] b, int off, int len) {
         if (b == null) {
             throw new NullPointerException();
         } else if (off < 0 || len < 0 || len > b.length - off) {
@@ -386,12 +386,12 @@ public class StreamBuffer implements Closeable {
      * @throws NullPointerException if the array is null
      * @throws IndexOutOfBoundsException if the offset or length is not invalid
      */
-    public static boolean correctOffsetAndLengthToWrite(byte[] b, int off, int len) {
+    public static boolean validateOffsetAndLengthToWrite(byte[] b, int off, int len) {
         if (b == null) {
             throw new NullPointerException();
         } else if ((off < 0) || (off > b.length) || (len < 0) || ((off + len) > b.length) || ((off + len) < 0)) {
             throw new IndexOutOfBoundsException(
-                    EXCEPTION_MESSAGE_CORRECT_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION);
+                    EXCEPTION_MESSAGE_VALIDATE_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION);
         } else if (len == 0) {
             return false;
         }
@@ -437,7 +437,7 @@ public class StreamBuffer implements Closeable {
     @SuppressWarnings("NonAtomicVolatileUpdate")
     @GuardedBy("bufferLock")
     private void trim() throws IOException {
-        if (isTrimShouldBeExecuted()) {
+        if (shouldTrim()) {
             isTrimRunning = true;
             try {
                 releaseTrimStartSignals();
@@ -586,7 +586,7 @@ public class StreamBuffer implements Closeable {
     }
 
     @GuardedBy("bufferLock")
-    boolean isTrimShouldBeExecuted() {
+    boolean shouldTrim() {
         /*
          * Prevent recursive trim: if trim is already running, its internal
          * writes must never trigger another trim (infinite recursion / stack overflow).
@@ -841,7 +841,7 @@ public class StreamBuffer implements Closeable {
         // the method calls internal "read(b, 0, b.length)"
         @Override
         public int read(final byte b[], final int off, final int len) throws IOException {
-            if (!correctOffsetAndLengthToRead(b, off, len)) {
+            if (!validateOffsetAndLengthToRead(b, off, len)) {
                 return 0;
             }
 
@@ -957,7 +957,7 @@ public class StreamBuffer implements Closeable {
         // the method calls internal "write(b, 0, b.length);"
         @Override
         public void write(final byte[] b, final int off, final int len) throws IOException {
-            if (!correctOffsetAndLengthToWrite(b, off, len)) {
+            if (!validateOffsetAndLengthToWrite(b, off, len)) {
                 return;
             }
             requireNonClosed();
