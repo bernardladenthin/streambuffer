@@ -167,7 +167,7 @@ public class StreamBuffer implements Closeable {
     }
 
     /**
-     * Set a secure or unsercure write operation.
+     * Set a secure or unsecure write operation.
      *
      * @param safeWrite A flag to enable a safe write. If safe write is enabled,
      * modifiable byte arrays are cloned before they are written. Benefit: It
