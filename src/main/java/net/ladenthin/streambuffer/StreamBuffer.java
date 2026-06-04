@@ -10,6 +10,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicLong;
@@ -265,7 +266,7 @@ public class StreamBuffer implements Closeable {
      */
     public void setMaxAllocationSize(final long maxSize) {
         if (maxSize <= 0) {
-            throw new IllegalArgumentException("maxAllocationSize must be positive");
+            throw new IllegalArgumentException("maxAllocationSize must be positive but was " + maxSize);
         }
         this.maxAllocationSize = maxSize;
     }
@@ -309,7 +310,8 @@ public class StreamBuffer implements Closeable {
      */
     public void addSignal(Semaphore semaphore) {
         if (semaphore == null) {
-            throw new NullPointerException("Semaphore cannot be null");
+            throw new NullPointerException("Semaphore cannot be null (addSignal; "
+                    + signals.size() + " signal(s) already registered)");
         }
         signals.add(semaphore);
     }
@@ -334,7 +336,8 @@ public class StreamBuffer implements Closeable {
      */
     public void addTrimStartSignal(Semaphore semaphore) {
         if (semaphore == null) {
-            throw new NullPointerException("Semaphore cannot be null");
+            throw new NullPointerException("Semaphore cannot be null (addTrimStartSignal; "
+                    + trimStartSignals.size() + " trim-start signal(s) already registered)");
         }
         trimStartSignals.add(semaphore);
     }
@@ -358,7 +361,8 @@ public class StreamBuffer implements Closeable {
      */
     public void addTrimEndSignal(Semaphore semaphore) {
         if (semaphore == null) {
-            throw new NullPointerException("Semaphore cannot be null");
+            throw new NullPointerException("Semaphore cannot be null (addTrimEndSignal; "
+                    + trimEndSignals.size() + " trim-end signal(s) already registered)");
         }
         trimEndSignals.add(semaphore);
     }
@@ -405,11 +409,11 @@ public class StreamBuffer implements Closeable {
      * @throws IndexOutOfBoundsException if the offset or length is not invalid
      */
     public static boolean validateOffsetAndLengthToWrite(byte[] b, int off, int len) {
-        if (b == null) {
-            throw new NullPointerException();
-        } else if ((off < 0) || (off > b.length) || (len < 0) || ((off + len) > b.length) || ((off + len) < 0)) {
+        Objects.requireNonNull(b, "validateOffsetAndLengthToWrite: byte array b must not be null");
+        if ((off < 0) || (off > b.length) || (len < 0) || ((off + len) > b.length) || ((off + len) < 0)) {
             throw new IndexOutOfBoundsException(
-                    EXCEPTION_MESSAGE_VALIDATE_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION);
+                    EXCEPTION_MESSAGE_VALIDATE_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION
+                            + " (b.length=" + b.length + ", off=" + off + ", len=" + len + ")");
         } else if (len == 0) {
             return false;
         }
@@ -488,8 +492,9 @@ public class StreamBuffer implements Closeable {
                     final byte[] chunk = tmpBuffer.pollFirst();
                     if (chunk == null) {
                         throw new java.util.NoSuchElementException(
-                                "tmpBuffer.pollFirst() returned null despite a successful isEmpty() check; "
-                                        + "indicates a concurrent modification of tmpBuffer.");
+                                "tmpBuffer.pollFirst() returned null despite a successful isEmpty() check"
+                                        + " (remaining=" + tmpBuffer.size()
+                                        + ", indicates a concurrent modification of tmpBuffer).");
                     }
                     buffer.add(chunk);
                     availableBytes += chunk.length;
@@ -764,7 +769,7 @@ public class StreamBuffer implements Closeable {
      */
     private void requireNonClosed() throws IOException {
         if (streamClosed) {
-            throw new IOException("Stream closed.");
+            throw new IOException("Stream closed (availableBytes=" + availableBytes + ").");
         }
     }
 
@@ -1076,5 +1081,35 @@ public class StreamBuffer implements Closeable {
      */
     public OutputStream getOutputStream() {
         return os;
+    }
+
+    /**
+     * Identity-shaped snapshot of the buffer's externally observable state.
+     *
+     * <p>Reports the bytes available to read, the current Deque element count,
+     * the closed flag, and the {@code safeWrite} setting. Acquires
+     * {@link #bufferLock} so the four numbers reflect the same instant; never
+     * holds the lock for more than a constant-time read.
+     *
+     * <p>Intended for log lines and debugger displays; do not parse it.
+     *
+     * @return a human-readable single-line snapshot
+     */
+    @Override
+    public String toString() {
+        final long availableBytesSnapshot;
+        final int bufferSizeSnapshot;
+        final boolean closedSnapshot;
+        final boolean safeWriteSnapshot;
+        synchronized (bufferLock) {
+            availableBytesSnapshot = availableBytes;
+            bufferSizeSnapshot = buffer.size();
+            closedSnapshot = streamClosed;
+            safeWriteSnapshot = safeWrite;
+        }
+        return "StreamBuffer[available=" + availableBytesSnapshot
+                + ", elements=" + bufferSizeSnapshot
+                + ", closed=" + closedSnapshot
+                + ", safeWrite=" + safeWriteSnapshot + "]";
     }
 }
