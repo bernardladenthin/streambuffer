@@ -33,7 +33,7 @@ SPDX-License-Identifier: Apache-2.0
         <errorprone.version>2.49.0</errorprone.version>
         <nullaway.version>0.13.4</nullaway.version>
         <jspecify.version>1.0.0</jspecify.version>
-        <checker.version>4.1.0</checker.version>
+        <checker.version>4.2.0</checker.version>
         <spotless.version>3.5.1</spotless.version>
         <palantir-java-format.version>2.66.0</palantir-java-format.version>
         <spotbugs.version>4.9.8.3</spotbugs.version>
