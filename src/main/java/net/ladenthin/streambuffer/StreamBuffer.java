@@ -480,10 +480,11 @@ public class StreamBuffer implements Closeable {
                  * every byte that trim already drained.
                  */
                 while (!tmpBuffer.isEmpty()) {
-                    // Deque.pollFirst is declared @Nullable; the !isEmpty guard above
-                    // makes it non-null here in practice, but neither NullAway's flow
-                    // analyzer nor the Checker Framework Nullness Checker bridge that
-                    // loop-guard reasoning, so we make the non-null contract explicit.
+                    // Deque.pollFirst() may return null per the JDK contract; the
+                    // !isEmpty guard above makes it non-null here in practice, but
+                    // neither NullAway's flow analyzer nor the Checker Framework
+                    // Nullness Checker bridge that loop-guard reasoning, so we make
+                    // the non-null contract explicit.
                     final byte[] chunk = tmpBuffer.pollFirst();
                     if (chunk == null) {
                         throw new java.util.NoSuchElementException(
