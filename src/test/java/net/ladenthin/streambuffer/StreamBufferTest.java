@@ -4,6 +4,7 @@
 package net.ladenthin.streambuffer;
 
 import static org.awaitility.Awaitility.await;
+import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.not;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -2722,6 +2723,28 @@ public class StreamBufferTest {
 
             // assert
             assertAll(() -> assertThat(bytesRead, is(5)), () -> assertThat(dest, is(new byte[] {1, 2, 3, 4, 5})));
+        }
+    }
+
+    @Nested
+    @DisplayName("waitForAtLeast() — argument validation")
+    class WaitForAtLeastArgumentValidationTests {
+        @DisplayName("waitForAtLeast(0) throws IllegalArgumentException")
+        @Test
+        public void waitForAtLeast_zeroBytes_throwsIllegalArgumentException() {
+            StreamBuffer sb = new StreamBuffer();
+            IllegalArgumentException ex =
+                    assertThrows(IllegalArgumentException.class, () -> sb.waitForAtLeast(0L));
+            assertThat(ex.getMessage(), containsString("0"));
+        }
+
+        @DisplayName("waitForAtLeast(negative) throws IllegalArgumentException")
+        @Test
+        public void waitForAtLeast_negativeBytes_throwsIllegalArgumentException() {
+            StreamBuffer sb = new StreamBuffer();
+            IllegalArgumentException ex =
+                    assertThrows(IllegalArgumentException.class, () -> sb.waitForAtLeast(-1L));
+            assertThat(ex.getMessage(), containsString("-1"));
         }
     }
 
