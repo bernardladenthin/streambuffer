@@ -33,11 +33,11 @@ SPDX-License-Identifier: Apache-2.0
         <errorprone.version>2.49.0</errorprone.version>
         <nullaway.version>0.13.4</nullaway.version>
         <jspecify.version>1.0.0</jspecify.version>
-        <checker.version>4.1.0</checker.version>
-        <spotless.version>3.5.1</spotless.version>
-        <palantir-java-format.version>2.66.0</palantir-java-format.version>
+        <checker.version>4.2.0</checker.version>
+        <spotless.version>3.6.0</spotless.version>
+        <palantir-java-format.version>2.91.0</palantir-java-format.version>
         <spotbugs.version>4.9.8.3</spotbugs.version>
-        <fb-contrib.version>7.6.4</fb-contrib.version>
+        <fb-contrib.version>7.7.4</fb-contrib.version>
         <findsecbugs.version>1.14.0</findsecbugs.version>
         <archunit.version>1.4.2</archunit.version>
         <awaitility.version>4.3.0</awaitility.version>
@@ -230,7 +230,7 @@ SPDX-License-Identifier: Apache-2.0
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
-                    <version>3.5.5</version>
+                    <version>3.5.6</version>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
@@ -250,7 +250,7 @@ SPDX-License-Identifier: Apache-2.0
                 <plugin>
                     <groupId>org.pitest</groupId>
                     <artifactId>pitest-maven</artifactId>
-                    <version>1.25.1</version>
+                    <version>1.25.3</version>
                 </plugin>
                 <plugin>
                     <groupId>org.sonatype.central</groupId>
