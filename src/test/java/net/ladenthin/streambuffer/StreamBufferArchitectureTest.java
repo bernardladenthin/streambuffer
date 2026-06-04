@@ -6,6 +6,7 @@ package net.ladenthin.streambuffer;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.fields;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
+import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
 
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
@@ -57,6 +58,34 @@ public class StreamBufferArchitectureTest {
             .should()
             .dependOnClassesThat()
             .resideInAPackage("java.util.logging..");
+
+    /**
+     * Test-framework classes must not appear in production code. Currently
+     * vacuous because {@link #mainCodeStaysLeaf} already constrains the
+     * dependency set to JDK + a handful of annotation packages, but kept as
+     * an explicit regression guard so a future refactor cannot accidentally
+     * carry over a JUnit / jqwik / ArchUnit type into {@code src/main}.
+     */
+    @ArchTest
+    static final ArchRule noTestFrameworksInProduction = noClasses()
+            .that()
+            .resideInAPackage("net.ladenthin.streambuffer..")
+            .should()
+            .dependOnClassesThat()
+            .resideInAnyPackage("org.junit..", "net.jqwik..", "com.tngtech.archunit..");
+
+    /**
+     * No package cycles between sub-packages. Vacuous today on this
+     * single-package module; acts as a forward-looking guard so a future
+     * sub-package extraction cannot introduce a circular dependency without
+     * breaking the build.
+     */
+    @ArchTest
+    static final ArchRule noPackageCycles = slices()
+            .matching("net.ladenthin.streambuffer.(*)..")
+            .should()
+            .beFreeOfCycles()
+            .allowEmptyShould(true);
 
     /**
      * Production code must not import unsupported / internal JDK packages.
