@@ -782,7 +782,9 @@ public class StreamBuffer implements Closeable {
      */
     public long waitForAtLeast(final long bytes) throws InterruptedException {
         // we can only wait for a positive number of bytes
-        assert bytes > 0 : "Number of bytes are negative or zero : " + bytes;
+        if (bytes <= 0) {
+            throw new IllegalArgumentException("Number of bytes are negative or zero : " + bytes);
+        }
 
         // if we haven't enough bytes, the loop starts and wait for enough bytes
         while (bytes > availableBytes) {

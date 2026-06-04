@@ -41,4 +41,26 @@ SPDX-License-Identifier: Apache-2.0
         <Method name="trim"/>
         <Bug pattern="PSC_PRESIZE_COLLECTIONS"/>
     </Match>
+
+    <!--
+        SpotBugs at effort=Max + threshold=Low surfaces two style patterns
+        we deliberately ignore project-wide:
+
+        IMC_IMMATURE_CLASS_NO_TOSTRING - "class does not implement toString".
+        StreamBuffer is a stream coordinator (stateful, multi-thread); a
+        useful toString() would have to snapshot mutable internal state
+        under bufferLock, which is more cost than the diagnostic value it
+        adds. The default Object.toString() identity form is the right
+        answer here.
+
+        WEM_WEAK_EXCEPTION_MESSAGING - "exception thrown with static message
+        string". The exception bodies here describe stable preconditions
+        (stream closed, signal already registered, byte count <= 0). The
+        stack trace gives the caller, and the static message is what makes
+        these failures grep-able across logs. Dynamic interpolation would
+        just append values that are already inspectable on the frame.
+    -->
+    <Match>
+        <Bug pattern="IMC_IMMATURE_CLASS_NO_TOSTRING,WEM_WEAK_EXCEPTION_MESSAGING"/>
+    </Match>
 </FindBugsFilter>
