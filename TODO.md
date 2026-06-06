@@ -13,7 +13,7 @@ cross-cutting initiative.
 
 - **Null-safety refinement.** JSpecify + NullAway are enforced at compile time in **strict JSpecify mode** with the following extra options: `CheckOptionalEmptiness`, `AcknowledgeRestrictiveAnnotations`, `AcknowledgeAndroidRecent`, `AssertsEnabled` (see `pom.xml`). The package carries an explicit `@NullMarked` via `package-info.java`. The production code currently has no `@Nullable` markers because every value is non-null by construction (constructors reject `null`, no `return null` sites). Open follow-up: as new public API surfaces are added, evaluate whether `@Nullable` or `Optional<T>` would be more precise than the implicit non-null default.
 
-- **SpotBugs `effort=Max` + `threshold=Low`** — currently default effort/threshold. Raising both surfaces more findings (and takes longer per build). Worth a one-off experiment to triage what appears before committing. Cross-cutting (tracked in `crossrepostatus.md`).
+- **SpotBugs `effort=Max` + `threshold=Low`** — ✅ **enforced at the gate** (`4374dea` + `e7e254a`). `pom.xml` `<effort>Max</effort>` + `<threshold>Low</threshold>`; `spotbugs:check` is part of `mvn verify` and fails on any unsuppressed finding. All findings were fixed at source (added `toString()`, contextful exception messages) — no project-wide suppressions. sb was the first sibling repo to reach the Max+Low gate.
 
 - **No LogCaptor smoke test needed** — this module has no logging code (`org.slf4j.*` not used in `src/main/java/`). If logging is ever introduced, add a LogCaptor smoke test at the same time so the binding/configuration is exercised in tests.
 
