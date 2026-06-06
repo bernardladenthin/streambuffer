@@ -2769,8 +2769,7 @@ public class StreamBufferTest {
         @Test
         public void waitForAtLeast_zeroBytes_throwsIllegalArgumentException() {
             StreamBuffer sb = new StreamBuffer();
-            IllegalArgumentException ex =
-                    assertThrows(IllegalArgumentException.class, () -> sb.waitForAtLeast(0L));
+            IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> sb.waitForAtLeast(0L));
             assertThat(ex.getMessage(), containsString("0"));
         }
 
@@ -2778,8 +2777,7 @@ public class StreamBufferTest {
         @Test
         public void waitForAtLeast_negativeBytes_throwsIllegalArgumentException() {
             StreamBuffer sb = new StreamBuffer();
-            IllegalArgumentException ex =
-                    assertThrows(IllegalArgumentException.class, () -> sb.waitForAtLeast(-1L));
+            IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> sb.waitForAtLeast(-1L));
             assertThat(ex.getMessage(), containsString("-1"));
         }
     }

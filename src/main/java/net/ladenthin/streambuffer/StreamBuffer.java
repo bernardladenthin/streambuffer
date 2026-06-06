@@ -310,8 +310,8 @@ public class StreamBuffer implements Closeable {
      */
     public void addSignal(Semaphore semaphore) {
         if (semaphore == null) {
-            throw new NullPointerException("Semaphore cannot be null (addSignal; "
-                    + signals.size() + " signal(s) already registered)");
+            throw new NullPointerException(
+                    "Semaphore cannot be null (addSignal; " + signals.size() + " signal(s) already registered)");
         }
         signals.add(semaphore);
     }
@@ -336,8 +336,8 @@ public class StreamBuffer implements Closeable {
      */
     public void addTrimStartSignal(Semaphore semaphore) {
         if (semaphore == null) {
-            throw new NullPointerException("Semaphore cannot be null (addTrimStartSignal; "
-                    + trimStartSignals.size() + " trim-start signal(s) already registered)");
+            throw new NullPointerException("Semaphore cannot be null (addTrimStartSignal; " + trimStartSignals.size()
+                    + " trim-start signal(s) already registered)");
         }
         trimStartSignals.add(semaphore);
     }
@@ -361,8 +361,8 @@ public class StreamBuffer implements Closeable {
      */
     public void addTrimEndSignal(Semaphore semaphore) {
         if (semaphore == null) {
-            throw new NullPointerException("Semaphore cannot be null (addTrimEndSignal; "
-                    + trimEndSignals.size() + " trim-end signal(s) already registered)");
+            throw new NullPointerException("Semaphore cannot be null (addTrimEndSignal; " + trimEndSignals.size()
+                    + " trim-end signal(s) already registered)");
         }
         trimEndSignals.add(semaphore);
     }
@@ -412,8 +412,8 @@ public class StreamBuffer implements Closeable {
         Objects.requireNonNull(b, "validateOffsetAndLengthToWrite: byte array b must not be null");
         if ((off < 0) || (off > b.length) || (len < 0) || ((off + len) > b.length) || ((off + len) < 0)) {
             throw new IndexOutOfBoundsException(
-                    EXCEPTION_MESSAGE_VALIDATE_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION
-                            + " (b.length=" + b.length + ", off=" + off + ", len=" + len + ")");
+                    EXCEPTION_MESSAGE_VALIDATE_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION + " (b.length="
+                            + b.length + ", off=" + off + ", len=" + len + ")");
         } else if (len == 0) {
             return false;
         }

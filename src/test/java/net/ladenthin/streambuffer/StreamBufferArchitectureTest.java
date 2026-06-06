@@ -81,8 +81,7 @@ public class StreamBufferArchitectureTest {
      * breaking the build.
      */
     @ArchTest
-    static final ArchRule noPackageCycles = slices()
-            .matching("net.ladenthin.streambuffer.(*)..")
+    static final ArchRule noPackageCycles = slices().matching("net.ladenthin.streambuffer.(*)..")
             .should()
             .beFreeOfCycles()
             .allowEmptyShould(true);
