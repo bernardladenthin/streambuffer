@@ -31,7 +31,7 @@ SPDX-License-Identifier: Apache-2.0
              section "jqwik prompt-injection in test output" for full context. -->
         <jqwik.version>1.9.3</jqwik.version>
         <errorprone.version>2.49.0</errorprone.version>
-        <nullaway.version>0.13.4</nullaway.version>
+        <nullaway.version>0.13.6</nullaway.version>
         <jspecify.version>1.0.0</jspecify.version>
         <checker.version>4.2.0</checker.version>
         <spotless.version>3.6.0</spotless.version>
@@ -245,7 +245,7 @@ SPDX-License-Identifier: Apache-2.0
                 <plugin>
                     <groupId>org.jacoco</groupId>
                     <artifactId>jacoco-maven-plugin</artifactId>
-                    <version>0.8.14</version>
+                    <version>0.8.15</version>
                 </plugin>
                 <plugin>
                     <groupId>org.pitest</groupId>
