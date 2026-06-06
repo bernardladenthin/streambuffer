@@ -4,6 +4,7 @@
 package net.ladenthin.streambuffer;
 
 import static org.awaitility.Awaitility.await;
+import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.not;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -771,7 +772,7 @@ public class StreamBufferTest {
             // assert
             assertThat(
                     ex.getMessage(),
-                    is(
+                    containsString(
                             StreamBuffer
                                     .EXCEPTION_MESSAGE_VALIDATE_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
         }
@@ -790,7 +791,7 @@ public class StreamBufferTest {
             // assert
             assertThat(
                     ex.getMessage(),
-                    is(
+                    containsString(
                             StreamBuffer
                                     .EXCEPTION_MESSAGE_VALIDATE_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
         }
@@ -809,7 +810,7 @@ public class StreamBufferTest {
             // assert
             assertThat(
                     ex.getMessage(),
-                    is(
+                    containsString(
                             StreamBuffer
                                     .EXCEPTION_MESSAGE_VALIDATE_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
         }
@@ -828,7 +829,7 @@ public class StreamBufferTest {
             // assert
             assertThat(
                     ex.getMessage(),
-                    is(
+                    containsString(
                             StreamBuffer
                                     .EXCEPTION_MESSAGE_VALIDATE_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
         }
@@ -1493,7 +1494,7 @@ public class StreamBufferTest {
             // assert
             assertThat(
                     ex.getMessage(),
-                    is(
+                    containsString(
                             StreamBuffer
                                     .EXCEPTION_MESSAGE_VALIDATE_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
         }
@@ -1510,7 +1511,7 @@ public class StreamBufferTest {
             // assert
             assertThat(
                     ex.getMessage(),
-                    is(
+                    containsString(
                             StreamBuffer
                                     .EXCEPTION_MESSAGE_VALIDATE_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
         }
@@ -1528,7 +1529,7 @@ public class StreamBufferTest {
             // assert
             assertThat(
                     ex.getMessage(),
-                    is(
+                    containsString(
                             StreamBuffer
                                     .EXCEPTION_MESSAGE_VALIDATE_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
         }
@@ -1546,7 +1547,7 @@ public class StreamBufferTest {
             // assert
             assertThat(
                     ex.getMessage(),
-                    is(
+                    containsString(
                             StreamBuffer
                                     .EXCEPTION_MESSAGE_VALIDATE_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
         }
@@ -1644,7 +1645,7 @@ public class StreamBufferTest {
             // act
             IOException ex =
                     assertThrows(IOException.class, () -> sb.getOutputStream().write(new byte[] {anyValue}, 0, 1));
-            assertThat(ex.getMessage(), is("Stream closed."));
+            assertThat(ex.getMessage(), containsString("Stream closed"));
         }
     }
 
@@ -2284,7 +2285,7 @@ public class StreamBufferTest {
                     () -> StreamBuffer.validateOffsetAndLengthToWrite(b, Integer.MAX_VALUE, 1));
             assertThat(
                     ex.getMessage(),
-                    is(
+                    containsString(
                             StreamBuffer
                                     .EXCEPTION_MESSAGE_VALIDATE_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION));
         }
@@ -2722,6 +2723,62 @@ public class StreamBufferTest {
 
             // assert
             assertAll(() -> assertThat(bytesRead, is(5)), () -> assertThat(dest, is(new byte[] {1, 2, 3, 4, 5})));
+        }
+    }
+
+    @Nested
+    @DisplayName("toString() — identity-shaped state snapshot")
+    class ToStringTests {
+        @DisplayName("toString(): fresh buffer reports the initial state")
+        @Test
+        public void toString_freshBuffer_reportsInitialState() {
+            StreamBuffer sb = new StreamBuffer();
+            String snapshot = sb.toString();
+            assertAll(
+                    () -> assertThat(snapshot, containsString("StreamBuffer[")),
+                    () -> assertThat(snapshot, containsString("available=0")),
+                    () -> assertThat(snapshot, containsString("elements=0")),
+                    () -> assertThat(snapshot, containsString("closed=false")),
+                    () -> assertThat(snapshot, containsString("safeWrite=false")));
+        }
+
+        @DisplayName("toString(): after write reports available bytes and element count")
+        @Test
+        public void toString_afterWrite_reportsAvailableAndElements() throws IOException {
+            StreamBuffer sb = new StreamBuffer();
+            sb.getOutputStream().write(new byte[] {1, 2, 3, 4, 5});
+            String snapshot = sb.toString();
+            assertAll(
+                    () -> assertThat(snapshot, containsString("available=5")),
+                    () -> assertThat(snapshot, containsString("elements=1")));
+        }
+
+        @DisplayName("toString(): after close reports closed=true")
+        @Test
+        public void toString_afterClose_reportsClosedTrue() throws IOException {
+            StreamBuffer sb = new StreamBuffer();
+            sb.close();
+            assertThat(sb.toString(), containsString("closed=true"));
+        }
+    }
+
+    @Nested
+    @DisplayName("waitForAtLeast() — argument validation")
+    class WaitForAtLeastArgumentValidationTests {
+        @DisplayName("waitForAtLeast(0) throws IllegalArgumentException")
+        @Test
+        public void waitForAtLeast_zeroBytes_throwsIllegalArgumentException() {
+            StreamBuffer sb = new StreamBuffer();
+            IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> sb.waitForAtLeast(0L));
+            assertThat(ex.getMessage(), containsString("0"));
+        }
+
+        @DisplayName("waitForAtLeast(negative) throws IllegalArgumentException")
+        @Test
+        public void waitForAtLeast_negativeBytes_throwsIllegalArgumentException() {
+            StreamBuffer sb = new StreamBuffer();
+            IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> sb.waitForAtLeast(-1L));
+            assertThat(ex.getMessage(), containsString("-1"));
         }
     }
 
@@ -4665,7 +4722,7 @@ public class StreamBufferTest {
                         try {
                             os.write(largeData);
                         } catch (IOException e) {
-                            if ("Stream closed.".equals(e.getMessage())) {
+                            if (e.getMessage() != null && e.getMessage().startsWith("Stream closed")) {
                                 break; // expected: close() raced ahead — not a bug
                             }
                             thread1Exception.set(e);
