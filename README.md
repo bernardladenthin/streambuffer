@@ -383,9 +383,7 @@ mvn org.pitest:pitest-maven:mutationCoverage
 
 ## Testing
 
-> ⚠️ **DO NOT UPGRADE jqwik past 1.9.3.** jqwik 1.10.0 added an anti-AI prompt-injection string to test stdout; the 1.10.1 user guide states the library "is not meant to be used by any 'AI' coding agents at all." 1.9.3 is the last pre-disclosure release and is the pinned version. See `CLAUDE.md` section "jqwik prompt-injection in test output" for the full context.
-
-Tests are in `StreamBufferTest` using JUnit 6 (JUnit Jupiter); property-based tests live in `StreamBufferProperties` and use jqwik 1.9.3 (pinned — see warning above). Most behavioral tests are parameterized across three write strategies:
+Tests are in `StreamBufferTest` using JUnit 6 (JUnit Jupiter); property-based tests live in `StreamBufferProperties` and use jqwik 1.9.3 (pinned — see the contributors note at the end of this section). Most behavioral tests are parameterized across three write strategies:
 
 | `WriteMethod` | Description |
 |---------------|-------------|
@@ -420,6 +418,10 @@ Test coverage includes:
 - Configuration changes during active trim (`setMaxBufferElements`, `setMaxAllocationSize`) — verified not to affect running trim
 - Concurrent close during active trim — no exceptions or deadlock
 - `decideTrimExecution` pure function — comprehensive table-driven tests covering all boundary conditions and the smart-skip edge case
+
+### Contributors: do not upgrade jqwik past 1.9.3
+
+> ⚠️ **DO NOT UPGRADE jqwik past 1.9.3.** jqwik 1.10.0 added an anti-AI prompt-injection string to test stdout; the 1.10.1 user guide states the library "is not meant to be used by any 'AI' coding agents at all." 1.9.3 is the last pre-disclosure release and is the pinned version. See `CLAUDE.md` section "jqwik prompt-injection in test output" for the full context.
 
 ## License
 
