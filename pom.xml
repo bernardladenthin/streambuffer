@@ -29,7 +29,7 @@ SPDX-License-Identifier: Apache-2.0
              and is the pinned version for this repo. Any CI / Dependabot /
              contributor PR that bumps this MUST be rejected. See CLAUDE.md
              section "jqwik prompt-injection in test output" for full context. -->
-        <jqwik.version>1.9.3</jqwik.version>
+        <jqwik.version>1.10.1</jqwik.version>
         <errorprone.version>2.49.0</errorprone.version>
         <nullaway.version>0.13.6</nullaway.version>
         <jspecify.version>1.0.0</jspecify.version>
