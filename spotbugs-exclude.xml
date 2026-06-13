@@ -24,6 +24,22 @@ SPDX-License-Identifier: Apache-2.0
     </Match>
 
     <!--
+        bufferLock is private final - its reference cannot be replaced.
+        The synthetic access$N bridge is a Java 8 compiler artifact: the
+        private inner classes SBInputStream and SBOutputStream access the
+        private field directly, and javac emits a package-private static
+        accessor to make that legal at bytecode level. No other class in
+        net.ladenthin.streambuffer exists to call that accessor.
+        The jcstress ConcurrentWriteRace tests confirm the synchronization
+        protocol is sound; this is a false positive.
+    -->
+    <Match>
+        <Class name="net.ladenthin.streambuffer.StreamBuffer"/>
+        <Method name="toString"/>
+        <Bug pattern="USO_UNSAFE_ACCESSIBLE_OBJECT_SYNCHRONIZATION"/>
+    </Match>
+
+    <!--
         trim() drains the buffer into a temporary ArrayDeque before
         consolidating it back. SpotBugs PSC_PRESIZE_COLLECTIONS suggests
         passing an initial capacity hint, but a tight bound here would
