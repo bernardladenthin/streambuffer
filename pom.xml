@@ -45,6 +45,7 @@ SPDX-License-Identifier: Apache-2.0
         <lincheck.version>3.6</lincheck.version>
         <vmlens.version>1.2.28</vmlens.version>
         <project.build.outputTimestamp>${git.commit.time}</project.build.outputTimestamp>
+        <sonar.organization>bernardladenthin</sonar.organization>
     </properties>
     <inceptionYear>2014</inceptionYear>
     <developers>
