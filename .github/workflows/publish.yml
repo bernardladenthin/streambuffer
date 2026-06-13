@@ -57,7 +57,7 @@ jobs:
           distribution: temurin
           cache: maven
       - name: Build
-        run: mvn --batch-mode -DskipTests -Dmaven.javadoc.skip=true package
+        run: mvn --batch-mode --no-transfer-progress -DskipTests -Dmaven.javadoc.skip=true package
       - uses: actions/upload-artifact@v7
         with: { name: jars, path: target/*.jar }
 
@@ -77,7 +77,7 @@ jobs:
           distribution: temurin
           cache: maven
       - name: Test
-        run: mvn --batch-mode -P jcstress verify -Dmaven.javadoc.skip=true
+        run: mvn --batch-mode --no-transfer-progress -P jcstress verify -Dmaven.javadoc.skip=true
       - uses: actions/upload-artifact@v7
         if: matrix.java-version == '21'
         with:
@@ -94,7 +94,7 @@ jobs:
       - uses: actions/setup-java@v5
         with: { java-version: '21', distribution: temurin, cache: maven }
       - name: Test under vmlens
-        run: mvn --batch-mode -Pvmlens test -Dmaven.javadoc.skip=true
+        run: mvn --batch-mode --no-transfer-progress -Pvmlens test -Dmaven.javadoc.skip=true
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -130,7 +130,7 @@ jobs:
           files: target/site/jacoco/jacoco.xml
         continue-on-error: true
       - name: Run PIT mutation tests
-        run: mvn --batch-mode test-compile org.pitest:pitest-maven:mutationCoverage -Dmaven.javadoc.skip=true
+        run: mvn --batch-mode --no-transfer-progress test-compile org.pitest:pitest-maven:mutationCoverage -Dmaven.javadoc.skip=true
       - name: Extract PIT survivors
         if: always()
         run: |
@@ -147,7 +147,7 @@ jobs:
         with: { name: pit-reports, path: target/pit-reports/ }
       - name: Run JMH benchmarks
         run: >
-          mvn --batch-mode exec:java
+          mvn --batch-mode --no-transfer-progress exec:java
           -Dexec.mainClass=org.openjdk.jmh.Main
           -Dexec.classpathScope=test
           -Dexec.args="StreamBufferThroughputBenchmark -wi 2 -i 3 -f 0 -rf json -rff target/jmh-results.json"
@@ -196,7 +196,7 @@ jobs:
           gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
           gpg-passphrase: MAVEN_GPG_PASSPHRASE
       - name: Deploy snapshot
-        run: mvn --batch-mode -P release deploy -DskipTests
+        run: mvn --batch-mode --no-transfer-progress -P release deploy -DskipTests
         env:
           MAVEN_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN }}
@@ -258,7 +258,7 @@ jobs:
           gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
           gpg-passphrase: MAVEN_GPG_PASSPHRASE
       - name: Deploy release
-        run: mvn --batch-mode -P release deploy -DskipTests
+        run: mvn --batch-mode --no-transfer-progress -P release deploy -DskipTests
         env:
           MAVEN_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN }}
