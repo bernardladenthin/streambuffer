@@ -531,14 +531,6 @@ public class StreamBuffer implements Closeable {
     }
 
     /**
-     * Checks if a trim should be performed.
-     * Critical: Ensures trim will actually reduce buffer chunks below {@link #maxBufferElements}.
-     * If consolidating would create chunks that still exceed the limit (when respecting
-     * {@link #maxAllocationSize}), trim is skipped to prevent repeated trim calls on every write.
-     *
-     * @return <code>true</code> if a trim should be performed, otherwise <code>false</code>.
-     */
-    /**
      * Pure function to decide if trim should execute based on buffer state.
      * Contains all decision logic for the trim decision tree:
      * - maxBufferElements validity check (&#x2264; 0 is invalid)
