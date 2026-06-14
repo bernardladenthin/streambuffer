@@ -179,6 +179,21 @@ SPDX-License-Identifier: Apache-2.0
             <version>${lincheck.version}</version>
             <scope>test</scope>
         </dependency>
+        <!--
+            vmlens interleaving-analysis API. Promoted from the `vmlens` profile to the
+            main test classpath (transitive-dependency-free, so convergence-safe) so the
+            VmlensInterleavingSmokeTest compiles in every build, keeping the smoke test in
+            sync with the three sibling repos. It is only *executed* under the `vmlens`
+            profile; the managed surefire <excludes> below keeps the ordinary suite from
+            running it agent-less (a vacuous pass that prints an "agent not configured"
+            warning).
+        -->
+        <dependency>
+            <groupId>com.vmlens</groupId>
+            <artifactId>api</artifactId>
+            <version>${vmlens.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
     <build>
         <pluginManagement>
@@ -232,6 +247,19 @@ SPDX-License-Identifier: Apache-2.0
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>3.5.6</version>
+                    <configuration>
+                        <!--
+                            The vmlens interleaving smoke test is meaningful only under the
+                            vmlens agent (the `vmlens` profile). Without the agent its
+                            AllInterleavings loop body never runs (a vacuous pass that prints
+                            an "agent not configured" warning), so keep it out of the ordinary
+                            surefire run. The `vmlens` profile's vmlens-maven-plugin still
+                            picks it up (it is not in that plugin's <excludes>).
+                        -->
+                        <excludes>
+                            <exclude>**/VmlensInterleavingSmokeTest.java</exclude>
+                        </excludes>
+                    </configuration>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
