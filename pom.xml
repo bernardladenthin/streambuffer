@@ -249,15 +249,15 @@ SPDX-License-Identifier: Apache-2.0
                     <version>3.5.6</version>
                     <configuration>
                         <!--
-                            The vmlens interleaving smoke test is meaningful only under the
-                            vmlens agent (the `vmlens` profile). Without the agent its
-                            AllInterleavings loop body never runs (a vacuous pass that prints
-                            an "agent not configured" warning), so keep it out of the ordinary
-                            surefire run. The `vmlens` profile's vmlens-maven-plugin still
-                            picks it up (it is not in that plugin's <excludes>).
+                            Tests in the `vmlens` package are meaningful only under the vmlens
+                            agent (the `vmlens` profile). Without the agent an AllInterleavings
+                            loop body never runs (a vacuous pass that prints an "agent not
+                            configured" warning), so keep the whole package out of the ordinary
+                            surefire run. The `vmlens` profile's whole-suite run still picks
+                            these up (they are not in that plugin's <excludes>).
                         -->
                         <excludes>
-                            <exclude>**/VmlensInterleavingSmokeTest.java</exclude>
+                            <exclude>**/vmlens/*.java</exclude>
                         </excludes>
                     </configuration>
                 </plugin>
