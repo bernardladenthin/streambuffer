@@ -249,6 +249,14 @@ SPDX-License-Identifier: Apache-2.0
                     <version>3.5.6</version>
                     <configuration>
                         <!--
+                            @{argLine} is the JaCoCo-populated property (late replacement); it
+                            MUST come first so the JaCoCo agent stays attached and coverage keeps
+                            working. The remaining flags cap the test heap and capture crash
+                            diagnostics: a heap dump on OutOfMemoryError plus a per-pid hs_err
+                            file, both written to the working directory so CI can upload them.
+                        -->
+                        <argLine>@{argLine} -Xmx2g -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=. -XX:ErrorFile=hs_err_pid%p.log</argLine>
+                        <!--
                             Tests in the `vmlens` package are meaningful only under the vmlens
                             agent (the `vmlens` profile). Without the agent an AllInterleavings
                             loop body never runs (a vacuous pass that prints an "agent not
