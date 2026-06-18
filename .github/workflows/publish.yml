@@ -9,6 +9,11 @@ on:
     tags: ['v*']
   pull_request:
   workflow_dispatch:
+    inputs:
+      publish_to_central:
+        description: "Deploy to Maven Central (snapshot if -SNAPSHOT, release if a vX.Y.Z tag)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -197,7 +202,7 @@ jobs:
   publish-snapshot:
     name: Publish Snapshot to Central
     needs: [check-snapshot, code-style]
-    if: needs.check-snapshot.result == 'success'
+    if: needs.check-snapshot.result == 'success' && inputs.publish_to_central
     runs-on: ubuntu-latest
     environment: maven-central
     steps:
@@ -212,6 +217,15 @@ jobs:
           server-password: MAVEN_PASSWORD
           gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
           gpg-passphrase: MAVEN_GPG_PASSPHRASE
+      - name: Guard - require a -SNAPSHOT version
+        shell: bash
+        run: |
+          VERSION=$(mvn -q -DforceStdout help:evaluate -Dexpression=project.version | tail -n1)
+          echo "Resolved project version: $VERSION"
+          case "$VERSION" in
+            *-SNAPSHOT) echo "OK: -SNAPSHOT version, continuing snapshot deploy." ;;
+            *) echo "::error::Refusing to publish non-SNAPSHOT version '$VERSION' from the snapshot job. Snapshot publishing requires a -SNAPSHOT version; releases go through the v* tag path."; exit 1 ;;
+          esac
       - name: Deploy snapshot
         run: mvn --batch-mode --no-transfer-progress -P release deploy -DskipTests
         env:
@@ -257,7 +271,7 @@ jobs:
   publish-release:
     name: Publish Release to Central
     needs: [check-tag, code-style]
-    if: needs.check-tag.result == 'success'
+    if: needs.check-tag.result == 'success' && inputs.publish_to_central
     runs-on: ubuntu-latest
     environment: maven-central
     permissions:
