@@ -31,7 +31,7 @@ SPDX-License-Identifier: Apache-2.0
              section "jqwik prompt-injection in test output" for full context. -->
         <jqwik.version>1.9.3</jqwik.version>
         <errorprone.version>2.50.0</errorprone.version>
-        <nullaway.version>0.13.6</nullaway.version>
+        <nullaway.version>0.13.7</nullaway.version>
         <jspecify.version>1.0.0</jspecify.version>
         <checker.version>4.2.0</checker.version>
         <spotless.version>3.7.0</spotless.version>
@@ -287,7 +287,7 @@ SPDX-License-Identifier: Apache-2.0
                 <plugin>
                     <groupId>org.pitest</groupId>
                     <artifactId>pitest-maven</artifactId>
-                    <version>1.25.4</version>
+                    <version>1.25.5</version>
                 </plugin>
                 <plugin>
                     <groupId>org.sonatype.central</groupId>
