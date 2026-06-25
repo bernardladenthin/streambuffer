@@ -381,8 +381,7 @@ Run a single test:
 mvn test -Dtest=StreamBufferTest#testSimpleRoundTrip
 ```
 
-Run mutation tests (the `test-compile` prefix is required so JaCoCo's `prepare-agent`
-resolves the surefire `@{argLine}`; the bare goal fails with `NoSuchFileException: {argLine}`):
+Run mutation tests (the `test-compile` prefix is required so PIT inherits JaCoCo's agent):
 
 ```bash
 mvn test-compile org.pitest:pitest-maven:mutationCoverage
