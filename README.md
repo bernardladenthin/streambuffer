@@ -381,10 +381,11 @@ Run a single test:
 mvn test -Dtest=StreamBufferTest#testSimpleRoundTrip
 ```
 
-Run mutation tests:
+Run mutation tests (the `test-compile` prefix is required so JaCoCo's `prepare-agent`
+resolves the surefire `@{argLine}`; the bare goal fails with `NoSuchFileException: {argLine}`):
 
 ```bash
-mvn org.pitest:pitest-maven:mutationCoverage
+mvn test-compile org.pitest:pitest-maven:mutationCoverage
 ```
 
 ## Testing

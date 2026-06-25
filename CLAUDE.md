@@ -18,8 +18,12 @@ mvn test -Dtest=StreamBufferTest#testSimpleRoundTrip
 
 **Run mutation tests:**
 ```bash
-mvn org.pitest:pitest-maven:mutationCoverage
+mvn test-compile org.pitest:pitest-maven:mutationCoverage
 ```
+The `test-compile` prefix is required: it triggers JaCoCo's `prepare-agent` so the
+surefire `@{argLine}` resolves. The bare `mvn org.pitest:pitest-maven:mutationCoverage`
+fails with `NoSuchFileException: {argLine}`. See
+[`../workspace/policies/pit-mutation-testing.md`](../workspace/policies/pit-mutation-testing.md).
 
 **Run JMH benchmarks:**
 
@@ -108,6 +112,13 @@ See [`../workspace/policies/jqwik-prompt-injection.md`](../workspace/policies/jq
 ## CI Test Diagnostics
 
 See [`../workspace/policies/ci-test-diagnostics.md`](../workspace/policies/ci-test-diagnostics.md).
+
+## PIT Mutation Testing
+
+See [`../workspace/policies/pit-mutation-testing.md`](../workspace/policies/pit-mutation-testing.md).
+Run PIT with the lifecycle prefix — `mvn test-compile org.pitest:pitest-maven:mutationCoverage`
+(the bare goal fails with `NoSuchFileException: {argLine}`). The gate covers the whole
+`net.ladenthin.streambuffer` package at a 100% threshold.
 
 ## JPMS Module Descriptor
 
