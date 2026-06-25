@@ -16,9 +16,10 @@ mvn install -Dgpg.skip=true  # Install to local repo without GPG signing
 mvn test -Dtest=StreamBufferTest#testSimpleRoundTrip
 ```
 
-**Run mutation tests:**
+**Run mutation tests** (the `test-compile` prefix is required — see the
+[PIT policy](../workspace/policies/pit-mutation-testing.md)):
 ```bash
-mvn org.pitest:pitest-maven:mutationCoverage
+mvn test-compile org.pitest:pitest-maven:mutationCoverage
 ```
 
 **Run JMH benchmarks:**
@@ -108,6 +109,11 @@ See [`../workspace/policies/jqwik-prompt-injection.md`](../workspace/policies/jq
 ## CI Test Diagnostics
 
 See [`../workspace/policies/ci-test-diagnostics.md`](../workspace/policies/ci-test-diagnostics.md).
+
+## PIT Mutation Testing
+
+See [`../workspace/policies/pit-mutation-testing.md`](../workspace/policies/pit-mutation-testing.md).
+Run PIT with the lifecycle prefix — `mvn test-compile org.pitest:pitest-maven:mutationCoverage`.
 
 ## JPMS Module Descriptor
 

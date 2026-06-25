@@ -381,10 +381,10 @@ Run a single test:
 mvn test -Dtest=StreamBufferTest#testSimpleRoundTrip
 ```
 
-Run mutation tests:
+Run mutation tests (the `test-compile` prefix is required so PIT inherits JaCoCo's agent):
 
 ```bash
-mvn org.pitest:pitest-maven:mutationCoverage
+mvn test-compile org.pitest:pitest-maven:mutationCoverage
 ```
 
 ## Testing
