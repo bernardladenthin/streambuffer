@@ -18,7 +18,7 @@ SPDX-License-Identifier: Apache-2.0
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <java.version>8</java.version>
         <java.test.version>21</java.test.version>
-        <junit.version>6.1.1</junit.version>
+        <junit.version>6.1.2</junit.version>
         <hamcrest.version>3.0</hamcrest.version>
         <jmh.version>1.37</jmh.version>
         <jcstress.version>0.16</jcstress.version>
