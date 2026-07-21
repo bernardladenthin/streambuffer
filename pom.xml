@@ -255,19 +255,7 @@ SPDX-License-Identifier: Apache-2.0
                             diagnostics: a heap dump on OutOfMemoryError plus a per-pid hs_err
                             file, both written to the working directory so CI can upload them.
                         -->
-                        <!--
-                            -XX:+EnableDynamicAgentLoading silences the JDK 21 "A Java agent has
-                            been loaded dynamically" warning emitted when Lincheck self-attaches
-                            its instrumentation agent at runtime (StreamBufferLincheckTest runs in
-                            the default surefire run; no static -javaagent is configured for it).
-                            That warning is written to the *native* stderr (outside Surefire's
-                            wrapped System.err) and can intermittently corrupt the encoded fork
-                            channel — surfacing as "Corrupted channel by directly writing to native
-                            stream" and then a bogus "There was a timeout in the fork", even though
-                            every test passed. Mirrors the same guard in the sibling
-                            BitcoinAddressFinder repo (there triggered by Mockito's inline mock
-                            maker self-attaching byte-buddy).
-                        -->
+                        <!-- -XX:+EnableDynamicAgentLoading: silences the JDK 21 byte-buddy self-attach agent warning that intermittently corrupts Surefire's fork channel ("Corrupted channel ..." / bogus "timeout in the fork"). See workspace policy ci-test-diagnostics.md section 2.1: https://github.com/bernardladenthin/workspace/blob/main/policies/ci-test-diagnostics.md - root cause: https://github.com/raphw/byte-buddy/issues/1639 -->
                         <argLine>@{argLine} -Xmx2g -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=. -XX:ErrorFile=hs_err_pid%p.log -XX:+EnableDynamicAgentLoading</argLine>
                         <!--
                             Tests in the `vmlens` package are meaningful only under the vmlens
