@@ -255,7 +255,8 @@ SPDX-License-Identifier: Apache-2.0
                             diagnostics: a heap dump on OutOfMemoryError plus a per-pid hs_err
                             file, both written to the working directory so CI can upload them.
                         -->
-                        <argLine>@{argLine} -Xmx2g -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=. -XX:ErrorFile=hs_err_pid%p.log</argLine>
+                        <!-- -XX:+EnableDynamicAgentLoading: silences the JDK 21 byte-buddy self-attach agent warning that intermittently corrupts Surefire's fork channel ("Corrupted channel ..." / bogus "timeout in the fork"). See workspace policy ci-test-diagnostics.md section 2.1: https://github.com/bernardladenthin/workspace/blob/main/policies/ci-test-diagnostics.md - root cause: https://github.com/raphw/byte-buddy/issues/1639 -->
+                        <argLine>@{argLine} -Xmx2g -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=. -XX:ErrorFile=hs_err_pid%p.log -XX:+EnableDynamicAgentLoading</argLine>
                         <!--
                             Tests in the `vmlens` package are meaningful only under the vmlens
                             agent (the `vmlens` profile). Without the agent an AllInterleavings
