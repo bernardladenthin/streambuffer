@@ -44,7 +44,7 @@ mvn test-compile exec:java \
 `-prof gc` reports `gc.alloc.rate.norm` (bytes allocated per op) — useful for spotting hidden allocations on the read/write hot paths. `-prof async` produces flamegraphs and requires async-profiler installed locally; CI does not run it.
 
 `mvn test` also runs:
-- **jqwik properties** (`StreamBufferProperties`) — picked up by Surefire as a JUnit 5 engine.
+- **jqwik properties** (`StreamBufferProperties`) — picked up by Surefire as a JUnit 6 engine.
 - **Lincheck** linearizability test (`StreamBufferLincheckTest`) over the non-blocking subset (`write`, `available`, `close`, `isClosed`).
 
 **Opt-in jcstress concurrency stress tests:**
@@ -87,7 +87,7 @@ The `vmlens` profile pulls in `com.vmlens:api` and runs the `vmlens-maven-plugin
 
 ### Tests
 
-`src/test/java/net/ladenthin/streambuffer/StreamBufferTest.java` uses JUnit 5 (Jupiter) with `@Nested` / `@DisplayName` grouping. Most tests are parameterized across 3 write variants (`ByteArray`, `Int`, `ByteArrayWithParameter`) defined in `WriteMethod.java` via `@ParameterizedTest` + `@EnumSource(WriteMethod.class)`.
+`src/test/java/net/ladenthin/streambuffer/StreamBufferTest.java` uses JUnit 6 (Jupiter) with `@Nested` / `@DisplayName` grouping. Most tests are parameterized across 3 write variants (`ByteArray`, `Int`, `ByteArrayWithParameter`) defined in `WriteMethod.java` via `@ParameterizedTest` + `@EnumSource(WriteMethod.class)`.
 
 ## Javadoc Conventions
 
