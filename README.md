@@ -136,7 +136,7 @@ Instead of a fixed circular buffer, `StreamBuffer` uses a `Deque<byte[]>` that g
 The `InputStream` and `OutputStream` can be used concurrently from different threads without additional synchronization:
 
 - All `Deque` accesses are guarded by a `bufferLock` object.
-- State fields (`streamClosed`, `safeWrite`, `availableBytes`, `positionAtCurrentBufferEntry`, `maxBufferElements`, `maxAllocationSize`, `isTrimRunning`, `maxObservedBytes`, `totalBytesWritten`, `totalBytesRead`) are `volatile`.
+- State fields (`streamClosed`, `safeWrite`, `availableBytes`, `positionAtCurrentBufferEntry`, `maxBufferElements`, `maxAllocationSize`, `isTrimRunning`, `maxObservedBytes`) are `volatile`; the cumulative counters `totalBytesWritten` and `totalBytesRead` are `final AtomicLong` (atomic read-modify-write under concurrent I/O).
 - A `Semaphore signalModification` blocks reading threads until data is written or the stream is closed, avoiding busy-waiting. External semaphores can be registered via `addSignal` for thread-decoupled notification.
 
 ### No Write Deadlock
@@ -291,8 +291,8 @@ public class StreamBuffer implements Closeable
 | `setSafeWrite(boolean)` | Enables or disables safe write (byte array cloning) |
 | `getMaxBufferElements()` | Returns the current trim threshold |
 | `setMaxBufferElements(int)` | Sets the trim threshold; `<= 0` disables trimming |
-| `getBufferSize()` | Returns the current number of byte array entries in the FIFO (legacy) |
 | `getBufferElementCount()` | Returns the current number of byte arrays in the internal queue (synchronized) |
+| `getAvailableBytesExact()` | Returns the exact number of buffered bytes as a `long` (unclamped, unlike `available()`) |
 | `getTotalBytesWritten()` | Cumulative bytes written by user I/O (excludes internal trim) |
 | `getTotalBytesRead()` | Cumulative bytes consumed by user reads (excludes internal trim) |
 | `getMaxObservedBytes()` | Peak value of available bytes ever observed |
@@ -305,13 +305,14 @@ public class StreamBuffer implements Closeable
 | `removeTrimStartSignal(Semaphore)` | Removes a trim-start semaphore |
 | `addTrimEndSignal(Semaphore)` | Registers a semaphore released when trim ends |
 | `removeTrimEndSignal(Semaphore)` | Removes a trim-end semaphore |
-| `blockDataAvailable()` | **Deprecated.** Blocks until at least one byte is available |
+| `waitForAtLeast(long)` | Blocks until at least the given number of bytes are available (or the stream closes) |
+| `waitForAnyData()` | Blocks until at least one byte is available (or the stream closes) |
 
 ### Static Validation Methods
 
 ```java
-public static boolean correctOffsetAndLengthToRead(byte[] b, int off, int len)
-public static boolean correctOffsetAndLengthToWrite(byte[] b, int off, int len)
+public static boolean validateOffsetAndLengthToRead(byte[] b, int off, int len)
+public static boolean validateOffsetAndLengthToWrite(byte[] b, int off, int len)
 ```
 
 Both methods mirror the parameter validation performed by `InputStream.read(byte[], int, int)` and `OutputStream.write(byte[], int, int)`. They throw `NullPointerException` for null arrays, `IndexOutOfBoundsException` for invalid offsets or lengths (including integer overflow: `off + len < 0`), and return `false` for zero-length operations.
@@ -324,7 +325,7 @@ External observers register `java.util.concurrent.Semaphore` objects via `addSig
 
 ### Read
 
-If no data is available and the stream is not closed, `read()` blocks the calling thread. To avoid blocking, only read as many bytes as `available()` reports. The `blockDataAvailable()` method (deprecated) can be used to wait before reading; `tryWaitForEnoughBytes` is the internal successor.
+If no data is available and the stream is not closed, `read()` blocks the calling thread. To avoid blocking, only read as many bytes as `available()` reports. The `waitForAnyData()` and `waitForAtLeast(long)` methods can be used to wait for data before reading.
 
 ### Write
 
@@ -339,7 +340,7 @@ consumer that declares
 <dependency>
     <groupId>net.ladenthin</groupId>
     <artifactId>streambuffer</artifactId>
-    <version>1.3.0</version>
+    <version>1.2.0</version>
 </dependency>
 ```
 
@@ -366,7 +367,7 @@ explicitly — it is not provided transitively.
 
 ## Build
 
-Requires Java 8 and Maven 3.3.9+.
+Requires Java 8 and Maven 3.6.3+.
 
 ```bash
 mvn compile          # Compile
@@ -414,9 +415,9 @@ Test coverage includes:
 - `removeSignal(null)` returning `false` without throwing
 - `addSignal(null)` throwing `NullPointerException`
 - Thread-decoupled signal barrier — observer wakes in its own thread
-- `correctOffsetAndLengthToRead` and `correctOffsetAndLengthToWrite` — all branches including integer overflow
-- `getBufferSize()` and `getBufferElementCount()` on an empty buffer
-- `blockDataAvailable()` with data written before and after the call
+- `validateOffsetAndLengthToRead` and `validateOffsetAndLengthToWrite` — all branches including integer overflow
+- `getBufferElementCount()` and `getAvailableBytesExact()` on an empty buffer
+- `waitForAnyData()` / `waitForAtLeast(long)` with data written before and after the call
 - Statistics tracking: `getTotalBytesWritten`, `getTotalBytesRead`, `getMaxObservedBytes` — user I/O only, excluding internal trim operations
 - `setMaxAllocationSize` / `getMaxAllocationSize` — boundary values, trim with chunked allocation
 - `isTrimRunning()` flag transitions during concurrent trim execution
