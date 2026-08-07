@@ -123,6 +123,14 @@ thing keeping it clear of the JPMS module-mode javadoc trap that bit BAF. **Befo
 Java / javadoc source level to ≥ 9, read**
 [`../workspace/policies/jpms-module-descriptor.md`](../workspace/policies/jpms-module-descriptor.md).
 
+## Dependency Convergence Pinning
+
+`dependencyConvergence` is enabled (maven-enforcer). This repo has no parent POM, so its
+`dependencyManagement` block (pinning `jspecify`/`hamcrest`) is the repo's only convergence
+backstop — added because it previously had none. Convention + the `excludedScopes=[test,provided]`
+enforcer default gotcha are in
+[`../workspace/policies/dependency-convergence-pinning.md`](../workspace/policies/dependency-convergence-pinning.md).
+
 ## Open TODOs
 
 Open TODOs for this repo live in [`TODO.md`](TODO.md). Cross-repo status
