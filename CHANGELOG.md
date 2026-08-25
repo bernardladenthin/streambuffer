@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cancellable pipeline start-gate via a `startgate` GitHub Environment with configurable wait timer.
 
 ### Changed
+- Build plugins bumped to latest stable: `com.diffplug.spotless:spotless-maven-plugin` 3.9.0 → 3.10.0,
+  `com.github.spotbugs:spotbugs-maven-plugin` 4.10.3.0 → 4.10.4.0 (restores parity with the
+  cross-repo tool-version matrix).
+- CI actions bumped to latest: `actions/setup-java` v5 → v6, `github/codeql-action/*` v4.37.7 →
+  v4.37.8, `google/osv-scanner-action` reusable workflows v2.5.0 → v2.5.1.
 - CI `publish.yml`: added `check-snapshot`/`check-tag` gate jobs to fix release routing.
 - CI `publish.yml`: `softprops/action-gh-release` bumped from v2 to v3.
 - CI `publish.yml`: `org.codehaus.mojo:exec-maven-plugin` bumped to 3.6.3.
