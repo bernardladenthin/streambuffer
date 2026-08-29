@@ -34,8 +34,8 @@ SPDX-License-Identifier: Apache-2.0
         <nullaway.version>0.14.0</nullaway.version>
         <jspecify.version>1.0.1</jspecify.version>
         <checker.version>4.2.2</checker.version>
-        <spotless.version>3.10.0</spotless.version>
-        <palantir-java-format.version>2.96.0</palantir-java-format.version>
+        <spotless.version>3.10.1</spotless.version>
+        <palantir-java-format.version>2.97.0</palantir-java-format.version>
         <spotbugs.version>4.10.4.0</spotbugs.version>
         <fb-contrib.version>7.7.4</fb-contrib.version>
         <findsecbugs.version>1.14.0</findsecbugs.version>
@@ -318,7 +318,7 @@ SPDX-License-Identifier: Apache-2.0
                 <plugin>
                     <groupId>org.pitest</groupId>
                     <artifactId>pitest-maven</artifactId>
-                    <version>1.25.9</version>
+                    <version>1.30.0</version>
                 </plugin>
                 <plugin>
                     <groupId>org.sonatype.central</groupId>
