@@ -272,6 +272,32 @@ jobs:
       - uses: actions/upload-artifact@v7
         with: { name: jars, path: target/*.jar }
 
+  # ---------------------------------------------------------------------------
+  # Packaged-jar smoke -- the streambuffer member of the cross-repo rule "no release
+  # asset is attached that CI has not run" (workspace/policies/fat-jar-release-assets.md).
+  #
+  # Everything else in this pipeline (tests, jqwik, Lincheck, PIT, SpotBugs, javadoc)
+  # runs off target/classes; nothing loads the assembled jar, which is what is attached
+  # to the GitHub release and deployed to Central. The sibling repos launch their fat
+  # jar with `java -jar`; streambuffer ships none (a library, no Main-Class), so the
+  # equivalent real use is a consumer putting the jar on a classpath and calling the
+  # API. Same job shape, repo-appropriate assertion. ~10 s, no network.
+  # ---------------------------------------------------------------------------
+  smoke-jar:
+    name: Smoke test packaged jar
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          java-version: '21'
+          distribution: temurin
+      - uses: actions/download-artifact@v8
+        with: { name: jars, path: jars/ }
+      - name: Run packaged-jar smoke test
+        run: .github/smoke-jar.sh jars 'streambuffer-*.jar'
+
   test:
     name: Test (JDK ${{ matrix.java-version }})
     needs: [build]
@@ -441,7 +467,7 @@ jobs:
 
   publish-snapshot:
     name: Publish Snapshot to Central
-    needs: [check-snapshot, code-style]
+    needs: [check-snapshot, code-style, smoke-jar]
     if: needs.check-snapshot.result == 'success' && inputs.publish_to_central
     runs-on: ubuntu-latest
     environment: maven-central
@@ -558,7 +584,7 @@ jobs:
 
   publish-release:
     name: Publish Release to Central
-    needs: [check-tag, code-style]
+    needs: [check-tag, code-style, smoke-jar]
     if: needs.check-tag.result == 'success' && inputs.publish_to_central
     runs-on: ubuntu-latest
     environment: maven-central
