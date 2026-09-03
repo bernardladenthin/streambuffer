@@ -295,6 +295,15 @@ jobs:
           distribution: temurin
       - uses: actions/download-artifact@v8
         with: { name: jars, path: jars/ }
+      # Cross-repo shared gate (workspace/crossrepostatus.md checksum table). maven.compiler.release
+      # governs only the code we compile; a dependency built for a newer Java lands in the jar
+      # untouched and surfaces as UnsupportedClassVersionError on a consumer's JVM. This repo's
+      # deliverable is the plain library jar, not a fat jar, so the whole downloaded artifact is
+      # scanned rather than one uber jar. module-info.class and META-INF/versions/** are skipped
+      # unconditionally because a classpath JVM never loads them. Runs before the smoke test so an
+      # unloadable class is reported as such instead of as a mysterious smoke failure.
+      - name: Verify Java 8 bytecode (no class newer than major 52)
+        run: .github/verify-bytecode-version.sh --max-major 52 jars
       - name: Run packaged-jar smoke test
         run: .github/smoke-jar.sh jars 'streambuffer-*.jar'
 
