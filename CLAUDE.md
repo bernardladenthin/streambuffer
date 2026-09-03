@@ -115,6 +115,31 @@ See [`../workspace/policies/ci-test-diagnostics.md`](../workspace/policies/ci-te
 See [`../workspace/policies/pit-mutation-testing.md`](../workspace/policies/pit-mutation-testing.md).
 Run PIT with the lifecycle prefix — `mvn test-compile org.pitest:pitest-maven:mutationCoverage`.
 
+## Java 8 bytecode floor — what may ship
+
+This artifact targets **Java 8**, so **every class a consumer's JVM can load must be class-file
+major 52 or lower**. `maven.compiler.release` governs only the code *we* compile; a dependency
+built for a newer Java lands in the jar untouched and surfaces as `UnsupportedClassVersionError`
+on a consumer's JVM. This repo is the least exposed of the four siblings — it has no logger and
+its deliverable is the plain library jar, not a fat jar — but it runs the same gate so a future
+dependency cannot change that quietly.
+
+**The gate: `.github/verify-bytecode-version.sh`.** Kept **byte-identical** across java-llama.cpp /
+BitcoinAddressFinder / streambuffer / srcmorph (checksum table in `workspace/crossrepostatus.md`).
+It opens every `.class` in every jar it is given and fails on any whose class-file major version
+exceeds `--max-major`:
+
+```bash
+.github/verify-bytecode-version.sh --max-major 52 [--allow '<jar>:<entry>']... <jar-or-dir>...
+```
+
+Paths may be jars or directories (searched recursively for `*.jar`). `module-info.class` and
+`META-INF/versions/**` are skipped unconditionally: a classpath JVM never loads either, which is
+why the `release 9` `module-info` here is fine. `--allow` is a repeatable glob matched against
+`<jar-basename>:<entry-path>` for anything else that must be tolerated. Exit codes: 0 clean,
+1 violations, **2 nothing to scan** (an empty input is a failure, never a pass). Wired into the
+`smoke-jar` job, ahead of the smoke test itself.
+
 ## JPMS Module Descriptor
 
 This repo ships a `module-info.java` compiled in a separate `release 9` execution. Javadoc
