@@ -31,12 +31,12 @@ SPDX-License-Identifier: Apache-2.0
              section "jqwik prompt-injection in test output" for full context. -->
         <jqwik.version>1.9.3</jqwik.version>
         <errorprone.version>2.50.0</errorprone.version>
-        <nullaway.version>0.14.0</nullaway.version>
+        <nullaway.version>0.14.1</nullaway.version>
         <jspecify.version>1.0.1</jspecify.version>
-        <checker.version>4.2.2</checker.version>
-        <spotless.version>3.10.1</spotless.version>
+        <checker.version>4.2.3</checker.version>
+        <spotless.version>3.10.2</spotless.version>
         <palantir-java-format.version>2.97.0</palantir-java-format.version>
-        <spotbugs.version>4.10.4.0</spotbugs.version>
+        <spotbugs.version>4.10.4.1</spotbugs.version>
         <fb-contrib.version>7.7.4</fb-contrib.version>
         <findsecbugs.version>1.14.0</findsecbugs.version>
         <archunit.version>1.5.0</archunit.version>
@@ -246,12 +246,12 @@ SPDX-License-Identifier: Apache-2.0
                 <plugin>
                     <groupId>io.github.git-commit-id</groupId>
                     <artifactId>git-commit-id-maven-plugin</artifactId>
-                    <version>10.0.0</version>
+                    <version>10.0.1</version>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
-                    <version>3.15.0</version>
+                    <version>3.16.0</version>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
@@ -276,7 +276,7 @@ SPDX-License-Identifier: Apache-2.0
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
-                    <version>3.5.6</version>
+                    <version>3.6.0</version>
                     <configuration>
                         <!--
                             @{argLine} is the JaCoCo-populated property (late replacement); it
