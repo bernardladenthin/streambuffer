@@ -823,6 +823,17 @@ SPDX-License-Identifier: Apache-2.0
                             </additionalClasspathElements>
                             <systemPropertyVariables>
                                 <org.jmlspecs.openjml.rac>exception</org.jmlspecs.openjml.rac>
+                                <!--
+                                    Disable JUnit @Timeout enforcement for the RAC run only. RAC
+                                    instrumentation slows every method by an unbounded factor, so
+                                    the production wall-clock budget (StreamBufferTest's class-level
+                                    @Timeout(20s)) is meaningless here — a large-allocation test
+                                    (trim_respectsMaxAllocationSize_splitsLargeBuffer) blew past 20s
+                                    on the 2-core CI runner while passing well under it uninstrumented.
+                                    Correctness/contract checking is unaffected; only the timing gate
+                                    is lifted. JUnit reads this config parameter from a system property.
+                                -->
+                                <junit.jupiter.execution.timeout.mode>disabled</junit.jupiter.execution.timeout.mode>
                             </systemPropertyVariables>
                             <!--
                                 This excludes list REPLACES the pluginManagement one (Maven merges
