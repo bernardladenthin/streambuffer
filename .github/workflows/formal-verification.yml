@@ -1,0 +1,305 @@
+# SPDX-FileCopyrightText: 2014-2026 Bernard Ladenthin <bernard.ladenthin@gmail.com>
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# ---------------------------------------------------------------------------------------------
+# Formal verification — a SEPARATE pipeline, on purpose.
+#
+# The synchronous Publish pipeline (publish.yml) stays untouched: these jobs are additional
+# evidence, not release gates, and none of them is (or should be made) a required check.
+# Failure surfacing is a red check on the PR/commit that does not block a merge.
+#
+# Three layers (see CLAUDE.md "Formal verification" for the full story and the local recipes;
+# the scope rationale with citations lives in the header of
+# src/main/jml/net/ladenthin/streambuffer/StreamBuffer.jml):
+#
+#   openjml-esc   Deductive proof (OpenJML/Z3, extended static checking) of the sequential
+#                 static core: both offset/length validators — including the intentional
+#                 "(off + len) < 0" int-overflow idiom, proven equivalent to the clean bounds
+#                 condition under Java wrap semantics — and the twelve static trim-decision/
+#                 arithmetic helpers with full functional contracts.
+#
+#   openjml-rac   Runtime assertion checking: the EXISTING JUnit suite runs against
+#                 RAC-instrumented classes, so every JML contract is exercised dynamically
+#                 (violations throw instead of the default print-and-continue).
+#
+#   jpf-interleavings  (scheduled/dispatch only) Java PathFinder EXHAUSTIVELY model-checks the
+#                 concurrent read/write/close protocol over all enumerated thread interleavings —
+#                 deadlock-freedom + byte fidelity, stronger than the jcstress stress tests.
+#                 Heavy (builds jpf-core from source), so it is off the per-PR path.
+#
+# What is deliberately NOT here (evaluated 2026-09, see TODO.md "Formal verification"):
+# the @GuardedBy("bufferLock") lock discipline is already gated in the DEFAULT pipeline by
+# Error Prone's GuardedBy check; the Checker Framework Lock Checker would add soundness but
+# cascades into unwinnable receiver-typing on the Closeable/InputStream/OutputStream JDK stubs
+# (their stub receivers disagree), so it is deferred. Also not here: KeY (proof maintenance
+# dwarfs the gain over OpenJML for this scope), VerCors (would require re-modeling the class in
+# a Java subset; no volatile/JMM semantics), JBMC (no ArrayDeque/java.util.concurrent models),
+# Infer/RacerD (explicitly does not reason about volatile). Concurrency is additionally covered
+# empirically by Lincheck/jcstress/vmlens in the main pipeline.
+# ---------------------------------------------------------------------------------------------
+
+name: Formal Verification
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly replay on main: catches drift that no PR touches — an OpenJML release pulled from
+    # GitHub, a broken download URL, or bit-rot in the pinned tool itself.
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+
+# Same expression as publish.yml (see the long rationale there): PR runs share a group per ref
+# and supersede each other; every non-PR run gets a unique group via run_id so a scheduled or
+# dispatched run is never queued behind (and thus never cancelled by) a sibling.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  OPENJML_VERSION: "21.0.27"
+  # SHA-256 of openjml-ubuntu-24.04-21.0.27.zip, taken from the GitHub release asset digest
+  # (https://github.com/OpenJML/OpenJML/releases/tag/21.0.27). ubuntu-latest is ubuntu-24.04,
+  # matching the asset. When bumping the version: update both values, re-test the RAC spec
+  # fixups in .github/actions/setup-openjml/action.yml, and re-try the class invariants noted
+  # in src/main/jml/net/ladenthin/streambuffer/StreamBuffer.jml.
+  OPENJML_SHA256: "325b93e0133736053cadb536d4dc6c9c6523e104691724135e4e03457188b06d"
+  # The ESC scope: the complete static, sequential core of StreamBuffer. Every method listed
+  # here MUST prove — and the count guard below additionally fails the job if the number of
+  # completed proofs is not exactly ESC_EXPECTED_PROOFS, so a typo here (or a rename in the
+  # class) cannot silently shrink the verified scope to zero. Methods NOT listed are covered
+  # by RAC + the ordinary test pyramid; the exception-message builder
+  # newInvalidOffsetOrLengthToWriteException carries a documented ASSUMED contract (string
+  # concatenation is beyond the SMT encoding) and is exercised by RAC and the unit tests.
+  ESC_METHODS: "validateOffsetAndLengthToRead;validateOffsetAndLengthToWrite;decideTrimExecution;clampToMaxInt;decrementAvailableBytesBudget;calculateResultingChunks;shouldSkipTrimDueToEdgeCase;shouldSkipTrimDueToInvalidMaxBufferElements;shouldSkipTrimDueToSmallBuffer;shouldSkipTrimDueToSufficientBuffer;isAvailableBytesPositive;isMaxAllocSizeLessThanAvailable;shouldCheckEdgeCase;shouldUpdateMaxObservedBytes"
+  ESC_EXPECTED_PROOFS: "14"
+
+jobs:
+  openjml-esc:
+    name: OpenJML ESC (deductive proof, static core)
+    runs-on: ubuntu-latest
+    # ESC can in principle hang on a hard proof obligation (per-attempt --timeout
+    # notwithstanding); the job-level timeout is the hard stop.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+      - name: Set up OpenJML (pinned + checksum-verified)
+        uses: ./.github/actions/setup-openjml
+        with:
+          version: ${{ env.OPENJML_VERSION }}
+          sha256: ${{ env.OPENJML_SHA256 }}
+      - name: Resolve compile classpath (error_prone_annotations, jspecify, checker-qual)
+        run: |
+          set -euo pipefail
+          mkdir -p target
+          mvn -B --no-transfer-progress -q dependency:build-classpath \
+            -Dmdep.outputFile=target/compile-classpath.txt -DincludeScope=compile
+      - name: ESC — prove the static sequential core
+        # Exit codes: 0 = all proved, 6 = verification failure, 1-5 = tool/spec error.
+        # No pipes around the openjml call except tee under `set -o pipefail` — a bare
+        # `| tee` would swallow the exit code and turn every failure green.
+        run: |
+          set -euo pipefail
+          "$OPENJML_HOME/openjml" --esc --progress \
+            --timeout 300 --esc-max-warnings 100 \
+            --spec-math=bigint \
+            --class-path "$(cat target/compile-classpath.txt)" \
+            --specs-path src/main/jml \
+            --method "$ESC_METHODS" \
+            src/main/java/net/ladenthin/streambuffer/StreamBuffer.java \
+            | tee esc-output.log
+      - name: Guard — exactly the expected number of proofs completed cleanly
+        # `openjml --method <list>` exits 0 even when the list matches NOTHING, so a green
+        # ESC step alone does not prove the scope ran. This counts the per-method
+        # "Completed proof of ... - no warnings" progress lines.
+        run: |
+          set -euo pipefail
+          completed="$(grep -c '^Completed proof of .* - no warnings' esc-output.log || true)"
+          echo "Completed clean proofs: $completed (expected: $ESC_EXPECTED_PROOFS)"
+          if [ "$completed" != "$ESC_EXPECTED_PROOFS" ]; then
+            echo "::error::ESC proof count mismatch: $completed != $ESC_EXPECTED_PROOFS — the --method selection drifted (rename? typo?) or a proof completed with warnings."
+            exit 1
+          fi
+          {
+            echo "### OpenJML ESC"
+            echo "$completed/$ESC_EXPECTED_PROOFS methods of the static sequential core proved (OpenJML $OPENJML_VERSION, Z3)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  openjml-rac:
+    name: OpenJML RAC (contracts under the full test suite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+      - name: Set up OpenJML (pinned + checksum-verified)
+        uses: ./.github/actions/setup-openjml
+        with:
+          version: ${{ env.OPENJML_VERSION }}
+          sha256: ${{ env.OPENJML_SHA256 }}
+      - name: Resolve compile classpath
+        run: |
+          set -euo pipefail
+          mkdir -p target
+          mvn -B --no-transfer-progress -q dependency:build-classpath \
+            -Dmdep.outputFile=target/compile-classpath.txt -DincludeScope=compile
+      - name: Compile RAC-instrumented classes
+        # RAC checks CONTRACTS at runtime; it must not re-derive the overflow-freedom that ESC
+        # already proves, so both math modes are set to Java (runtime) semantics:
+        #   --code-math=java  — narrowing casts (e.g. the (byte) cast of an int 128..255 in
+        #                       write(int)) and any arithmetic wrap match the JVM instead of
+        #                       raising a spurious "cast out of range" RAC assertion.
+        #   --spec-math=java  — spec expressions evaluate as Java longs. (bigint would need a
+        #                       runtime class from OpenJML's patched JDK; the suite forks that
+        #                       exact JVM anyway — see the jml-rac profile — but Java math is
+        #                       sufficient for every contract here and keeps the bytecode simple.)
+        run: |
+          set -euo pipefail
+          mkdir -p target/rac-classes
+          "$OPENJML_HOME/openjml" --rac --rac-show-source=line \
+            --code-math=java --spec-math=java \
+            --class-path "$(cat target/compile-classpath.txt)" \
+            --specs-path src/main/jml \
+            -d target/rac-classes \
+            src/main/java/net/ladenthin/streambuffer/StreamBuffer.java
+      - name: Guard — RAC instrumentation is actually present
+        # The whole job is meaningless if the instrumented classes silently contain no JML
+        # checks (e.g. specs path drift). RAC-generated code references org.jmlspecs.runtime;
+        # a plain javac class file does not.
+        run: |
+          set -euo pipefail
+          if ! grep -q "org/jmlspecs" target/rac-classes/net/ladenthin/streambuffer/StreamBuffer.class; then
+            echo "::error::target/rac-classes/.../StreamBuffer.class contains no org.jmlspecs references — RAC instrumentation did not happen."
+            exit 1
+          fi
+      - name: Run the test suite against the RAC classes (violations throw)
+        # The jml-rac profile (pom.xml) points surefire's classesDirectory at
+        # target/rac-classes, forks OpenJML's own JVM (so the bigint runtime class resolves),
+        # puts jmlruntime.jar on the test classpath and sets -Dorg.jmlspecs.openjml.rac=exception
+        # so a violated contract fails the suite.
+        run: |
+          set -euo pipefail
+          mvn -B --no-transfer-progress -P jml-rac \
+            "-Dopenjml.home=$OPENJML_HOME" \
+            "-Dopenjml.jdk.java=$OPENJML_HOME/jdk/bin/java" \
+            test
+          {
+            echo "### OpenJML RAC"
+            echo "Full JUnit suite passed against RAC-instrumented classes (every JML contract checked at runtime, violations thrown)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------------------------
+  # JPF — exhaustive thread-interleaving model check of the concurrent read/write/close protocol.
+  # Scheduled/dispatch only (NOT per-PR): building jpf-core from source is minutes-long. This is
+  # the erschöpfende counterpart to the jcstress termination tests — see src/test/jpf/README.md.
+  # Java PathFinder requires JDK 11 to build and run; the harness is compiled at --release 8 and
+  # nothing here reaches the shipped jar. The jpf-core build is cached, keyed on the pinned commit
+  # plus the AtomicLong model patch (a completed jpf-core model — see the README).
+  # ---------------------------------------------------------------------------------------------
+  jpf-interleavings:
+    name: JPF exhaustive interleavings (blocking read/write/close)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    timeout-minutes: 30
+    env:
+      # Pinned jpf-core commit (no upstream releases exist). Bump deliberately; re-validate the
+      # AtomicLong model patch on any bump (jpf-core has no release cadence to track).
+      JPF_SHA: "e61e396087983cde00b1e4a5f4b3dde39c0f9f7f"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          # 21 builds the repo's Java-8 production classes (matching the shipped bytecode);
+          # 11 builds and runs jpf-core.
+          java-version: |
+            11
+            21
+          distribution: temurin
+          cache: maven
+      - name: Build Java-8 production classes + collect annotation jars (JDK 21)
+        run: |
+          set -euo pipefail
+          export JAVA_HOME="$JAVA_HOME_21_X64"
+          mvn -B --no-transfer-progress -DskipTests -Denforcer.skip=true compile
+          # Resolve the compile classpath (includes the optional checker-qual/jspecify/error-prone
+          # annotation jars the production bytecode references) and stage them under stable names.
+          mvn -B --no-transfer-progress -q dependency:build-classpath \
+            -Dmdep.outputFile=target/compile-cp.txt -DincludeScope=compile
+          mkdir -p src/test/jpf/lib
+          tr ':;' '\n\n' < target/compile-cp.txt | while read -r jar; do
+            case "$jar" in
+              *checker-qual*)            cp "$jar" src/test/jpf/lib/checker-qual.jar ;;
+              *jspecify*)                cp "$jar" src/test/jpf/lib/jspecify.jar ;;
+              *error_prone_annotations*) cp "$jar" src/test/jpf/lib/error-prone-annotations.jar ;;
+            esac
+          done
+          test -f src/test/jpf/lib/checker-qual.jar
+          test -f src/test/jpf/lib/jspecify.jar
+          test -f src/test/jpf/lib/error-prone-annotations.jar
+      - name: Cache jpf-core build
+        id: jpf-cache
+        uses: actions/cache@v6
+        with:
+          path: jpf-core/build
+          key: jpf-core-${{ env.JPF_SHA }}-atomiclong-${{ hashFiles('src/test/jpf/jpf-model/java/util/concurrent/atomic/AtomicLong.java') }}
+      - name: Build jpf-core with the AtomicLong model patch (JDK 11)
+        if: steps.jpf-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          export JAVA_HOME="$JAVA_HOME_11_X64"
+          git clone https://github.com/javapathfinder/jpf-core.git jpf-core
+          git -C jpf-core checkout "$JPF_SHA"
+          # Patch jpf-core's incomplete AtomicLong model (see src/test/jpf/README.md).
+          cp src/test/jpf/jpf-model/java/util/concurrent/atomic/AtomicLong.java \
+             jpf-core/src/classes/modules/java.base/java/util/concurrent/atomic/AtomicLong.java
+          (cd jpf-core && ./gradlew --no-daemon buildJars -x test)
+      - name: Model-check the harness (JDK 11)
+        # RunJPF exits 0 even when it reports "error #N", so the result is gated on the log below,
+        # never on the exit code.
+        run: |
+          set -euo pipefail
+          export JAVA_HOME="$JAVA_HOME_11_X64"
+          cd src/test/jpf
+          rm -rf out streambuffer-classes && mkdir -p out streambuffer-classes
+          cp -r "$GITHUB_WORKSPACE/target/classes/net" streambuffer-classes/
+          "$JAVA_HOME/bin/javac" --release 8 -cp streambuffer-classes -d out \
+            net/ladenthin/streambuffer/jpf/JpfStreamBufferHarness.java
+          "$JAVA_HOME/bin/java" -jar "$GITHUB_WORKSPACE/jpf-core/build/RunJPF.jar" StreamBuffer.jpf \
+            | tee jpf-output.log
+      - name: Gate on the JPF result
+        run: |
+          set -euo pipefail
+          log=src/test/jpf/jpf-output.log
+          if grep -qE '^error #' "$log"; then
+            echo "::error::JPF reported an interleaving defect (see log)."
+            exit 1
+          fi
+          if ! grep -q 'no errors detected' "$log"; then
+            echo "::error::JPF did not finish cleanly ('no errors detected' absent) — treat as failure."
+            exit 1
+          fi
+          states="$(grep -oE 'new=[0-9]+' "$log" | head -1 || echo 'new=?')"
+          {
+            echo "### JPF exhaustive interleavings"
+            echo "No errors detected over all enumerated schedules ($states states) — no deadlock, no uncaught exception, byte fidelity held."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: jpf-output
+          path: src/test/jpf/jpf-output.log
+          if-no-files-found: ignore

@@ -10,7 +10,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayDeque;
 import java.util.Deque;
-import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicLong;
@@ -409,15 +408,43 @@ public class StreamBuffer implements Closeable {
      * @throws IndexOutOfBoundsException if the offset or length is not invalid
      */
     public static boolean validateOffsetAndLengthToWrite(byte[] b, int off, int len) {
-        Objects.requireNonNull(b, "validateOffsetAndLengthToWrite: byte array b must not be null");
+        // Manual null check (not Objects.requireNonNull) so OpenJML ESC can discharge the
+        // exceptional_behavior 'signals_only NullPointerException' obligation: under the spec
+        // file's nullable_by_default, the bundled Objects.requireNonNull contract leaves an
+        // unprovable ExceptionList goal. Behaviourally identical — same type, same message.
+        if (b == null) {
+            throw new NullPointerException("validateOffsetAndLengthToWrite: byte array b must not be null");
+        }
         if ((off < 0) || (off > b.length) || (len < 0) || ((off + len) > b.length) || ((off + len) < 0)) {
-            throw new IndexOutOfBoundsException(
-                    EXCEPTION_MESSAGE_VALIDATE_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION + " (b.length="
-                            + b.length + ", off=" + off + ", len=" + len + ")");
+            throw newInvalidOffsetOrLengthToWriteException(b.length, off, len);
         } else if (len == 0) {
             return false;
         }
         return true;
+    }
+
+    /**
+     * Builds the {@link IndexOutOfBoundsException} thrown by
+     * {@link #validateOffsetAndLengthToWrite(byte[], int, int)}.
+     *
+     * <p>Extracted into its own method so the OpenJML ESC proof of the validator does not
+     * have to reason about string concatenation (the desugared {@code StringBuilder} chain
+     * sends the SMT solver into an "unknown" verdict). The builder carries an
+     * <em>assumed</em>, not proven, contract in the specification file
+     * ({@code src/main/jml/net/ladenthin/streambuffer/StreamBuffer.jml}): it terminates
+     * normally, has no side effects and returns a non-null exception. That assumption is
+     * exercised dynamically by the RAC test run and the unit tests.</p>
+     *
+     * @param arrayLength the length of the byte array that failed validation
+     * @param off the offset that failed validation
+     * @param len the length that failed validation
+     * @return a new {@link IndexOutOfBoundsException} with a diagnostic message
+     */
+    private static IndexOutOfBoundsException newInvalidOffsetOrLengthToWriteException(
+            final int arrayLength, final int off, final int len) {
+        return new IndexOutOfBoundsException(
+                EXCEPTION_MESSAGE_VALIDATE_OFFSET_AND_LENGTH_TO_WRITE_INDEX_OUT_OF_BOUNDS_EXCEPTION + " (b.length="
+                        + arrayLength + ", off=" + off + ", len=" + len + ")");
     }
 
     /**
@@ -556,7 +583,7 @@ public class StreamBuffer implements Closeable {
      * @param maxAllocationSize maximum size of a single byte array during consolidation
      * @return true if trim should execute, false if trim should be skipped
      */
-    boolean decideTrimExecution(
+    static boolean decideTrimExecution(
             final int currentBufferSize,
             final int maxBufferElements,
             final long availableBytes,
@@ -642,7 +669,7 @@ public class StreamBuffer implements Closeable {
      *
      * Package-private for direct unit testing.
      */
-    int clampToMaxInt(long value) {
+    static int clampToMaxInt(long value) {
         return (int) Math.min(value, Integer.MAX_VALUE);
     }
 
@@ -653,7 +680,7 @@ public class StreamBuffer implements Closeable {
      * is never read again inside the loop.
      * Package-private for direct unit testing.
      */
-    long decrementAvailableBytesBudget(long current, long decrement) {
+    static long decrementAvailableBytesBudget(long current, long decrement) {
         return current - decrement;
     }
 
@@ -664,7 +691,7 @@ public class StreamBuffer implements Closeable {
      * Extracted so PIT can generate testable mutations on the arithmetic operators.
      * Package-private for direct unit testing.
      */
-    long calculateResultingChunks(long availableBytes, long maxAllocSize) {
+    static long calculateResultingChunks(long availableBytes, long maxAllocSize) {
         return (availableBytes + maxAllocSize - 1) / maxAllocSize;
     }
 
@@ -674,7 +701,7 @@ public class StreamBuffer implements Closeable {
      * Extracted so PIT can generate testable mutations on the comparison operators.
      * Package-private for direct unit testing.
      */
-    boolean shouldSkipTrimDueToEdgeCase(long resultingChunks, int currentBufferSize) {
+    static boolean shouldSkipTrimDueToEdgeCase(long resultingChunks, int currentBufferSize) {
         return resultingChunks >= currentBufferSize;
     }
 
@@ -682,7 +709,7 @@ public class StreamBuffer implements Closeable {
      * Check if trim should be skipped because maxBufferElements is invalid.
      * Package-private for direct unit testing of boundary conditions.
      */
-    boolean shouldSkipTrimDueToInvalidMaxBufferElements(int maxBufferElements) {
+    static boolean shouldSkipTrimDueToInvalidMaxBufferElements(int maxBufferElements) {
         return maxBufferElements <= 0;
     }
 
@@ -690,7 +717,7 @@ public class StreamBuffer implements Closeable {
      * Check if trim should be skipped because buffer is too small.
      * Package-private for direct unit testing of boundary conditions.
      */
-    boolean shouldSkipTrimDueToSmallBuffer(int bufferSize) {
+    static boolean shouldSkipTrimDueToSmallBuffer(int bufferSize) {
         return bufferSize < 2;
     }
 
@@ -698,7 +725,7 @@ public class StreamBuffer implements Closeable {
      * Check if trim should be skipped because buffer size is within limit.
      * Package-private for direct unit testing of boundary conditions.
      */
-    boolean shouldSkipTrimDueToSufficientBuffer(int bufferSize, int maxBufferElements) {
+    static boolean shouldSkipTrimDueToSufficientBuffer(int bufferSize, int maxBufferElements) {
         return bufferSize <= maxBufferElements;
     }
 
@@ -706,7 +733,7 @@ public class StreamBuffer implements Closeable {
      * Check if available bytes is positive (boundary: &gt; 0).
      * Package-private for direct unit testing of boundary conditions.
      */
-    boolean isAvailableBytesPositive(long availableBytes) {
+    static boolean isAvailableBytesPositive(long availableBytes) {
         return availableBytes > 0;
     }
 
@@ -714,7 +741,7 @@ public class StreamBuffer implements Closeable {
      * Check if max allocation size is less than available bytes (boundary: &lt;).
      * Package-private for direct unit testing of boundary conditions.
      */
-    boolean isMaxAllocSizeLessThanAvailable(long maxAllocSize, long availableBytes) {
+    static boolean isMaxAllocSizeLessThanAvailable(long maxAllocSize, long availableBytes) {
         return maxAllocSize < availableBytes;
     }
 
@@ -722,7 +749,7 @@ public class StreamBuffer implements Closeable {
      * Check if edge case check should be performed (available bytes &gt; 0 AND maxAllocSize &lt; availableBytes).
      * Package-private for direct unit testing of boundary conditions.
      */
-    boolean shouldCheckEdgeCase(long availableBytes, long maxAllocSize) {
+    static boolean shouldCheckEdgeCase(long availableBytes, long maxAllocSize) {
         return isAvailableBytesPositive(availableBytes)
                 && isMaxAllocSizeLessThanAvailable(maxAllocSize, availableBytes);
     }
@@ -741,7 +768,7 @@ public class StreamBuffer implements Closeable {
      * Check if available bytes exceeds current max observed (boundary: &gt;).
      * Package-private for direct unit testing of boundary conditions.
      */
-    boolean shouldUpdateMaxObservedBytes(long availableBytes, long currentMax) {
+    static boolean shouldUpdateMaxObservedBytes(long availableBytes, long currentMax) {
         return availableBytes > currentMax;
     }
 
@@ -809,10 +836,244 @@ public class StreamBuffer implements Closeable {
         return waitForAtLeast(1L);
     }
 
+    /**
+     * Implementation of {@link SBInputStream#available()}: the buffered byte count clamped
+     * to the {@link InputStream#available()} int contract.
+     *
+     * <p>The stream logic lives in these {@code private} outer methods — the inner stream
+     * classes are pure delegating adapters. This is a hard requirement of the formal
+     * verification setup, not just style: OpenJML's RAC compiler (21.0.27) emits field
+     * references with a wrong owner class for outer-field access inside non-static inner
+     * classes ({@code NoSuchFieldError} at test runtime), while method calls through
+     * {@code this$0} are compiled correctly. See CLAUDE.md "Formal Verification".</p>
+     *
+     * @return the number of available bytes, clamped to {@link Integer#MAX_VALUE}
+     */
+    private int availableClamped() {
+        return clampToMaxInt(availableBytes);
+    }
+
+    /**
+     * Implementation of {@link SBInputStream#read()}: blocks until a byte is available or
+     * the stream is closed. See {@link #availableClamped()} for why this lives in the outer
+     * class.
+     *
+     * @return the next byte in the range {@code 0}–{@code 255}, or {@code -1} on end of stream
+     * @throws IOException if the current thread is interrupted while waiting
+     */
+    private int readSingleByte() throws IOException {
+        try {
+            if (waitForAnyData() < 1) {
+                // try to wait, but not enough bytes available
+                // return the end of stream is reached
+                return -1;
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException(e);
+        }
+
+        // enough bytes are available, lock and modify the FIFO
+        synchronized (bufferLock) {
+            // get the first element from FIFO
+            final byte[] first = buffer.getFirst();
+            // get the first byte
+            byte value = first[positionAtCurrentBufferEntry];
+            // we have the first byte, now set the pointer to the next value
+            ++positionAtCurrentBufferEntry;
+            // if the pointer was pointed to the last element of the
+            // byte array remove the first element from FIFO and reset the pointer
+            if (positionAtCurrentBufferEntry >= first.length) {
+                // reset the pointer
+                positionAtCurrentBufferEntry = 0;
+                // remove the first element from the buffer
+                buffer.pollFirst();
+            }
+            availableBytes--;
+            recordReadStatistics(1);
+            // returned as int in the range 0 to 255.
+            return value & 0xff;
+        }
+    }
+
+    /**
+     * Implementation of {@link SBInputStream#read(byte[], int, int)}. See
+     * {@link #availableClamped()} for why this lives in the outer class.
+     *
+     * @param b the destination array
+     * @param off the offset in the destination array
+     * @param len the maximum number of bytes to read
+     * @return the number of bytes copied, {@code 0} for a zero-length request, or {@code -1}
+     *         on end of stream
+     * @throws IOException if the current thread is interrupted while waiting
+     */
+    private int readIntoArray(final byte b[], final int off, final int len) throws IOException {
+        if (!validateOffsetAndLengthToRead(b, off, len)) {
+            return 0;
+        }
+
+        // try to read the first byte from FIFO
+        // copied from super.read
+        // === snip
+        int c = readSingleByte();
+        if (c == -1) {
+            return -1;
+        }
+        b[off] = (byte) c;
+        // === snap
+
+        // we have already copied one byte, initialize with 1
+        int copiedBytes = 1;
+
+        int missingBytes = len - copiedBytes;
+        if (hasNoMissingBytes(missingBytes)) {
+            return copiedBytes;
+        }
+
+        long maximumAvailableBytes;
+        try {
+            maximumAvailableBytes = waitForAtLeast(missingBytes);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException(e);
+        }
+
+        if (maximumAvailableBytes < 1) {
+            // try to wait, but no more bytes available
+            return copiedBytes;
+        }
+
+        // cap missingBytes to the actually available bytes
+        missingBytes = (int) Math.min(maximumAvailableBytes, (long) missingBytes);
+
+        // some or enough bytes are available, lock and modify the FIFO
+        synchronized (bufferLock) {
+            for (; ; ) {
+
+                if (hasNoMissingBytes(missingBytes)) {
+                    return copiedBytes;
+                }
+
+                // get the first element from FIFO
+                final byte[] first = buffer.getFirst();
+                // get the maximum bytes which can be copied
+                // from the first element
+                final int maximumBytesToCopy = first.length - positionAtCurrentBufferEntry;
+
+                // this element can be copied fully to the destination
+                if (missingBytes >= maximumBytesToCopy) {
+                    // copy the complete byte[] to the destination
+                    System.arraycopy(first, positionAtCurrentBufferEntry, b, copiedBytes + off, maximumBytesToCopy);
+                    copiedBytes += maximumBytesToCopy;
+                    maximumAvailableBytes = decrementAvailableBytesBudget(maximumAvailableBytes, maximumBytesToCopy);
+                    availableBytes -= maximumBytesToCopy;
+                    recordReadStatistics(maximumBytesToCopy);
+                    missingBytes -= maximumBytesToCopy;
+                    // remove the first element from the buffer
+                    buffer.pollFirst();
+                    // reset the pointer
+                    positionAtCurrentBufferEntry = 0;
+                } else {
+                    // copy only a part of byte[] to the destination
+                    System.arraycopy(first, positionAtCurrentBufferEntry, b, copiedBytes + off, missingBytes);
+                    // add the offset
+                    positionAtCurrentBufferEntry += missingBytes;
+                    copiedBytes += missingBytes;
+                    maximumAvailableBytes = decrementAvailableBytesBudget(maximumAvailableBytes, missingBytes);
+                    availableBytes -= missingBytes;
+                    recordReadStatistics(missingBytes);
+                    // set missing bytes to zero
+                    // we reach the end of the current buffer (b)
+                    missingBytes = 0;
+                }
+            }
+        }
+    }
+
+    /**
+     * Ensure that no more bytes are missing.
+     * @param missingBytes number of missing bytes.
+     * @return <code>true</code> if no more bytes are missing, otherwise <code>false</code>.
+     */
+    private static boolean hasNoMissingBytes(int missingBytes) {
+        assert missingBytes >= 0 : "Copied more bytes as given";
+
+        // check if we don't need to copy further bytes anymore
+        return missingBytes == 0;
+    }
+
+    /**
+     * Implementation of {@link SBOutputStream#write(int)}: writes a single byte, bypassing
+     * the {@link #safeWrite} clone because the one-element array never escapes. See
+     * {@link #availableClamped()} for why this lives in the outer class.
+     *
+     * @param b the byte to write (only the low 8 bits are used)
+     * @throws IOException if the stream is closed
+     */
+    private void writeSingleByte(final int b) throws IOException {
+        try {
+            ignoreSafeWrite = true;
+            final byte[] single = new byte[] {(byte) b};
+            writeFromArray(single, 0, single.length);
+        } finally {
+            ignoreSafeWrite = false;
+        }
+    }
+
+    /**
+     * Implementation of {@link SBOutputStream#write(byte[], int, int)}. See
+     * {@link #availableClamped()} for why this lives in the outer class.
+     *
+     * @param b the source array
+     * @param off the offset in the source array
+     * @param len the number of bytes to write
+     * @throws IOException if the stream is closed
+     */
+    private void writeFromArray(final byte[] b, final int off, final int len) throws IOException {
+        if (!validateOffsetAndLengthToWrite(b, off, len)) {
+            return;
+        }
+        requireNonClosed();
+        // To be thread safe cache the safeWrite value.
+        boolean tmpSafeWrite = isSafeWrite();
+
+        synchronized (bufferLock) {
+            if (off == 0 && b.length == len) {
+                // add the full byte[] to the buffer
+                if (tmpSafeWrite && !ignoreSafeWrite) {
+                    buffer.add(b.clone());
+                } else {
+                    buffer.add(b);
+                }
+            } else {
+                byte[] target = new byte[len];
+                System.arraycopy(b, off, target, 0, len);
+                buffer.add(target);
+            }
+            // increment the length
+            availableBytes += len;
+            // the count must be positive after any write operation
+            assert availableBytes > 0 : "More memory used as a long can count";
+            if (!isTrimRunning) {
+                totalBytesWritten.addAndGet(len);
+                updateMaxObservedBytesIfNeeded(availableBytes);
+            }
+            trim();
+        }
+        // always at least, signal bytes are written to the buffer
+        signalModification();
+    }
+
+    /**
+     * The {@link InputStream} adapter. A pure delegating shell: every method forwards to a
+     * {@code private} method of the enclosing {@link StreamBuffer} and the class body
+     * contains no direct access to outer fields — see {@link #availableClamped()} for the
+     * formal-verification constraint behind this shape.
+     */
     private class SBInputStream extends InputStream {
         @Override
         public int available() throws IOException {
-            return clampToMaxInt(availableBytes);
+            return availableClamped();
         }
 
         @Override
@@ -822,140 +1083,21 @@ public class StreamBuffer implements Closeable {
 
         @Override
         public int read() throws IOException {
-            try {
-                if (waitForAnyData() < 1) {
-                    // try to wait, but not enough bytes available
-                    // return the end of stream is reached
-                    return -1;
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new IOException(e);
-            }
-
-            // enough bytes are available, lock and modify the FIFO
-            synchronized (bufferLock) {
-                // get the first element from FIFO
-                final byte[] first = buffer.getFirst();
-                // get the first byte
-                byte value = first[positionAtCurrentBufferEntry];
-                // we have the first byte, now set the pointer to the next value
-                ++positionAtCurrentBufferEntry;
-                // if the pointer was pointed to the last element of the
-                // byte array remove the first element from FIFO and reset the pointer
-                if (positionAtCurrentBufferEntry >= first.length) {
-                    // reset the pointer
-                    positionAtCurrentBufferEntry = 0;
-                    // remove the first element from the buffer
-                    buffer.pollFirst();
-                }
-                availableBytes--;
-                recordReadStatistics(1);
-                // returned as int in the range 0 to 255.
-                return value & 0xff;
-            }
+            return readSingleByte();
         }
 
         // please do not override the method "int read(byte b[])"
         // the method calls internal "read(b, 0, b.length)"
         @Override
         public int read(final byte b[], final int off, final int len) throws IOException {
-            if (!validateOffsetAndLengthToRead(b, off, len)) {
-                return 0;
-            }
-
-            // try to read the first byte from FIFO
-            // copied from super.read
-            // === snip
-            int c = read();
-            if (c == -1) {
-                return -1;
-            }
-            b[off] = (byte) c;
-            // === snap
-
-            // we have already copied one byte, initialize with 1
-            int copiedBytes = 1;
-
-            int missingBytes = len - copiedBytes;
-            if (hasNoMissingBytes(missingBytes)) {
-                return copiedBytes;
-            }
-
-            long maximumAvailableBytes;
-            try {
-                maximumAvailableBytes = waitForAtLeast(missingBytes);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new IOException(e);
-            }
-
-            if (maximumAvailableBytes < 1) {
-                // try to wait, but no more bytes available
-                return copiedBytes;
-            }
-
-            // cap missingBytes to the actually available bytes
-            missingBytes = (int) Math.min(maximumAvailableBytes, (long) missingBytes);
-
-            // some or enough bytes are available, lock and modify the FIFO
-            synchronized (bufferLock) {
-                for (; ; ) {
-
-                    if (hasNoMissingBytes(missingBytes)) {
-                        return copiedBytes;
-                    }
-
-                    // get the first element from FIFO
-                    final byte[] first = buffer.getFirst();
-                    // get the maximum bytes which can be copied
-                    // from the first element
-                    final int maximumBytesToCopy = first.length - positionAtCurrentBufferEntry;
-
-                    // this element can be copied fully to the destination
-                    if (missingBytes >= maximumBytesToCopy) {
-                        // copy the complete byte[] to the destination
-                        System.arraycopy(first, positionAtCurrentBufferEntry, b, copiedBytes + off, maximumBytesToCopy);
-                        copiedBytes += maximumBytesToCopy;
-                        maximumAvailableBytes =
-                                decrementAvailableBytesBudget(maximumAvailableBytes, maximumBytesToCopy);
-                        availableBytes -= maximumBytesToCopy;
-                        recordReadStatistics(maximumBytesToCopy);
-                        missingBytes -= maximumBytesToCopy;
-                        // remove the first element from the buffer
-                        buffer.pollFirst();
-                        // reset the pointer
-                        positionAtCurrentBufferEntry = 0;
-                    } else {
-                        // copy only a part of byte[] to the destination
-                        System.arraycopy(first, positionAtCurrentBufferEntry, b, copiedBytes + off, missingBytes);
-                        // add the offset
-                        positionAtCurrentBufferEntry += missingBytes;
-                        copiedBytes += missingBytes;
-                        maximumAvailableBytes = decrementAvailableBytesBudget(maximumAvailableBytes, missingBytes);
-                        availableBytes -= missingBytes;
-                        recordReadStatistics(missingBytes);
-                        // set missing bytes to zero
-                        // we reach the end of the current buffer (b)
-                        missingBytes = 0;
-                    }
-                }
-            }
-        }
-
-        /**
-         * Ensure that no more bytes are missing.
-         * @param missingBytes number of missing bytes.
-         * @return <code>true</code> if no more bytes are missing, otherwise <code>false</code>.
-         */
-        private boolean hasNoMissingBytes(int missingBytes) {
-            assert missingBytes >= 0 : "Copied more bytes as given";
-
-            // check if we don't need to copy further bytes anymore
-            return missingBytes == 0;
+            return readIntoArray(b, off, len);
         }
     }
 
+    /**
+     * The {@link OutputStream} adapter. A pure delegating shell — see
+     * {@link SBInputStream}.
+     */
     private class SBOutputStream extends OutputStream {
         @Override
         public void close() throws IOException {
@@ -964,50 +1106,14 @@ public class StreamBuffer implements Closeable {
 
         @Override
         public void write(final int b) throws IOException {
-            try {
-                ignoreSafeWrite = true;
-                write(new byte[] {(byte) b});
-            } finally {
-                ignoreSafeWrite = false;
-            }
+            writeSingleByte(b);
         }
 
         // please do not override the method "void write(final byte[] b)"
         // the method calls internal "write(b, 0, b.length);"
         @Override
         public void write(final byte[] b, final int off, final int len) throws IOException {
-            if (!validateOffsetAndLengthToWrite(b, off, len)) {
-                return;
-            }
-            requireNonClosed();
-            // To be thread safe cache the safeWrite value.
-            boolean tmpSafeWrite = isSafeWrite();
-
-            synchronized (bufferLock) {
-                if (off == 0 && b.length == len) {
-                    // add the full byte[] to the buffer
-                    if (tmpSafeWrite && !ignoreSafeWrite) {
-                        buffer.add(b.clone());
-                    } else {
-                        buffer.add(b);
-                    }
-                } else {
-                    byte[] target = new byte[len];
-                    System.arraycopy(b, off, target, 0, len);
-                    buffer.add(target);
-                }
-                // increment the length
-                availableBytes += len;
-                // the count must be positive after any write operation
-                assert availableBytes > 0 : "More memory used as a long can count";
-                if (!isTrimRunning) {
-                    totalBytesWritten.addAndGet(len);
-                    updateMaxObservedBytesIfNeeded(availableBytes);
-                }
-                trim();
-            }
-            // always at least, signal bytes are written to the buffer
-            signalModification();
+            writeFromArray(b, off, len);
         }
     }
 

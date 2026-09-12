@@ -1,0 +1,382 @@
+// SPDX-FileCopyrightText: 2014-2026 Bernard Ladenthin <bernard.ladenthin@gmail.com>
+//
+// SPDX-License-Identifier: Apache-2.0
+//
+// ============================================================================================
+// JML specification file for net.ladenthin.streambuffer.StreamBuffer
+// ============================================================================================
+//
+// This file is consumed by OpenJML (https://www.openjml.org), pinned in
+// .github/workflows/formal-verification.yml. It lives OUTSIDE the .java file on purpose:
+// the production source stays free of JML annotation comments (spotless/palantir formats
+// .java only), and per the JML rules a .jml file REPLACES any class-level JML annotations
+// in the .java file, so this file is the single source of truth for the specifications.
+// OpenJML checks that every declaration below structurally matches StreamBuffer.java;
+// signature drift fails the verification workflow.
+//
+// VERIFICATION SCOPE — read this before editing:
+//
+//  * ESC (deductive proof, openjml --esc): the static, pure, sequential core listed in the
+//    ESC_METHODS variable of the workflow — the two offset/length validators (including the
+//    intentional "(off + len) < 0" int-wraparound idiom, proven equivalent to the clean
+//    bounds condition under Java wrap semantics via code_java_math) and the twelve static
+//    trim-decision/arithmetic helpers (full functional contracts; the ceiling division in
+//    calculateResultingChunks is proven against its multiplicative characterization).
+//
+//  * RAC (runtime assertion checking, openjml --rac): ALL contracts in this file, checked
+//    dynamically while the existing JUnit suite runs against RAC-instrumented classes
+//    (mvn -P jml-rac ...). Contracts on concurrently-visible state are deliberately
+//    written to reference only \result and method parameters, so a concurrent mutation
+//    between the method body and the RAC postcondition check cannot produce a spurious
+//    failure. (Class invariants are deliberately absent — see the note below.)
+//
+//  * Concurrency is OUT OF SCOPE for the deductive layer, by JML doctrine: "the current
+//    version of JML focuses on the sequential behavior of Java code" (JML Reference Manual,
+//    Fundamental Concepts), and OpenJML does not model `volatile` nor implement the Level-C
+//    concurrency features (monitors_for, when, \lockset). The concurrent shell around the
+//    sequential core proven here is covered empirically by Lincheck (linearizability,
+//    mvn test), jcstress (mvn -P jcstress test) and vmlens (mvn -P vmlens test), plus the
+//    Checker Framework Lock Checker pass (mvn -P lockchecker compile) for the @GuardedBy
+//    discipline. Precedent for exactly this scoping split: Hiep et al., "Verifying
+//    OpenJDK's LinkedList using KeY" (TACAS 2020, https://arxiv.org/abs/1911.04195) and
+//    de Boer et al., "Formally Verifying an Efficient Sorter" — IdentityHashMap case study
+//    (iFM 2022, https://dl.acm.org/doi/10.1145/3594729).
+//
+//  * The exception-message builder newInvalidOffsetOrLengthToWriteException carries an
+//    ASSUMED contract (it is excluded from the ESC method list): string concatenation sends
+//    the SMT solver to "unknown". The assumption (terminates normally, no side effects,
+//    non-null result) is exercised dynamically by RAC and the unit tests.
+//
+//  * ASSUMED PRECONDITIONS on the pure helpers: the ESC-scoped static methods are proven
+//    correct GIVEN their `requires` clauses. Because their only callers are the instance
+//    read/write/trim path — which is outside the ESC method list (see above) — ESC does not
+//    discharge those preconditions at the call sites; it assumes them, in the standard way a
+//    modular proof relies on a lemma. The most consequential is the anti-overflow bound on
+//    decideTrimExecution / calculateResultingChunks: it carves out a physically unreachable
+//    region (> ~4 EiB buffered) rather than a region a caller must be checked against. The
+//    per-method comments spell this out. Net: read each ESC result as "correct on its stated
+//    precondition domain", which for every helper here is the whole reachable input space.
+//
+// Arithmetic modes: OpenJML defaults are --code-math=safe (any potential int/long overflow
+// in code is a verification error) and --spec-math=bigint (spec expressions evaluate in
+// unbounded integers). Methods that intentionally rely on Java wrap semantics are marked
+// code_java_math below; everything else is proven overflow-free.
+package net.ladenthin.streambuffer;
+
+import java.io.Closeable;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.concurrent.Semaphore;
+
+// nullable_by_default: the validators and the signal (de)registration methods legitimately
+// take null and are specified to throw on it (exceptional_behavior ... signals_only
+// NullPointerException). Under JML's non-null-by-default, RAC would insert an implicit
+// non-null PRECONDITION on every reference parameter and reject those null calls as a
+// precondition violation (JmlAssertionError.Precondition) BEFORE the specified NPE path runs.
+// Non-null intent is not lost: every method that requires a non-null argument states it
+// explicitly (requires ... != null), so RAC still enforces it; and the shipped code's real
+// null-safety guarantee comes from JSpecify @NullMarked + NullAway + the Checker Framework
+// Nullness Checker in the default build, which this spec-only default does not touch.
+//@ nullable_by_default
+public class StreamBuffer implements Closeable {
+
+    // ---------------------------------------------------------------------------------------
+    // NO class invariants — deliberate, and load-bearing for the RAC layer:
+    // `openjml --rac` (21.0.27) crashes with "no enclosing instance of type
+    // StreamBuffer.SBInputStream in scope" (javac Lower AssertionError, exit 4) as soon as
+    // this class declares any instance invariant, because the generated invariant checks
+    // interact badly with the non-static inner stream classes. The candidate invariants
+    // (0 <= availableBytes, 0 <= positionAtCurrentBufferEntry, 1 <= maxAllocationSize,
+    // 0 <= maxObservedBytes) would have been RAC-only value anyway — the ESC layer proves
+    // static methods, which never see instance state. Their content is still enforced
+    // dynamically: the postconditions on the getters below check the same bounds at every
+    // observation point, and the write path asserts availableBytes > 0 after every write.
+    // Re-test invariants here after the next OpenJML upgrade.
+    // ---------------------------------------------------------------------------------------
+
+    // ---------------------------------------------------------------------------------------
+    // Static validators (ESC-proven, public API)
+    // ---------------------------------------------------------------------------------------
+
+    /*@ normal_behavior
+      @   requires b != null && 0 <= off && 0 <= len && len <= b.length - off;
+      @   ensures \result <==> (len != 0);
+      @ also exceptional_behavior
+      @   requires b == null;
+      @   signals_only NullPointerException;
+      @ also exceptional_behavior
+      @   requires b != null && (off < 0 || len < 0 || len > b.length - off);
+      @   signals_only IndexOutOfBoundsException;
+      @*/
+    //@ pure
+    public static boolean validateOffsetAndLengthToRead(byte[] b, int off, int len);
+
+    // code_java_math: the implementation deliberately detects the int overflow of
+    // (off + len) via the wrapped-negative check "((off + len) < 0)". ESC proves under
+    // Java wrap semantics that the disjunction is exactly equivalent to the clean bounds
+    // condition in the contract below — the classic overflow-guard idiom, machine-checked.
+    /*@ normal_behavior
+      @   requires b != null && 0 <= off && off <= b.length && 0 <= len && len <= b.length - off;
+      @   ensures \result <==> (len != 0);
+      @ also exceptional_behavior
+      @   requires b == null;
+      @   signals_only NullPointerException;
+      @ also exceptional_behavior
+      @   requires b != null && !(0 <= off && off <= b.length && 0 <= len && len <= b.length - off);
+      @   signals_only IndexOutOfBoundsException;
+      @*/
+    //@ pure code_java_math
+    public static boolean validateOffsetAndLengthToWrite(byte[] b, int off, int len);
+
+    // ASSUMED contract (not in the ESC method list) — see the file header.
+    /*@ private normal_behavior
+      @   assignable \nothing;
+      @   ensures \result != null;
+      @*/
+    private static IndexOutOfBoundsException newInvalidOffsetOrLengthToWriteException(
+            final int arrayLength, final int off, final int len);
+
+    // ---------------------------------------------------------------------------------------
+    // Static trim-decision core (ESC-proven, full functional contracts)
+    // ---------------------------------------------------------------------------------------
+
+    // The single decision function behind shouldTrim(): the contract is the complete
+    // decision tree from the javadoc, with the ceiling division inlined in bigint spec math.
+    //
+    // ASSUMED PRECONDITION (scope caveat): the third requires bounds availableBytes so the
+    // inlined (availableBytes + maxAllocationSize - 1) cannot overflow a long. The sole real
+    // caller, shouldTrim(), is an instance method OUTSIDE the ESC method list, so ESC assumes
+    // this bound rather than discharging it at the call site. A caller CAN leave the proven
+    // domain — e.g. setMaxAllocationSize(Long.MAX_VALUE) drops the bound to availableBytes <= 1
+    // — but not into a wrong answer: the overflow needs maxAllocationSize < availableBytes AND
+    // availableBytes + maxAllocationSize - 1 > Long.MAX_VALUE simultaneously, i.e. > ~4 EiB
+    // buffered, which no JVM heap can hold. So this proves the decision tree on the only
+    // physically reachable domain; the bound is a lemma about an unreachable region, not a
+    // guarantee the caller is checked. Same caveat applies to calculateResultingChunks below.
+    /*@ normal_behavior
+      @   requires 1 <= maxAllocationSize;
+      @   requires 0 <= availableBytes;
+      @   requires availableBytes <= Long.MAX_VALUE - maxAllocationSize + 1;
+      @   ensures \result <==> (0 < maxBufferElements
+      @                         && 2 <= currentBufferSize
+      @                         && maxBufferElements < currentBufferSize
+      @                         && !(0 < availableBytes
+      @                              && maxAllocationSize < availableBytes
+      @                              && currentBufferSize <= (availableBytes + maxAllocationSize - 1) / maxAllocationSize));
+      @*/
+    //@ pure
+    static boolean decideTrimExecution(
+            final int currentBufferSize,
+            final int maxBufferElements,
+            final long availableBytes,
+            final long maxAllocationSize);
+
+    /*@ normal_behavior
+      @   requires 0 <= value;
+      @   ensures value >= Integer.MAX_VALUE ==> \result == Integer.MAX_VALUE;
+      @   ensures value < Integer.MAX_VALUE ==> \result == value;
+      @*/
+    //@ pure
+    static int clampToMaxInt(long value);
+
+    /*@ normal_behavior
+      @   requires 0 <= decrement && decrement <= current;
+      @   ensures \result == current - decrement;
+      @   ensures 0 <= \result;
+      @*/
+    //@ pure
+    static long decrementAvailableBytesBudget(long current, long decrement);
+
+    // code_java_math: at availableBytes == Long.MAX_VALUE - maxAllocSize + 1 the intermediate
+    // (availableBytes + maxAllocSize) wraps to Long.MIN_VALUE and the subsequent "- 1" wraps
+    // it back to Long.MAX_VALUE — the final result is still correct. ESC proves the Java-wrap
+    // result equals the bigint ceiling division on the whole precondition domain, including
+    // that boundary, plus the multiplicative characterization of the ceiling. The spec side
+    // needs no spec_bigint_math modifier: bigint is OpenJML's spec-math DEFAULT, and the ESC
+    // workflow pins --spec-math=bigint explicitly. (A modifier here would also force bigint
+    // onto the RAC build, whose bigint runtime class lives only inside OpenJML's own patched
+    // JDK image — the RAC job therefore compiles with --spec-math=java instead.)
+    /*@ normal_behavior
+      @   requires 1 <= maxAllocSize;
+      @   requires 0 <= availableBytes;
+      @   requires availableBytes <= Long.MAX_VALUE - maxAllocSize + 1;
+      @   ensures availableBytes == 0 ==> \result == 0;
+      @   // The load-bearing pin: \result is the unique ceiling of availableBytes / maxAllocSize.
+      @   ensures availableBytes > 0 ==> maxAllocSize * (\result - 1) < availableBytes && availableBytes <= maxAllocSize * \result;
+      @   // Redundant given the multiplicative characterization above (ESC still checks it); kept
+      @   // as the intuitive form. Well-defined only under --spec-math=bigint, where the division
+      @   // and the '+ maxAllocSize - 1' do not overflow.
+      @   ensures_redundantly \result == (availableBytes + maxAllocSize - 1) / maxAllocSize;
+      @*/
+    //@ pure code_java_math
+    static long calculateResultingChunks(long availableBytes, long maxAllocSize);
+
+    /*@ normal_behavior
+      @   ensures \result <==> (resultingChunks >= currentBufferSize);
+      @*/
+    //@ pure
+    static boolean shouldSkipTrimDueToEdgeCase(long resultingChunks, int currentBufferSize);
+
+    /*@ normal_behavior
+      @   ensures \result <==> (maxBufferElements <= 0);
+      @*/
+    //@ pure
+    static boolean shouldSkipTrimDueToInvalidMaxBufferElements(int maxBufferElements);
+
+    /*@ normal_behavior
+      @   ensures \result <==> (bufferSize < 2);
+      @*/
+    //@ pure
+    static boolean shouldSkipTrimDueToSmallBuffer(int bufferSize);
+
+    /*@ normal_behavior
+      @   ensures \result <==> (bufferSize <= maxBufferElements);
+      @*/
+    //@ pure
+    static boolean shouldSkipTrimDueToSufficientBuffer(int bufferSize, int maxBufferElements);
+
+    /*@ normal_behavior
+      @   ensures \result <==> (availableBytes > 0);
+      @*/
+    //@ pure
+    static boolean isAvailableBytesPositive(long availableBytes);
+
+    /*@ normal_behavior
+      @   ensures \result <==> (maxAllocSize < availableBytes);
+      @*/
+    //@ pure
+    static boolean isMaxAllocSizeLessThanAvailable(long maxAllocSize, long availableBytes);
+
+    /*@ normal_behavior
+      @   ensures \result <==> (availableBytes > 0 && maxAllocSize < availableBytes);
+      @*/
+    //@ pure
+    static boolean shouldCheckEdgeCase(long availableBytes, long maxAllocSize);
+
+    /*@ normal_behavior
+      @   ensures \result <==> (availableBytes > currentMax);
+      @*/
+    //@ pure
+    static boolean shouldUpdateMaxObservedBytes(long availableBytes, long currentMax);
+
+    // ---------------------------------------------------------------------------------------
+    // Instance methods (RAC-checked contracts; NOT part of the ESC method list — the
+    // non-static inner classes SBInputStream/SBOutputStream make instance-method proof
+    // obligations undecidable for the SMT solver, and the interesting instance behavior is
+    // concurrent anyway). Postconditions reference only \result and parameters on purpose;
+    // see the file header.
+    // ---------------------------------------------------------------------------------------
+
+    /*@ public normal_behavior
+      @   requires 0 < maxSize;
+      @ also public exceptional_behavior
+      @   requires maxSize <= 0;
+      @   assignable \nothing;
+      @   signals_only IllegalArgumentException;
+      @*/
+    public void setMaxAllocationSize(final long maxSize);
+
+    // A single heavyweight 'behavior' rather than normal/exceptional: the method both returns a
+    // value AND can throw InterruptedException (it blocks on a Semaphore), so InterruptedException
+    // must be an allowed outcome under ANY argument, while IllegalArgumentException is allowed only
+    // for bytes <= 0. A normal_behavior with 'ensures' cannot also whitelist a non-argument-driven
+    // checked exception, so the two outcomes are expressed with signals/signals_only here.
+    /*@ public behavior
+      @   requires true;
+      @   ensures 1 <= bytes && 0 <= \result;
+      @   signals_only IllegalArgumentException, InterruptedException;
+      @   signals (IllegalArgumentException e) bytes <= 0;
+      @*/
+    public long waitForAtLeast(final long bytes) throws InterruptedException;
+
+    /*@ public behavior
+      @   requires true;
+      @   ensures 0 <= \result;
+      @   signals_only InterruptedException;
+      @*/
+    public long waitForAnyData() throws InterruptedException;
+
+    /*@ public normal_behavior
+      @   requires semaphore != null;
+      @ also public exceptional_behavior
+      @   requires semaphore == null;
+      @   assignable \nothing;
+      @   signals_only NullPointerException;
+      @*/
+    public void addSignal(Semaphore semaphore);
+
+    /*@ public normal_behavior
+      @   requires semaphore != null;
+      @ also public exceptional_behavior
+      @   requires semaphore == null;
+      @   assignable \nothing;
+      @   signals_only NullPointerException;
+      @*/
+    public void addTrimStartSignal(Semaphore semaphore);
+
+    /*@ public normal_behavior
+      @   requires semaphore != null;
+      @ also public exceptional_behavior
+      @   requires semaphore == null;
+      @   assignable \nothing;
+      @   signals_only NullPointerException;
+      @*/
+    public void addTrimEndSignal(Semaphore semaphore);
+
+    /*@ public normal_behavior
+      @   ensures 0 <= \result;
+      @*/
+    public long getAvailableBytesExact();
+
+    /*@ public normal_behavior
+      @   ensures 0 <= \result;
+      @*/
+    public long getMaxObservedBytes();
+
+    /*@ public normal_behavior
+      @   ensures 1 <= \result;
+      @*/
+    public long getMaxAllocationSize();
+
+    /*@ public normal_behavior
+      @   ensures 0 <= \result;
+      @*/
+    public int getBufferElementCount();
+
+    // ---------------------------------------------------------------------------------------
+    // Inner stream classes (RAC-checked result-range contracts on the java.io API)
+    // ---------------------------------------------------------------------------------------
+
+    private class SBInputStream extends InputStream {
+
+        /*@ also public normal_behavior
+          @   ensures 0 <= \result;
+          @*/
+        public int available() throws IOException;
+
+        /*@ also public behavior
+          @   ensures -1 <= \result && \result <= 255;
+          @   signals_only IOException;
+          @*/
+        public int read() throws IOException;
+
+        /*@ also public behavior
+          @   ensures -1 <= \result && \result <= len;
+          @   signals_only NullPointerException, IndexOutOfBoundsException, IOException;
+          @*/
+        public int read(final byte b[], final int off, final int len) throws IOException;
+    }
+
+    private class SBOutputStream extends OutputStream {
+
+        // RuntimeException is in signals_only on purpose: write() drives the observer
+        // notifications (signalModification, and trim's start/end signals), and a registered
+        // observer's Semaphore is caller-supplied code that may throw an unchecked exception,
+        // which propagates out of write() by design (exercised by the trim signal-release tests).
+        /*@ also public behavior
+          @   signals_only IOException, RuntimeException;
+          @*/
+        public void write(final byte[] b, final int off, final int len) throws IOException;
+    }
+}

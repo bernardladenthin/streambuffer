@@ -1,0 +1,82 @@
+# SPDX-FileCopyrightText: 2014-2026 Bernard Ladenthin <bernard.ladenthin@gmail.com>
+#
+# SPDX-License-Identifier: Apache-2.0
+
+name: Set up OpenJML
+description: >
+  Installs a pinned, checksum-verified OpenJML release (Ubuntu x64 build) into
+  $RUNNER_TEMP/openjml and exposes the location as the OPENJML_HOME environment
+  variable. The unzipped distribution (~1 GB, zip 392 MB) is cached keyed on
+  version + checksum + fixup revision. Known-broken bundled JDK specification
+  files are deleted on install (see the fixup step below); because the deletion
+  happens before the cache is saved, cache hits already contain the fixed tree.
+
+inputs:
+  version:
+    description: OpenJML release version (GitHub release tag)
+    required: true
+  sha256:
+    description: Expected SHA-256 of the openjml-ubuntu-24.04-<version>.zip release asset
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Restore OpenJML from cache
+      id: cache
+      uses: actions/cache@v6
+      with:
+        path: ${{ runner.temp }}/openjml
+        # spec-fixups-v1: bump this suffix whenever the fixup step below changes,
+        # otherwise cached installs keep the previous fixup state.
+        key: openjml-ubuntu-x64-${{ inputs.version }}-${{ inputs.sha256 }}-spec-fixups-v1
+
+    - name: Download pinned OpenJML (checksum-verified)
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        curl --fail --location --retry 3 -o "$RUNNER_TEMP/openjml.zip" \
+          "https://github.com/OpenJML/OpenJML/releases/download/${{ inputs.version }}/openjml-ubuntu-24.04-${{ inputs.version }}.zip"
+        echo "${{ inputs.sha256 }}  $RUNNER_TEMP/openjml.zip" | sha256sum --check --strict
+        mkdir -p "$RUNNER_TEMP/openjml"
+        unzip -q "$RUNNER_TEMP/openjml.zip" -d "$RUNNER_TEMP/openjml"
+        rm "$RUNNER_TEMP/openjml.zip"
+        chmod +x "$RUNNER_TEMP/openjml/openjml" "$RUNNER_TEMP/openjml/openjml-java"
+
+    - name: Delete known-broken bundled JDK specs (fixups v1)
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      # Both files ship broken in OpenJML 21.0.27 and break the RAC layer; deleting a
+      # bundled spec degrades the affected JDK class to default (empty) contracts, which
+      # is exactly what this repo needs — StreamBuffer's own contracts are the ones being
+      # checked. `rm` without -f: if an upgrade removes/fixes these files upstream, this
+      # step fails loudly and the fixup (plus the cache-key suffix) must be revisited.
+      #   - ArrayDeque.jml: references the undeclared model variable `containsNull`;
+      #     `openjml --rac` fails with "cannot find symbol: containsNull".
+      #   - concurrent/atomic/AtomicLong.jml: RAC-generated checks read the private field
+      #     AtomicLong.value across the module boundary; every test touching the
+      #     statistics counters then dies with java.lang.IllegalAccessError.
+      run: |
+        set -euo pipefail
+        rm "$RUNNER_TEMP/openjml/specs/java/util/ArrayDeque.jml"
+        rm "$RUNNER_TEMP/openjml/specs/java/util/concurrent/atomic/AtomicLong.jml"
+
+    - name: Repair the bundled JDK release file (fixups v1)
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      # OpenJML 21.0.27's bundled jdk/release omits the JAVA_VERSION key. maven-surefire-plugin
+      # reads that key to fingerprint a forked <jvm> (SystemUtils.toJdkVersionFromReleaseFile);
+      # without it the RAC job — which forks this exact JVM so the org.jmlspecs bigint runtime
+      # class resolves — dies before any test with an NPE. Add the key if it is missing.
+      run: |
+        set -euo pipefail
+        rel="$RUNNER_TEMP/openjml/jdk/release"
+        grep -q '^JAVA_VERSION=' "$rel" || printf 'JAVA_VERSION="21"\n' >> "$rel"
+
+    - name: Export OPENJML_HOME and print version
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "OPENJML_HOME=$RUNNER_TEMP/openjml" >> "$GITHUB_ENV"
+        "$RUNNER_TEMP/openjml/openjml" --version

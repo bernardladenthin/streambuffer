@@ -40,6 +40,62 @@ SPDX-License-Identifier: Apache-2.0
     </Match>
 
     <!--
+        VO_VOLATILE_INCREMENT on readSingleByte(): the increment of positionAtCurrentBufferEntry
+        and the decrement of availableBytes run inside 'synchronized (bufferLock)', so the
+        read-modify-write is atomic w.r.t. every other buffer mutator (all of which hold the
+        same lock); volatile only carries the cross-thread visibility. This is the same
+        established rationale as the @SuppressWarnings("NonAtomicVolatileUpdate") on trim().
+        The finding surfaced only when the reader logic was lifted out of the inner
+        SBInputStream into this outer method (required so OpenJML RAC compiles outer-field
+        access correctly; see CLAUDE.md "Formal Verification"). Inside the inner class the
+        same increments went through synthetic accessors, which hid the pattern from SpotBugs.
+        The jcstress races confirm the protocol is sound.
+    -->
+    <Match>
+        <Class name="net.ladenthin.streambuffer.StreamBuffer"/>
+        <Method name="readSingleByte"/>
+        <Bug pattern="VO_VOLATILE_INCREMENT"/>
+    </Match>
+
+    <!--
+        OPM_OVERLY_PERMISSIVE_METHOD on the public API surface. These four methods are
+        deliberately public: validateOffsetAndLengthToRead/Write are documented public static
+        validators (README "Static Validation Methods"), and waitForAtLeast/waitForAnyData are
+        the public blocking-read API. fb-contrib flags them because every *caller it can see*
+        lives in this single package (the library is one package, and its tests share it), which
+        is the known single-package OPM false positive documented in
+        ../workspace/crossrepostatus.md (BAF and jllama suppress OPM project-wide for the same
+        reason). The findings appeared only after the read/write logic moved from the inner
+        stream classes into outer methods, changing which call sites fb-contrib attributes.
+    -->
+    <Match>
+        <Class name="net.ladenthin.streambuffer.StreamBuffer"/>
+        <Or>
+            <Method name="validateOffsetAndLengthToRead"/>
+            <Method name="validateOffsetAndLengthToWrite"/>
+            <Method name="waitForAtLeast"/>
+            <Method name="waitForAnyData"/>
+        </Or>
+        <Bug pattern="OPM_OVERLY_PERMISSIVE_METHOD"/>
+    </Match>
+
+    <!--
+        WEM_WEAK_EXCEPTION_MESSAGING on validateOffsetAndLengthToWrite's null-array guard. The
+        method now throws 'new NullPointerException("validateOffsetAndLengthToWrite: byte array
+        b must not be null")' directly instead of via Objects.requireNonNull — a behaviour-
+        identical change (same type, same message) made so OpenJML ESC can discharge the
+        exceptional_behavior obligation under the spec's nullable_by_default (see
+        StreamBuffer.jml). The message names the method and the offending parameter; there is no
+        further runtime context to add for a null argument, so the fb-contrib "weak message"
+        heuristic is a false positive here.
+    -->
+    <Match>
+        <Class name="net.ladenthin.streambuffer.StreamBuffer"/>
+        <Method name="validateOffsetAndLengthToWrite"/>
+        <Bug pattern="WEM_WEAK_EXCEPTION_MESSAGING"/>
+    </Match>
+
+    <!--
         trim() drains the buffer into a temporary ArrayDeque before
         consolidating it back. SpotBugs PSC_PRESIZE_COLLECTIONS suggests
         passing an initial capacity hint, but a tight bound here would
