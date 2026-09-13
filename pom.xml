@@ -766,6 +766,110 @@ SPDX-License-Identifier: Apache-2.0
             </build>
         </profile>
         <profile>
+            <!--
+                OpenJML runtime assertion checking (RAC): runs the EXISTING test suite against
+                RAC-instrumented classes so every JML contract in src/main/jml is checked
+                dynamically. Used by .github/workflows/formal-verification.yml; local recipe in
+                CLAUDE.md ("Formal verification").
+
+                Prerequisites (the workflow does both):
+                  1. `openjml -rac -d target/rac-classes ...` compiled the instrumented classes.
+                  2. -Dopenjml.home=<unzipped OpenJML dir> so jmlruntime.jar resolves.
+
+                Mechanics:
+                  - surefire's classesDirectory REPLACES target/classes with target/rac-classes on
+                    the test classpath (no fragile classpath-ordering tricks).
+                  - surefire forks OpenJML's OWN bundled JVM (${openjml.home}/jdk/bin/java) rather
+                    than the build JDK. This is REQUIRED, not an optimization: OpenJML's bundled
+                    java.util/java.lang specs evaluate in bigint math whatever the spec-math flag,
+                    so the RAC-instrumented bytecode references org.jmlspecs.lang.internal.bigint,
+                    a class that exists ONLY inside OpenJML's patched JDK image, not in
+                    jmlruntime.jar. A stock JVM dies with NoClassDefFoundError on the first
+                    instrumented call into a JDK method. The openjml.jdk.java property points at
+                    that JVM (CI passes -Dopenjml.jdk.java=$OPENJML_HOME/jdk/bin/java; the default
+                    derives it from openjml.home).
+                  - org.jmlspecs.openjml.rac=exception makes a violated contract THROW
+                    (org.jmlspecs.runtime.JmlAssertionError) instead of the default
+                    print-and-continue, so a broken spec fails the suite instead of scrolling by.
+                  - RAC classes are class-file 65 (OpenJML compiles at its own JDK 21 level). They
+                    live only under target/ and never reach the shipped jar, so the Java 8
+                    bytecode floor gate is unaffected.
+            -->
+            <id>jml-rac</id>
+            <properties>
+                <!-- Overridden on the CI command line with an absolute path; the default works
+                     for a local run that also sets -Dopenjml.home=<unzipped dir>. -->
+                <openjml.jdk.java>${openjml.home}/jdk/bin/java</openjml.jdk.java>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <jvm>${openjml.jdk.java}</jvm>
+                            <!--
+                                Override argLine to DROP the base @{argLine}: that late-replacement
+                                token is populated by the JaCoCo agent, and combining it with a
+                                custom <jvm> makes surefire's fork property handling NPE
+                                ("Properties.getProperty(...) is null"). Coverage of RAC-instrumented
+                                classes is meaningless anyway (the default pipeline measures it on
+                                the real classes), so no JaCoCo agent here.
+                            -->
+                            <argLine>-Xmx2g</argLine>
+                            <classesDirectory>${project.build.directory}/rac-classes</classesDirectory>
+                            <additionalClasspathElements>
+                                <additionalClasspathElement>${openjml.home}/jmlruntime.jar</additionalClasspathElement>
+                            </additionalClasspathElements>
+                            <systemPropertyVariables>
+                                <org.jmlspecs.openjml.rac>exception</org.jmlspecs.openjml.rac>
+                                <!--
+                                    Disable JUnit @Timeout enforcement for the RAC run only. RAC
+                                    instrumentation slows every method by an unbounded factor, so
+                                    the production wall-clock budget (StreamBufferTest's class-level
+                                    @Timeout(20s)) is meaningless here — a large-allocation test
+                                    (trim_respectsMaxAllocationSize_splitsLargeBuffer) blew past 20s
+                                    on the 2-core CI runner while passing well under it uninstrumented.
+                                    Correctness/contract checking is unaffected; only the timing gate
+                                    is lifted. JUnit reads this config parameter from a system property.
+                                -->
+                                <junit.jupiter.execution.timeout.mode>disabled</junit.jupiter.execution.timeout.mode>
+                            </systemPropertyVariables>
+                            <!--
+                                This excludes list REPLACES the pluginManagement one (Maven merges
+                                by element name), so the vmlens exclusion must be restated here.
+                                Three test types are additionally excluded from the RAC run:
+
+                                - StreamBufferArchitectureTest: its ArchUnit rules assert properties
+                                  of the PLAIN production bytecode (e.g. the main code depends on
+                                  nothing outside the JDK). RAC-instrumented classes legitimately
+                                  call into org.jmlspecs.runtime — expected instrumentation, not
+                                  production drift. The default pipeline enforces these on the real
+                                  classes.
+                                - StreamBufferLincheckTest: Lincheck instruments and transforms
+                                  bytecode for model checking; layered on top of RAC's own
+                                  instrumentation it deadlocks/hangs. Lincheck is the CONCURRENCY
+                                  layer and runs in the default pipeline; re-running it under RAC
+                                  adds no contract coverage.
+                                - (jcstress lives in **/jcstress/ and only runs under -Pjcstress via
+                                  exec-maven-plugin, so surefire never picks it up — no exclude
+                                  needed here.)
+
+                                RAC coverage of the contracts therefore comes from the behavioural
+                                suite (StreamBufferTest) and the jqwik properties
+                                (StreamBufferProperties), which exercise every specced method.
+                            -->
+                            <excludes>
+                                <exclude>**/vmlens/*.java</exclude>
+                                <exclude>**/StreamBufferArchitectureTest.java</exclude>
+                                <exclude>**/StreamBufferLincheckTest.java</exclude>
+                            </excludes>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
             <id>jcstress</id>
             <build>
                 <plugins>

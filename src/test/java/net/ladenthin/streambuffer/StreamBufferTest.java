@@ -2645,7 +2645,7 @@ public class StreamBufferTest {
             StreamBuffer sb = new StreamBuffer();
             // act
             // assert
-            assertThat(sb.clampToMaxInt((long) Integer.MAX_VALUE + 1), is(Integer.MAX_VALUE));
+            assertThat(StreamBuffer.clampToMaxInt((long) Integer.MAX_VALUE + 1), is(Integer.MAX_VALUE));
         }
 
         @DisplayName("clampToMaxInt(): value equal to max int — returns max int")
@@ -2655,7 +2655,7 @@ public class StreamBufferTest {
             StreamBuffer sb = new StreamBuffer();
             // act
             // assert
-            assertThat(sb.clampToMaxInt((long) Integer.MAX_VALUE), is(Integer.MAX_VALUE));
+            assertThat(StreamBuffer.clampToMaxInt((long) Integer.MAX_VALUE), is(Integer.MAX_VALUE));
         }
 
         @DisplayName("clampToMaxInt(): small value — returns value")
@@ -2665,7 +2665,7 @@ public class StreamBufferTest {
             StreamBuffer sb = new StreamBuffer();
             // act
             // assert
-            assertThat(sb.clampToMaxInt(42L), is(42));
+            assertThat(StreamBuffer.clampToMaxInt(42L), is(42));
         }
     }
 
@@ -2681,7 +2681,7 @@ public class StreamBufferTest {
             StreamBuffer sb = new StreamBuffer();
             // act
             // assert
-            assertThat(sb.decrementAvailableBytesBudget(9L, 4L), is(5L));
+            assertThat(StreamBuffer.decrementAvailableBytesBudget(9L, 4L), is(5L));
         }
     }
 
@@ -3566,7 +3566,7 @@ public class StreamBufferTest {
             final StreamBuffer sb = new StreamBuffer();
 
             // act — Verify arithmetic: 100 - 30 = 70, NOT 100 + 30 = 130 (kills MathMutator on - operator)
-            final long result = sb.decrementAvailableBytesBudget(100L, 30L);
+            final long result = StreamBuffer.decrementAvailableBytesBudget(100L, 30L);
 
             // assert
             assertThat(result, is(70L));
@@ -3579,7 +3579,7 @@ public class StreamBufferTest {
             final StreamBuffer sb = new StreamBuffer();
 
             // act — Test with large values to ensure arithmetic doesn't overflow
-            final long result = sb.decrementAvailableBytesBudget(1_000_000L, 500_000L);
+            final long result = StreamBuffer.decrementAvailableBytesBudget(1_000_000L, 500_000L);
 
             // assert
             assertThat(result, is(500_000L));
@@ -3593,10 +3593,11 @@ public class StreamBufferTest {
 
             // act & assert — Test max int clamping with various boundary values
             assertAll(
-                    () -> assertThat(sb.clampToMaxInt(Long.MAX_VALUE), is(Integer.MAX_VALUE)),
-                    () -> assertThat(sb.clampToMaxInt((long) Integer.MAX_VALUE), is(Integer.MAX_VALUE)),
-                    () -> assertThat(sb.clampToMaxInt((long) Integer.MAX_VALUE - 1), is(Integer.MAX_VALUE - 1)),
-                    () -> assertThat(sb.clampToMaxInt(1000L), is(1000)));
+                    () -> assertThat(StreamBuffer.clampToMaxInt(Long.MAX_VALUE), is(Integer.MAX_VALUE)),
+                    () -> assertThat(StreamBuffer.clampToMaxInt((long) Integer.MAX_VALUE), is(Integer.MAX_VALUE)),
+                    () -> assertThat(
+                            StreamBuffer.clampToMaxInt((long) Integer.MAX_VALUE - 1), is(Integer.MAX_VALUE - 1)),
+                    () -> assertThat(StreamBuffer.clampToMaxInt(1000L), is(1000)));
         }
 
         @DisplayName("trimCondition(): max buffer elements zero — never trims")
@@ -3736,12 +3737,12 @@ public class StreamBufferTest {
             assertAll(
                     () -> {
                         // Test: ceil(1001 / 1000) = 2
-                        long resultingChunks = sb.calculateResultingChunks(1001L, 1000L);
+                        long resultingChunks = StreamBuffer.calculateResultingChunks(1001L, 1000L);
                         assertThat(resultingChunks, is(2L)); // Kills + vs - mutation
                     },
                     () -> {
                         // Test: ceil(500 / 100) = 5
-                        long resultingChunks = sb.calculateResultingChunks(500L, 100L);
+                        long resultingChunks = StreamBuffer.calculateResultingChunks(500L, 100L);
                         assertThat(resultingChunks, is(5L));
                     });
         }
@@ -3757,17 +3758,17 @@ public class StreamBufferTest {
             assertAll(
                     () -> {
                         // When equal: 10 >= 10 → should skip (return true)
-                        boolean shouldSkip = sb.shouldSkipTrimDueToEdgeCase(10L, 10);
+                        boolean shouldSkip = StreamBuffer.shouldSkipTrimDueToEdgeCase(10L, 10);
                         assertThat(shouldSkip, is(true)); // Kills >= vs > mutation
                     },
                     () -> {
                         // When greater: 11 >= 10 → should skip (return true)
-                        boolean shouldSkip = sb.shouldSkipTrimDueToEdgeCase(11L, 10);
+                        boolean shouldSkip = StreamBuffer.shouldSkipTrimDueToEdgeCase(11L, 10);
                         assertThat(shouldSkip, is(true));
                     },
                     () -> {
                         // When less: 9 >= 10 → should not skip (return false)
-                        boolean shouldSkip = sb.shouldSkipTrimDueToEdgeCase(9L, 10);
+                        boolean shouldSkip = StreamBuffer.shouldSkipTrimDueToEdgeCase(9L, 10);
                         assertThat(shouldSkip, is(false)); // Kills >= vs > mutation
                     });
         }
@@ -3783,17 +3784,17 @@ public class StreamBufferTest {
             assertAll(
                     () -> {
                         // When zero: 0 <= 0 → should skip (return true)
-                        boolean shouldSkip = sb.shouldSkipTrimDueToInvalidMaxBufferElements(0);
+                        boolean shouldSkip = StreamBuffer.shouldSkipTrimDueToInvalidMaxBufferElements(0);
                         assertThat(shouldSkip, is(true)); // Kills <= vs < mutation
                     },
                     () -> {
                         // When negative: -1 <= 0 → should skip (return true)
-                        boolean shouldSkip = sb.shouldSkipTrimDueToInvalidMaxBufferElements(-1);
+                        boolean shouldSkip = StreamBuffer.shouldSkipTrimDueToInvalidMaxBufferElements(-1);
                         assertThat(shouldSkip, is(true));
                     },
                     () -> {
                         // When positive: 1 <= 0 → should not skip (return false)
-                        boolean shouldSkip = sb.shouldSkipTrimDueToInvalidMaxBufferElements(1);
+                        boolean shouldSkip = StreamBuffer.shouldSkipTrimDueToInvalidMaxBufferElements(1);
                         assertThat(shouldSkip, is(false)); // Kills <= vs < mutation
                     });
         }
@@ -3809,22 +3810,22 @@ public class StreamBufferTest {
             assertAll(
                     () -> {
                         // When zero: 0 < 2 → should skip (return true)
-                        boolean shouldSkip = sb.shouldSkipTrimDueToSmallBuffer(0);
+                        boolean shouldSkip = StreamBuffer.shouldSkipTrimDueToSmallBuffer(0);
                         assertThat(shouldSkip, is(true));
                     },
                     () -> {
                         // When one: 1 < 2 → should skip (return true)
-                        boolean shouldSkip = sb.shouldSkipTrimDueToSmallBuffer(1);
+                        boolean shouldSkip = StreamBuffer.shouldSkipTrimDueToSmallBuffer(1);
                         assertThat(shouldSkip, is(true)); // Kills < vs <= mutation
                     },
                     () -> {
                         // When two: 2 < 2 → should not skip (return false)
-                        boolean shouldSkip = sb.shouldSkipTrimDueToSmallBuffer(2);
+                        boolean shouldSkip = StreamBuffer.shouldSkipTrimDueToSmallBuffer(2);
                         assertThat(shouldSkip, is(false)); // Kills < vs <= mutation
                     },
                     () -> {
                         // When three: 3 < 2 → should not skip (return false)
-                        boolean shouldSkip = sb.shouldSkipTrimDueToSmallBuffer(3);
+                        boolean shouldSkip = StreamBuffer.shouldSkipTrimDueToSmallBuffer(3);
                         assertThat(shouldSkip, is(false));
                     });
         }
@@ -3840,17 +3841,17 @@ public class StreamBufferTest {
             assertAll(
                     () -> {
                         // When equal: 10 <= 10 → should skip (return true)
-                        boolean shouldSkip = sb.shouldSkipTrimDueToSufficientBuffer(10, 10);
+                        boolean shouldSkip = StreamBuffer.shouldSkipTrimDueToSufficientBuffer(10, 10);
                         assertThat(shouldSkip, is(true)); // Kills <= vs < mutation
                     },
                     () -> {
                         // When greater: 11 <= 10 → should not skip (return false)
-                        boolean shouldSkip = sb.shouldSkipTrimDueToSufficientBuffer(11, 10);
+                        boolean shouldSkip = StreamBuffer.shouldSkipTrimDueToSufficientBuffer(11, 10);
                         assertThat(shouldSkip, is(false)); // Kills <= vs < mutation
                     },
                     () -> {
                         // When less: 9 <= 10 → should skip (return true)
-                        boolean shouldSkip = sb.shouldSkipTrimDueToSufficientBuffer(9, 10);
+                        boolean shouldSkip = StreamBuffer.shouldSkipTrimDueToSufficientBuffer(9, 10);
                         assertThat(shouldSkip, is(true));
                     });
         }
@@ -3866,27 +3867,27 @@ public class StreamBufferTest {
             assertAll(
                     () -> {
                         // Both true: 100 > 0 AND 50 < 100 → should check (return true)
-                        boolean shouldCheck = sb.shouldCheckEdgeCase(100L, 50L);
+                        boolean shouldCheck = StreamBuffer.shouldCheckEdgeCase(100L, 50L);
                         assertThat(shouldCheck, is(true));
                     },
                     () -> {
                         // availableBytes zero: 0 > 0 AND 50 < 0 → should not check (return false)
-                        boolean shouldCheck = sb.shouldCheckEdgeCase(0L, 50L);
+                        boolean shouldCheck = StreamBuffer.shouldCheckEdgeCase(0L, 50L);
                         assertThat(shouldCheck, is(false)); // Kills > vs >= mutation on availableBytes
                     },
                     () -> {
                         // maxAllocSize >= availableBytes: 100 > 0 AND 100 < 100 → should not check (return false)
-                        boolean shouldCheck = sb.shouldCheckEdgeCase(100L, 100L);
+                        boolean shouldCheck = StreamBuffer.shouldCheckEdgeCase(100L, 100L);
                         assertThat(shouldCheck, is(false)); // Kills < vs <= mutation on maxAllocSize
                     },
                     () -> {
                         // maxAllocSize > availableBytes: 100 > 0 AND 150 < 100 → should not check (return false)
-                        boolean shouldCheck = sb.shouldCheckEdgeCase(100L, 150L);
+                        boolean shouldCheck = StreamBuffer.shouldCheckEdgeCase(100L, 150L);
                         assertThat(shouldCheck, is(false)); // Kills < vs <= mutation
                     },
                     () -> {
                         // availableBytes negative: -100 > 0 AND 50 < -100 → should not check (return false)
-                        boolean shouldCheck = sb.shouldCheckEdgeCase(-100L, 50L);
+                        boolean shouldCheck = StreamBuffer.shouldCheckEdgeCase(-100L, 50L);
                         assertThat(shouldCheck, is(false)); // Kills > vs >= mutation
                     });
         }
@@ -3998,7 +3999,7 @@ public class StreamBufferTest {
             // act - availableBytes == 0, maxAllocSize < availableBytes means both parts must be false
             // Test specifically for availableBytes > 0 boundary: when == 0, should be false
             // Even if maxAllocSize < availableBytes, availableBytes > 0 must be evaluated
-            final boolean result = sb.shouldCheckEdgeCase(0, Long.MAX_VALUE);
+            final boolean result = StreamBuffer.shouldCheckEdgeCase(0, Long.MAX_VALUE);
 
             // assert - should return false when availableBytes == 0 (boundary: > 0)
             // Mutated to >= would give: 0 >= 0 && MAX < 0 = true && false = false (same)
@@ -4016,7 +4017,7 @@ public class StreamBufferTest {
             // Tests: 1 > 0 (true) && 100 < 1 (false) = false
             // Mutated to >= 0: 1 >= 0 (true) && 100 < 1 (false) = false (same, still doesn't help)
             // Better approach: make BOTH conditions evaluate
-            final boolean result = sb.shouldCheckEdgeCase(1, 0);
+            final boolean result = StreamBuffer.shouldCheckEdgeCase(1, 0);
 
             // Test: 1 > 0 (true) && 0 < 1 (true) = true
             // This actually tests the positive case
@@ -4033,7 +4034,7 @@ public class StreamBufferTest {
             // 100 > 0 (true) && 100 < 100 (false) = false
             // Mutated to <=: 100 > 0 (true) && 100 <= 100 (true) = true
             // This mutation would be KILLED because result changes!
-            final boolean result = sb.shouldCheckEdgeCase(100, 100);
+            final boolean result = StreamBuffer.shouldCheckEdgeCase(100, 100);
 
             // assert - should return false when maxAllocSize == availableBytes (boundary: <)
             assertThat(result, is(false));
@@ -4047,7 +4048,7 @@ public class StreamBufferTest {
 
             // act - maxAllocSize > availableBytes means NOT <
             // 100 > 0 (true) && 101 < 100 (false) = false
-            final boolean result = sb.shouldCheckEdgeCase(100, 101);
+            final boolean result = StreamBuffer.shouldCheckEdgeCase(100, 101);
 
             // assert - should return false (maxAllocSize is greater, not less)
             assertThat(result, is(false));
@@ -4941,7 +4942,7 @@ public class StreamBufferTest {
             final StreamBuffer sb = new StreamBuffer();
 
             // act
-            final boolean result = sb.isAvailableBytesPositive(0);
+            final boolean result = StreamBuffer.isAvailableBytesPositive(0);
 
             // assert - boundary: > 0 means 0 is false
             assertThat(result, is(false));
@@ -4954,7 +4955,7 @@ public class StreamBufferTest {
             final StreamBuffer sb = new StreamBuffer();
 
             // act
-            final boolean result = sb.isAvailableBytesPositive(1);
+            final boolean result = StreamBuffer.isAvailableBytesPositive(1);
 
             // assert - boundary: > 0 means 1 is true
             assertThat(result, is(true));
@@ -4967,7 +4968,7 @@ public class StreamBufferTest {
             final StreamBuffer sb = new StreamBuffer();
 
             // act
-            final boolean result = sb.isAvailableBytesPositive(-100);
+            final boolean result = StreamBuffer.isAvailableBytesPositive(-100);
 
             // assert - boundary: > 0 means negative is false
             assertThat(result, is(false));
@@ -4980,7 +4981,7 @@ public class StreamBufferTest {
             final StreamBuffer sb = new StreamBuffer();
 
             // act - when maxAllocSize == availableBytes
-            final boolean result = sb.isMaxAllocSizeLessThanAvailable(100, 100);
+            final boolean result = StreamBuffer.isMaxAllocSizeLessThanAvailable(100, 100);
 
             // assert - boundary: < means equal is false
             assertThat(result, is(false));
@@ -4993,7 +4994,7 @@ public class StreamBufferTest {
             final StreamBuffer sb = new StreamBuffer();
 
             // act - when maxAllocSize < availableBytes
-            final boolean result = sb.isMaxAllocSizeLessThanAvailable(50, 100);
+            final boolean result = StreamBuffer.isMaxAllocSizeLessThanAvailable(50, 100);
 
             // assert - boundary: < means less than is true
             assertThat(result, is(true));
@@ -5006,7 +5007,7 @@ public class StreamBufferTest {
             final StreamBuffer sb = new StreamBuffer();
 
             // act - when maxAllocSize > availableBytes
-            final boolean result = sb.isMaxAllocSizeLessThanAvailable(100, 50);
+            final boolean result = StreamBuffer.isMaxAllocSizeLessThanAvailable(100, 50);
 
             // assert - boundary: < means greater than is false
             assertThat(result, is(false));
@@ -5019,7 +5020,7 @@ public class StreamBufferTest {
             final StreamBuffer sb = new StreamBuffer();
 
             // act - when availableBytes == currentMax
-            final boolean result = sb.shouldUpdateMaxObservedBytes(100, 100);
+            final boolean result = StreamBuffer.shouldUpdateMaxObservedBytes(100, 100);
 
             // assert - boundary: > means equal is false
             assertThat(result, is(false));
@@ -5032,7 +5033,7 @@ public class StreamBufferTest {
             final StreamBuffer sb = new StreamBuffer();
 
             // act - when availableBytes > currentMax
-            final boolean result = sb.shouldUpdateMaxObservedBytes(150, 100);
+            final boolean result = StreamBuffer.shouldUpdateMaxObservedBytes(150, 100);
 
             // assert - boundary: > means greater than is true
             assertThat(result, is(true));
@@ -5045,7 +5046,7 @@ public class StreamBufferTest {
             final StreamBuffer sb = new StreamBuffer();
 
             // act - when availableBytes < currentMax
-            final boolean result = sb.shouldUpdateMaxObservedBytes(50, 100);
+            final boolean result = StreamBuffer.shouldUpdateMaxObservedBytes(50, 100);
 
             // assert - boundary: > means less than is false
             assertThat(result, is(false));
@@ -5212,7 +5213,7 @@ public class StreamBufferTest {
 
             // act - call the pure decision function directly with parameters
             final boolean actualShouldTrim =
-                    sb.decideTrimExecution(bufferSize, maxBufferElements, availableBytes, maxAllocSize);
+                    StreamBuffer.decideTrimExecution(bufferSize, maxBufferElements, availableBytes, maxAllocSize);
 
             // assert
             assertThat(actualShouldTrim, is(expectedShouldTrim));
@@ -5308,42 +5309,42 @@ public class StreamBufferTest {
         @Test
         public void isAvailableBytesPositive_withZero_returnsFalse() {
             StreamBuffer sb = new StreamBuffer();
-            assertThat(sb.isAvailableBytesPositive(0), is(false));
+            assertThat(StreamBuffer.isAvailableBytesPositive(0), is(false));
         }
 
         @DisplayName("isAvailableBytesPositive(): with one — returns true")
         @Test
         public void isAvailableBytesPositive_withOne_returnsTrue() {
             StreamBuffer sb = new StreamBuffer();
-            assertThat(sb.isAvailableBytesPositive(1), is(true));
+            assertThat(StreamBuffer.isAvailableBytesPositive(1), is(true));
         }
 
         @DisplayName("isAvailableBytesPositive(): with negative — returns false")
         @Test
         public void isAvailableBytesPositive_withNegative_returnsFalse() {
             StreamBuffer sb = new StreamBuffer();
-            assertThat(sb.isAvailableBytesPositive(-1), is(false));
+            assertThat(StreamBuffer.isAvailableBytesPositive(-1), is(false));
         }
 
         @DisplayName("isMaxAllocSizeLessThanAvailable(): with less — returns true")
         @Test
         public void isMaxAllocSizeLessThanAvailable_withLess_returnsTrue() {
             StreamBuffer sb = new StreamBuffer();
-            assertThat(sb.isMaxAllocSizeLessThanAvailable(100, 200), is(true));
+            assertThat(StreamBuffer.isMaxAllocSizeLessThanAvailable(100, 200), is(true));
         }
 
         @DisplayName("isMaxAllocSizeLessThanAvailable(): with equal — returns false")
         @Test
         public void isMaxAllocSizeLessThanAvailable_withEqual_returnsFalse() {
             StreamBuffer sb = new StreamBuffer();
-            assertThat(sb.isMaxAllocSizeLessThanAvailable(100, 100), is(false));
+            assertThat(StreamBuffer.isMaxAllocSizeLessThanAvailable(100, 100), is(false));
         }
 
         @DisplayName("isMaxAllocSizeLessThanAvailable(): with greater — returns false")
         @Test
         public void isMaxAllocSizeLessThanAvailable_withGreater_returnsFalse() {
             StreamBuffer sb = new StreamBuffer();
-            assertThat(sb.isMaxAllocSizeLessThanAvailable(200, 100), is(false));
+            assertThat(StreamBuffer.isMaxAllocSizeLessThanAvailable(200, 100), is(false));
         }
 
         @DisplayName("shouldCheckEdgeCase(): with both conditions true — returns true")
@@ -5351,7 +5352,7 @@ public class StreamBufferTest {
         public void shouldCheckEdgeCase_withBothConditionsTrue_returnsTrue() {
             StreamBuffer sb = new StreamBuffer();
             // availableBytes > 0 AND maxAllocSize < availableBytes
-            assertThat(sb.shouldCheckEdgeCase(200, 100), is(true));
+            assertThat(StreamBuffer.shouldCheckEdgeCase(200, 100), is(true));
         }
 
         @DisplayName("shouldCheckEdgeCase(): with available bytes zero — returns false")
@@ -5359,7 +5360,7 @@ public class StreamBufferTest {
         public void shouldCheckEdgeCase_withAvailableBytesZero_returnsFalse() {
             StreamBuffer sb = new StreamBuffer();
             // availableBytes > 0 is false
-            assertThat(sb.shouldCheckEdgeCase(0, 100), is(false));
+            assertThat(StreamBuffer.shouldCheckEdgeCase(0, 100), is(false));
         }
 
         @DisplayName("shouldCheckEdgeCase(): with max alloc size equal — returns false")
@@ -5367,7 +5368,7 @@ public class StreamBufferTest {
         public void shouldCheckEdgeCase_withMaxAllocSizeEqual_returnsFalse() {
             StreamBuffer sb = new StreamBuffer();
             // maxAllocSize < availableBytes is false
-            assertThat(sb.shouldCheckEdgeCase(100, 100), is(false));
+            assertThat(StreamBuffer.shouldCheckEdgeCase(100, 100), is(false));
         }
 
         @DisplayName("shouldCheckEdgeCase(): with max alloc size greater — returns false")
@@ -5375,7 +5376,7 @@ public class StreamBufferTest {
         public void shouldCheckEdgeCase_withMaxAllocSizeGreater_returnsFalse() {
             StreamBuffer sb = new StreamBuffer();
             // maxAllocSize < availableBytes is false
-            assertThat(sb.shouldCheckEdgeCase(50, 100), is(false));
+            assertThat(StreamBuffer.shouldCheckEdgeCase(50, 100), is(false));
         }
     }
 
@@ -5694,7 +5695,7 @@ public class StreamBufferTest {
                         // (trim won't execute because maxBufferElements <= 0 is invalid)
                         assertThat(
                                 "Invalid maxBufferElements prevents trim",
-                                sb.decideTrimExecution(150, 0, 1500, 50),
+                                StreamBuffer.decideTrimExecution(150, 0, 1500, 50),
                                 is(false));
                     });
 

@@ -59,6 +59,85 @@ mvn -Pvmlens test
 ```
 The `vmlens` profile pulls in `com.vmlens:api` and runs the `vmlens-maven-plugin` during the `test` phase. Tests using `com.vmlens.api.AllInterleavings` are then driven through every possible thread interleaving. The profile is off by default — vmlens overhead is too high for every build.
 
+## Formal Verification
+
+Two layers, run in a **separate** CI pipeline (`.github/workflows/formal-verification.yml` —
+deliberately not part of the synchronous Publish pipeline and never a required check):
+
+1. **OpenJML ESC** (deductive proof, Z3): the 14 static sequential-core methods (2 validators +
+   12 pure helpers) are proven against full functional contracts.
+2. **OpenJML RAC**: the existing JUnit suite runs against RAC-instrumented classes
+   (violations throw), checking the static contracts plus the instance/stream-adapter contracts.
+3. **JPF interleavings** (`src/test/jpf/`, scheduled/dispatch CI job `jpf-interleavings`): Java
+   PathFinder exhaustively model-checks the concurrent read/write/close protocol. Requires JDK 11;
+   builds jpf-core from a pinned commit with a one-file `AtomicLong` model patch; the harness is
+   compiled at `--release 8` and run under JPF. Local recipe (Docker+JDK 11) in
+   `src/test/jpf/README.md`. Never touches the shipped jar.
+
+The `@GuardedBy("bufferLock")` lock discipline is gated separately by Error Prone in the default
+build. The Checker Framework Lock Checker was evaluated as a further layer and deferred — see
+TODO.md "Formal verification".
+
+**Local commands** (OpenJML 21.0.27 — a native Windows build exists since this release;
+`<openjml>` = unzipped release dir, `<cp>` = output of
+`mvn dependency:build-classpath -Dmdep.outputFile=... -DincludeScope=compile`):
+
+```bash
+# ESC — the --method list is the verified scope; it is mirrored in ESC_METHODS in the workflow
+<openjml>/openjml --esc --progress --timeout 300 --spec-math=bigint \
+  --class-path "<cp>" --specs-path src/main/jml \
+  --method "<ESC_METHODS from the workflow>" \
+  src/main/java/net/ladenthin/streambuffer/StreamBuffer.java
+
+# RAC — compile instrumented classes (Java math both sides), then run the suite against them.
+# The suite MUST fork OpenJML's own JVM (it carries the org.jmlspecs bigint runtime class that
+# the bundled JDK specs reference); the profile does this via -Dopenjml.jdk.java.
+<openjml>/openjml --rac --code-math=java --spec-math=java --class-path "<cp>" \
+  --specs-path src/main/jml -d target/rac-classes \
+  src/main/java/net/ladenthin/streambuffer/StreamBuffer.java
+mvn -P jml-rac -Dopenjml.home=<openjml> -Dopenjml.jdk.java=<openjml>/jdk/bin/java test
+```
+
+**Rules that keep this sound — read before touching `StreamBuffer.java` or the specs:**
+
+- Specs live ONLY in `src/main/jml/net/ladenthin/streambuffer/StreamBuffer.jml`. A `.jml` file
+  **replaces** all class-level JML in the `.java` (which therefore stays JML-free), and OpenJML
+  errors on any signature mismatch — so every signature change in `StreamBuffer.java` must be
+  mirrored there, and the verification workflow catches drift.
+- The 12 pure helpers are `static` **because instance-method proof obligations are undecidable
+  for Z3 in this class** (the non-static inner stream classes poison the receiver context —
+  measured, not theorized). New pure helpers must be static or they cannot join the ESC scope.
+- The ESC scope is guarded by an exact proof COUNT in the workflow (`ESC_EXPECTED_PROOFS`);
+  adding/removing a method from the scope means updating `ESC_METHODS` + the count together.
+- `validateOffsetAndLengthToWrite` and `calculateResultingChunks` are marked `code_java_math`
+  in the spec file: both deliberately rely on wrap semantics (overflow-guard idiom; wrap-back
+  at the ceiling-division boundary). Everything else is proven overflow-free under safe math.
+- The exception-message builder `newInvalidOffsetOrLengthToWriteException` carries an ASSUMED
+  (unproven) contract — string concatenation defeats the SMT encoding. Do not inline it back.
+- NO class invariants in the `.jml`: OpenJML 21.0.27's RAC crashes on invariants combined with
+  non-static inner classes ("no enclosing instance" AssertionError). Re-test on upgrades.
+- `//@ nullable_by_default` at the class head is load-bearing for RAC: without it JML's
+  non-null-by-default inserts an implicit non-null precondition on every reference parameter, so
+  the null-argument tests hit `JmlAssertionError.Precondition` instead of the specified NPE.
+  Non-null intent is still enforced where it matters via explicit `requires ... != null`.
+- `validateOffsetAndLengthToWrite` uses a manual `if (b == null) throw new NPE(...)` rather than
+  `Objects.requireNonNull`: under `nullable_by_default` the bundled `Objects.requireNonNull`
+  contract leaves ESC an unprovable ExceptionList goal. Behaviour is identical.
+- The stream logic lives in `private` OUTER methods (`availableClamped`, `readSingleByte`,
+  `readIntoArray`, `writeSingleByte`, `writeFromArray`); the inner `SBInputStream`/
+  `SBOutputStream` are pure delegating shells. Required: OpenJML RAC miscompiles outer-field
+  access from inside non-static inner classes (`NoSuchFieldError` at runtime). Do not move field
+  access back into the inner classes.
+- RAC forks OpenJML's OWN JVM (`-Dopenjml.jdk.java`), because the bundled JDK library specs pull
+  in `org.jmlspecs.lang.internal.bigint`, a class present only in OpenJML's patched JDK image.
+  The setup action also patches `jdk/release` to add the `JAVA_VERSION` key surefire needs to
+  fork that JVM.
+- Two bundled OpenJML JDK specs are known-broken and deleted at install time by
+  `.github/actions/setup-openjml` (`ArrayDeque.jml`: undeclared `containsNull`;
+  `atomic/AtomicLong.jml`: RAC reads the private field `value` → `IllegalAccessError`).
+- RAC classes are class-file 65 and live only under `target/rac-classes` — they never enter the
+  shipped jar, so the Java 8 bytecode floor is unaffected.
+
 ## Architecture
 
 `StreamBuffer` is a single-class Java library (`net.ladenthin.streambuffer`) that connects an `OutputStream` and `InputStream` through a dynamic FIFO queue — solving the fixed-buffer and cross-thread-deadlock limitations of Java's `PipedInputStream`/`PipedOutputStream`.

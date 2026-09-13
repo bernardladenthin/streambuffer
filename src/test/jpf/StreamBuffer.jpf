@@ -1,0 +1,22 @@
+# SPDX-FileCopyrightText: 2014-2026 Bernard Ladenthin <bernard.ladenthin@gmail.com>
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+# JPF run configuration for the StreamBuffer concurrency harness. Consumed by RunJPF.jar in the
+# jpf-interleavings CI job and by the local Docker recipe in README.md. The sibling directories it
+# references (out/, streambuffer-classes/, lib/) are assembled next to this file at run time — they
+# are build outputs, not checked in.
+target = net.ladenthin.streambuffer.jpf.JpfStreamBufferHarness
+
+# classpath (all relative to this .jpf's directory):
+#   out/                 - the harness, compiled with `javac --release 8`
+#   streambuffer-classes - the Java-8 production bytecode (a copy of target/classes/net)
+#   lib/*.jar            - the annotation types the production bytecode references
+#                          (checker-qual/jspecify/error-prone; RUNTIME-retained, so JPF resolves
+#                          them during class loading — copied to stable unversioned names)
+classpath = ${config_path}/out;${config_path}/streambuffer-classes;${config_path}/lib/checker-qual.jar;${config_path}/lib/jspecify.jar;${config_path}/lib/error-prone-annotations.jar
+
+# The default JPF search enumerates every relevant thread interleaving and reports deadlocks,
+# uncaught exceptions, and assertion violations. The harness oracle uses explicit throws (not Java
+# `assert`, which JPF does not reliably enable for the SUT), so it is caught regardless of this flag.
+vm.enable_assertions = true

@@ -25,6 +25,16 @@
 
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*
+# heap dumps (HeapDumpOnOutOfMemoryError, surefire -Xmx cap, ad-hoc RAC/test forks)
+*.hprof
+
+# JPF interleaving check — build outputs assembled next to src/test/jpf/StreamBuffer.jpf at run
+# time, plus a locally cloned jpf-core. None of it is checked in.
+/jpf-core/
+src/test/jpf/out/
+src/test/jpf/streambuffer-classes/
+src/test/jpf/lib/
+src/test/jpf/jpf-output.log
 
 /target/
 /bin/

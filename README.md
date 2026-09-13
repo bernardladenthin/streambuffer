@@ -411,6 +411,13 @@ Test coverage includes:
 - Thread interruption during blocked reads (wraps `InterruptedException` in `IOException`)
 - Concurrent read/write stress tests
 - Parallel close without deadlock
+- Deadlock-freedom of every blocking entry point, stress-checked with jcstress `Mode.Termination`
+  (`-Pjcstress`): a thread parked in `read()`, in the second wait phase of `read(byte[], off, len)`,
+  or in `waitForAtLeast(...)` is always released by both a concurrent `write` and a concurrent
+  `close`
+- Exhaustive thread-interleaving model check of the read/write/close protocol with Java PathFinder
+  (`src/test/jpf/`, scheduled CI job + local Docker recipe) — the erschöpfende counterpart to the
+  jcstress stress tests
 - Signal/slot notification via external semaphores on write and all close paths
 - `removeSignal(null)` returning `false` without throwing
 - `addSignal(null)` throwing `NullPointerException`
@@ -425,6 +432,34 @@ Test coverage includes:
 - Configuration changes during active trim (`setMaxBufferElements`, `setMaxAllocationSize`) — verified not to affect running trim
 - Concurrent close during active trim — no exceptions or deadlock
 - `decideTrimExecution` pure function — comprehensive table-driven tests covering all boundary conditions and the smart-skip edge case
+
+## Formal Verification
+
+`StreamBuffer` carries machine-checked JML specifications
+([`src/main/jml/net/ladenthin/streambuffer/StreamBuffer.jml`](./src/main/jml/net/ladenthin/streambuffer/StreamBuffer.jml)),
+verified in a separate CI pipeline
+([`formal-verification.yml`](./.github/workflows/formal-verification.yml)) in two layers:
+
+- **Deductive proof — OpenJML ESC (Z3).** The complete static, sequential core is *proven*
+  against full functional contracts: both offset/length validators — including the classic
+  `(off + len) < 0` integer-overflow guard, proven equivalent to the clean bounds condition
+  under Java wrap semantics — and the twelve static trim-decision/arithmetic helpers, among
+  them the ceiling division in `calculateResultingChunks` (proven against its multiplicative
+  characterization `m·(⌈a/m⌉−1) < a ≤ m·⌈a/m⌉`, including the wrap-around boundary
+  `a = Long.MAX_VALUE − m + 1`) and the full decision tree of `decideTrimExecution`.
+- **Runtime assertion checking — OpenJML RAC.** The entire JUnit suite additionally runs
+  against RAC-instrumented classes (`mvn -P jml-rac`); every JML contract — the proven static
+  ones plus runtime contracts on the instance API and the two stream adapters — is then
+  checked at runtime and a violation throws instead of scrolling by.
+
+Concurrency itself is outside the deductive scope by JML doctrine (JML specifies sequential
+behavior; OpenJML does not model `volatile` or monitors) and is covered empirically by the
+Lincheck, jcstress and vmlens suites listed above, plus an exhaustive Java PathFinder
+interleaving model check of the read/write/close protocol (`src/test/jpf/`); the lock-holding
+discipline on the FIFO deque is additionally gated by Error Prone's `@GuardedBy` check in the
+ordinary build. The scope rationale — with citations to the published case studies that made the
+same split (LinkedList/TACAS 2020, IdentityHashMap/iFM 2022) — lives in the header of the
+specification file.
 
 ### Contributors: do not upgrade jqwik past 1.9.3
 
