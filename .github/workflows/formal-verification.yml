@@ -235,21 +235,19 @@ jobs:
           set -euo pipefail
           export JAVA_HOME="$JAVA_HOME_21_X64"
           mvn -B --no-transfer-progress -DskipTests -Denforcer.skip=true compile
-          # Resolve the compile classpath (includes the optional checker-qual/jspecify/error-prone
-          # annotation jars the production bytecode references) and stage them under stable names.
-          mvn -B --no-transfer-progress -q dependency:build-classpath \
-            -Dmdep.outputFile=target/compile-cp.txt -DincludeScope=compile
+          # Copy the compile-scope dependencies (incl. the optional checker-qual/jspecify/
+          # error-prone annotation jars the production bytecode references) into one directory,
+          # then stage the three under stable unversioned names for the .jpf classpath. Using
+          # copy-dependencies + globs rather than parsing a classpath string keeps this robust
+          # across platforms and dependency-version bumps.
+          mvn -B --no-transfer-progress dependency:copy-dependencies \
+            -DincludeScope=compile -DoutputDirectory=target/anno
+          echo "== resolved dependency jars =="; ls -1 target/anno
           mkdir -p src/test/jpf/lib
-          tr ':;' '\n\n' < target/compile-cp.txt | while read -r jar; do
-            case "$jar" in
-              *checker-qual*)            cp "$jar" src/test/jpf/lib/checker-qual.jar ;;
-              *jspecify*)                cp "$jar" src/test/jpf/lib/jspecify.jar ;;
-              *error_prone_annotations*) cp "$jar" src/test/jpf/lib/error-prone-annotations.jar ;;
-            esac
-          done
-          test -f src/test/jpf/lib/checker-qual.jar
-          test -f src/test/jpf/lib/jspecify.jar
-          test -f src/test/jpf/lib/error-prone-annotations.jar
+          cp target/anno/checker-qual-*.jar            src/test/jpf/lib/checker-qual.jar
+          cp target/anno/jspecify-*.jar                src/test/jpf/lib/jspecify.jar
+          cp target/anno/error_prone_annotations-*.jar src/test/jpf/lib/error-prone-annotations.jar
+          echo "== staged annotation jars =="; ls -1 src/test/jpf/lib
       - name: Cache jpf-core build
         id: jpf-cache
         uses: actions/cache@v6
