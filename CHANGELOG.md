@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cancellable pipeline start-gate via a `startgate` GitHub Environment with configurable wait timer.
 
 ### Changed
+- Build and test tooling bumped to latest stable in step with the sibling repos: spotless 3.10.2 → 3.10.3,
+  palantir-java-format 2.98.0 → 2.99.0, NullAway 0.14.1 → 0.14.2, archunit-junit5 1.5.0 → 1.5.1.
 - Build plugins bumped to latest stable: `com.diffplug.spotless:spotless-maven-plugin` 3.9.0 → 3.10.0,
   `com.github.spotbugs:spotbugs-maven-plugin` 4.10.3.0 → 4.10.4.0 (restores parity with the
   cross-repo tool-version matrix).
