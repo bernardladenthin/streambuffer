@@ -133,9 +133,18 @@ public class StreamBuffer implements Closeable {
     private final AtomicLong totalBytesRead = new AtomicLong();
 
     /**
-     * Maximum size of a single byte array during consolidation. Default {@link Integer#MAX_VALUE}.
+     * Largest {@code byte[]} length this class allocates: {@code Integer.MAX_VALUE - 8}.
+     * Same value as {@code jdk.internal.util.ArraysSupport.SOFT_MAX_ARRAY_LENGTH}, mirrored
+     * because that class is JDK-internal (not exported, absent on Java 8).
+     * Reason: VMs reserve array header words; HotSpot rejects {@code Integer.MAX_VALUE} and
+     * {@code Integer.MAX_VALUE - 1} with "Requested array size exceeds VM limit", on any heap size.
      */
-    private volatile long maxAllocationSize = Integer.MAX_VALUE;
+    static final int MAX_ARRAY_LENGTH = Integer.MAX_VALUE - 8;
+
+    /**
+     * Maximum size of a single byte array during consolidation. Default {@link #MAX_ARRAY_LENGTH}.
+     */
+    private volatile long maxAllocationSize = MAX_ARRAY_LENGTH;
 
     /**
      * Flag set to true while trim is rearranging internal buffers.
@@ -258,7 +267,8 @@ public class StreamBuffer implements Closeable {
     /**
      * Set the maximum size of a single byte array allocated during {@link #trim()}.
      * When trim consolidates the buffer, it splits data into chunks respecting
-     * this limit. Default is {@link Integer#MAX_VALUE}.
+     * this limit. Default is {@link #MAX_ARRAY_LENGTH} ({@code Integer.MAX_VALUE - 8});
+     * larger values are clamped to it.
      *
      * @param maxSize maximum allocation size in bytes. Must be positive.
      * @throws IllegalArgumentException if maxSize is not positive.
@@ -267,7 +277,7 @@ public class StreamBuffer implements Closeable {
         if (maxSize <= 0) {
             throw new IllegalArgumentException("maxAllocationSize must be positive but was " + maxSize);
         }
-        this.maxAllocationSize = maxSize;
+        this.maxAllocationSize = Math.min(maxSize, MAX_ARRAY_LENGTH);
     }
 
     /**
@@ -652,7 +662,7 @@ public class StreamBuffer implements Closeable {
      *
      * If availableBytes ever exceeds Integer.MAX_VALUE (e.g., 5GB+ of buffered data):
      * 1. This method returns Integer.MAX_VALUE (~2.1GB)
-     * 2. The trim() loop reads Integer.MAX_VALUE bytes in one iteration
+     * 2. The trim() loop reads at most maxAllocationSize (&#x2264; MAX_ARRAY_LENGTH) bytes per iteration
      * 3. Loop condition (available > 0) allows continuation
      * 4. Next iteration calls available() again, reads remaining bytes
      * 5. Process repeats until all availableBytes are consolidated
