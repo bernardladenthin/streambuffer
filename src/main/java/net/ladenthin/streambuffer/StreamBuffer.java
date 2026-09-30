@@ -29,6 +29,15 @@ public class StreamBuffer implements Closeable {
             "Invalid offset or length given to validateOffsetAndLengthToWrite.";
 
     /**
+     * Largest {@code byte[]} length this class allocates: {@code Integer.MAX_VALUE - 8}.
+     * Same value as {@code jdk.internal.util.ArraysSupport.SOFT_MAX_ARRAY_LENGTH}, mirrored
+     * because that class is JDK-internal (not exported, absent on Java 8).
+     * Reason: VMs reserve array header words; HotSpot rejects {@code Integer.MAX_VALUE} and
+     * {@code Integer.MAX_VALUE - 1} with "Requested array size exceeds VM limit", on any heap size.
+     */
+    static final int MAX_ARRAY_LENGTH = Integer.MAX_VALUE - 8;
+
+    /**
      * An object to get an unique access to the {@link #buffer}. It is needed to
      * get an exclusive access for read and write operations.
      */
@@ -131,15 +140,6 @@ public class StreamBuffer implements Closeable {
      * See {@link #totalBytesWritten} for the rationale.
      */
     private final AtomicLong totalBytesRead = new AtomicLong();
-
-    /**
-     * Largest {@code byte[]} length this class allocates: {@code Integer.MAX_VALUE - 8}.
-     * Same value as {@code jdk.internal.util.ArraysSupport.SOFT_MAX_ARRAY_LENGTH}, mirrored
-     * because that class is JDK-internal (not exported, absent on Java 8).
-     * Reason: VMs reserve array header words; HotSpot rejects {@code Integer.MAX_VALUE} and
-     * {@code Integer.MAX_VALUE - 1} with "Requested array size exceeds VM limit", on any heap size.
-     */
-    static final int MAX_ARRAY_LENGTH = Integer.MAX_VALUE - 8;
 
     /**
      * Maximum size of a single byte array during consolidation. Default {@link #MAX_ARRAY_LENGTH}.
