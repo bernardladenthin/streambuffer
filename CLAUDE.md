@@ -209,7 +209,7 @@ its deliverable is the plain library jar, not a fat jar — but it runs the same
 dependency cannot change that quietly.
 
 **The gate: `.github/verify-bytecode-version.sh`.** Kept **byte-identical** across java-llama.cpp /
-BitcoinAddressFinder / streambuffer / srcmorph (checksum table in `workspace/crossrepostatus.md`).
+BitcoinAddressFinder / streambuffer / srcmorph (listed in `.github/shared-files.sha256`, checked by the `shared-files` job).
 It opens every `.class` in every jar it is given and fails on any whose class-file major version
 exceeds `--max-major`:
 
@@ -239,6 +239,20 @@ Java / javadoc source level to ≥ 9, read**
 backstop — added because it previously had none. Convention + the `excludedScopes=[test,provided]`
 enforcer default gotcha are in
 [`../workspace/policies/dependency-convergence-pinning.md`](../workspace/policies/dependency-convergence-pinning.md).
+
+## Shared files and the release gate (`shared-files` job)
+
+Files kept byte-identical with java-llama.cpp, BitcoinAddressFinder, srcmorph and streambuffer are
+listed with their SHA-256 in **`.github/shared-files.sha256`** — the reference for what must stay
+equal. The `shared-files` job of `publish.yml` (identical in all four repositories, gating both
+publish jobs) fails when a listed file changed here alone and warns when another repository's
+default branch lists it with a different hash. To change a shared file, change every copy, then run
+`python3 .github/check-shared-files.py --write` in each repository. The shared build-check library
+(`.github/buildcheck/`, stdlib-only Python with unit tests: `python3 -m unittest discover -s
+.github/buildcheck/tests -t .github`) also runs **`check-release-gate.py`**: every job must gate both
+publish jobs unless `.github/release-gate-exemptions.txt` names it with a reason. Details and the
+reasoning (copies with a checksum rather than a shared actions repository):
+[`../workspace/crossrepostatus.md`](../workspace/crossrepostatus.md), "Cross-repo byte-identical files".
 
 ## Open TODOs
 
