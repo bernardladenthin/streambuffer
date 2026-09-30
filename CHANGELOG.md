@@ -28,6 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI `publish.yml`: `softprops/action-gh-release` bumped from v2 to v3.
 - CI `publish.yml`: `org.codehaus.mojo:exec-maven-plugin` bumped to 3.6.3.
 - Release Process prompt template moved from `CHANGELOG.md` to `docs/RELEASE.md`.
+- `maxAllocationSize` defaults to `Integer.MAX_VALUE - 8` (was `Integer.MAX_VALUE`);
+  `setMaxAllocationSize` clamps larger values to it.
+
+### Fixed
+- `trim()` with more than 2 GB buffered no longer allocates `new byte[Integer.MAX_VALUE]`, which the
+  JVM always rejects ("Requested array size exceeds VM limit"). Allocations are capped at
+  `Integer.MAX_VALUE - 8`, the JDK's `SOFT_MAX_ARRAY_LENGTH`.
 
 ## [1.2.0] - 2026-05-11
 
