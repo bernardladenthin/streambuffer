@@ -3219,9 +3219,31 @@ public class StreamBufferTest {
     @DisplayName("maxAllocationSize: getter, setter, trim behavior")
     class MaxAllocationSizeTests {
 
-        @DisplayName("maxAllocationSize(): default value — is integer max value")
+        static Stream<Arguments> aboveMaxArrayLength() {
+            return Stream.of(
+                    Arguments.of((long) StreamBuffer.MAX_ARRAY_LENGTH + 1), // boundary
+                    Arguments.of((long) Integer.MAX_VALUE - 1), // HotSpot VM limit
+                    Arguments.of((long) Integer.MAX_VALUE), // old default
+                    Arguments.of(Long.MAX_VALUE));
+        }
+
+        static Stream<Arguments> atOrBelowMaxArrayLength() {
+            return Stream.of(
+                    Arguments.of((long) StreamBuffer.MAX_ARRAY_LENGTH), // boundary
+                    Arguments.of((long) StreamBuffer.MAX_ARRAY_LENGTH - 1),
+                    Arguments.of(1L));
+        }
+
+        @DisplayName("MAX_ARRAY_LENGTH: equals JDK SOFT_MAX_ARRAY_LENGTH (Integer.MAX_VALUE - 8)")
         @Test
-        public void maxAllocationSize_defaultValue_isIntegerMaxValue() {
+        public void maxArrayLength_value_isIntegerMaxValueMinusEight() {
+            // assert
+            assertThat(StreamBuffer.MAX_ARRAY_LENGTH, is(Integer.MAX_VALUE - 8));
+        }
+
+        @DisplayName("maxAllocationSize(): default value — is MAX_ARRAY_LENGTH")
+        @Test
+        public void maxAllocationSize_defaultValue_isMaxArrayLength() {
             // arrange
             StreamBuffer sb = new StreamBuffer();
 
@@ -3229,7 +3251,35 @@ public class StreamBufferTest {
             long maxSize = sb.getMaxAllocationSize();
 
             // assert
-            assertThat(maxSize, is((long) Integer.MAX_VALUE));
+            assertThat(maxSize, is((long) StreamBuffer.MAX_ARRAY_LENGTH));
+        }
+
+        @DisplayName("setMaxAllocationSize(): above MAX_ARRAY_LENGTH — clamped to MAX_ARRAY_LENGTH")
+        @ParameterizedTest
+        @MethodSource("aboveMaxArrayLength")
+        public void setMaxAllocationSize_aboveMaxArrayLength_clamped(final long maxSize) {
+            // arrange
+            StreamBuffer sb = new StreamBuffer();
+
+            // act
+            sb.setMaxAllocationSize(maxSize);
+
+            // assert
+            assertThat(sb.getMaxAllocationSize(), is((long) StreamBuffer.MAX_ARRAY_LENGTH));
+        }
+
+        @DisplayName("setMaxAllocationSize(): at / below MAX_ARRAY_LENGTH — kept as set")
+        @ParameterizedTest
+        @MethodSource("atOrBelowMaxArrayLength")
+        public void setMaxAllocationSize_atOrBelowMaxArrayLength_kept(final long maxSize) {
+            // arrange
+            StreamBuffer sb = new StreamBuffer();
+
+            // act
+            sb.setMaxAllocationSize(maxSize);
+
+            // assert
+            assertThat(sb.getMaxAllocationSize(), is(maxSize));
         }
 
         @DisplayName("maxAllocationSize(): set and get — returns set value")

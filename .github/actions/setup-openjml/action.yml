@@ -57,6 +57,7 @@ runs:
       #   - concurrent/atomic/AtomicLong.jml: RAC-generated checks read the private field
       #     AtomicLong.value across the module boundary; every test touching the
       #     statistics counters then dies with java.lang.IllegalAccessError.
+      #     Upstream fix: OpenJML/Specs#29 (+ test OpenJML/OpenJML#982); drop this rm once released.
       run: |
         set -euo pipefail
         rm "$RUNNER_TEMP/openjml/specs/java/util/ArrayDeque.jml"
