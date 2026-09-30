@@ -114,8 +114,11 @@ mvn -P jml-rac -Dopenjml.home=<openjml> -Dopenjml.jdk.java=<openjml>/jdk/bin/jav
   at the ceiling-division boundary). Everything else is proven overflow-free under safe math.
 - The exception-message builder `newInvalidOffsetOrLengthToWriteException` carries an ASSUMED
   (unproven) contract — string concatenation defeats the SMT encoding. Do not inline it back.
-- NO class invariants in the `.jml`: OpenJML 21.0.27's RAC crashes on invariants combined with
-  non-static inner classes ("no enclosing instance" AssertionError). Re-test on upgrades.
+- NO class invariants in the `.jml`: adding instance invariants to this class made OpenJML 21.0.27's
+  RAC abort with a catastrophic javac `Lower` AssertionError ("no enclosing instance"). This was
+  NOT minimally reproducible (invariant + inner classes alone compiles fine — see TODO.md), so it
+  may be an artifact of a specific spec construct rather than a clean OpenJML bug; invariants stay
+  omitted defensively. Re-test on upgrades.
 - `//@ nullable_by_default` at the class head is load-bearing for RAC: without it JML's
   non-null-by-default inserts an implicit non-null precondition on every reference parameter, so
   the null-argument tests hit `JmlAssertionError.Precondition` instead of the specified NPE.
@@ -134,7 +137,9 @@ mvn -P jml-rac -Dopenjml.home=<openjml> -Dopenjml.jdk.java=<openjml>/jdk/bin/jav
   fork that JVM.
 - Two bundled OpenJML JDK specs are known-broken and deleted at install time by
   `.github/actions/setup-openjml` (`ArrayDeque.jml`: undeclared `containsNull`;
-  `atomic/AtomicLong.jml`: RAC reads the private field `value` → `IllegalAccessError`).
+  `atomic/AtomicLong.jml`: RAC reads the private field `value` → `IllegalAccessError`;
+  upstream fix [OpenJML/Specs#29](https://github.com/OpenJML/Specs/pull/29) + test
+  [OpenJML/OpenJML#982](https://github.com/OpenJML/OpenJML/pull/982), both open).
 - RAC classes are class-file 65 and live only under `target/rac-classes` — they never enter the
   shipped jar, so the Java 8 bytecode floor is unaffected.
 

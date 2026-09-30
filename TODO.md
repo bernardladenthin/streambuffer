@@ -34,12 +34,36 @@ annotated, so everything below is genuinely still open.
     reporting upstream (its native peer already implements the methods the stub model never
     declared). Possible extension: a second harness for the array-read / `waitForAtLeast` blocking
     paths (jcstress already covers those; JPF would make them exhaustive too).
-  - **Report the three OpenJML defects upstream** (all reproduced on 21.0.27, all documented in
-    the spec-file header / setup-openjml action): bundled `ArrayDeque.jml` references undeclared
-    `containsNull`; bundled `atomic/AtomicLong.jml` makes RAC emit an access to the private field
-    `AtomicLong.value` (`IllegalAccessError` at test runtime); RAC crashes with a javac `Lower`
-    AssertionError ("no enclosing instance") when a class with non-static inner classes declares
-    any instance invariant.
+  - **Report the OpenJML bundled-spec defects upstream** (both reproduced on 21.0.27 with a
+    minimal standalone class — the reproducers live in this session's notes, re-create before
+    filing):
+    - `java/util/ArrayDeque.jml:30` has an ungated `//@ instance public invariant !containsNull;`,
+      but `containsNull` is declared only in `java/lang/Iterable.jml` behind a `-RAC` key (and
+      carries the maintainers' own `// FIXME - get rid of this`). So under `openjml --rac` the
+      symbol is undeclared and RAC-compiling any ArrayDeque-using class fails with
+      "cannot find symbol: containsNull". ESC is unaffected (it keeps the `-RAC`-gated
+      declaration). Confirmed with a 4-line class.
+    - `java/util/concurrent/atomic/AtomicLong.jml` keeps `value`-referencing clauses that are not
+      `-RAC`-gated (e.g. line 16 `ensures value == v`), so RAC emits a direct read of the private
+      `java.base` field `AtomicLong.value`; running the instrumented class on a stock modular JVM
+      throws `IllegalAccessError` (compile succeeds, run fails). Confirmed with a 5-line class.
+      Also fails on OpenJML's own bundled JVM and via `openjml-java` (re-checked 2026-09-29).
+      The maintainers already `-RAC`-gate most `value` clauses → incomplete-guard defect.
+      Same defect in `AtomicInteger.jml` / `AtomicBoolean.jml`.
+      **Reported (2026-09-30), awaiting maintainer review:**
+      [OpenJML/Specs#29](https://github.com/OpenJML/Specs/pull/29) (fix for all three, base
+      `master-21`) + [OpenJML/OpenJML#982](https://github.com/OpenJML/OpenJML/pull/982)
+      (testspecs, base `master-21`). Verified locally: streambuffer RAC suite green WITH the
+      fixed `AtomicLong.jml` (285/285), red with the original (258/285 `IllegalAccessError`).
+      Once an OpenJML release ships it: drop the `rm` in `.github/actions/setup-openjml`.
+  - **NOT a confirmed OpenJML bug (do not report yet):** during this work RAC once aborted with a
+    catastrophic javac `Lower` AssertionError ("no enclosing instance of type
+    StreamBuffer.SBInputStream") when the `.jml` declared instance invariants on the class with the
+    non-static inner stream classes. That crash was real but could NOT be reproduced minimally
+    (invariant + inner class, invariant + inner class extending InputStream, and invariant +
+    eager inner-class-instance fields all compiled cleanly). Until a minimal reproducer exists it
+    is unclear whether it is an OpenJML defect or an artifact of some specific spec construct;
+    the invariants stay omitted defensively regardless. Isolate before filing.
   - **Deeper ESC — instance-method / trim() functional correctness (parked, revisit).** Today
     ESC proves the 14 static helpers; the instance methods and trim() are RAC-only. A full
     functional proof (e.g. a ghost model sequence for the deque with the invariant

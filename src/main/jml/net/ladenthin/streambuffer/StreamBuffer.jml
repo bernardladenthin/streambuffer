@@ -83,10 +83,13 @@ public class StreamBuffer implements Closeable {
 
     // ---------------------------------------------------------------------------------------
     // NO class invariants — deliberate, and load-bearing for the RAC layer:
-    // `openjml --rac` (21.0.27) crashes with "no enclosing instance of type
-    // StreamBuffer.SBInputStream in scope" (javac Lower AssertionError, exit 4) as soon as
-    // this class declares any instance invariant, because the generated invariant checks
-    // interact badly with the non-static inner stream classes. The candidate invariants
+    // adding instance invariants to THIS class made `openjml --rac` (21.0.27) abort with
+    // "no enclosing instance of type StreamBuffer.SBInputStream in scope" (javac Lower
+    // AssertionError, exit 4) — the generated invariant checks interact badly with the
+    // non-static inner stream classes. NB: this was not reproducible in isolation (a bare
+    // invariant + inner class compiles fine), so it may be an artifact of a specific spec
+    // construct rather than a clean OpenJML bug (see TODO.md); the invariants stay omitted
+    // defensively either way. The candidate invariants
     // (0 <= availableBytes, 0 <= positionAtCurrentBufferEntry, 1 <= maxAllocationSize,
     // 0 <= maxObservedBytes) would have been RAC-only value anyway — the ESC layer proves
     // static methods, which never see instance state. Their content is still enforced
