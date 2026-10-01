@@ -34,6 +34,14 @@ annotated, so everything below is genuinely still open.
     reporting upstream (its native peer already implements the methods the stub model never
     declared). Possible extension: a second harness for the array-read / `waitForAtLeast` blocking
     paths (jcstress already covers those; JPF would make them exhaustive too).
+  - **OpenJML 21.0.28: bump once its binaries are published.** The tag appeared on 2026-10-01 with
+    only GitHub's source archives attached -- no `openjml-ubuntu-24.04-21.0.28.zip`, so there is
+    nothing `setup-openjml` could download or hash yet. When the asset is there: update
+    `OPENJML_VERSION` + `OPENJML_SHA256` in `formal-verification.yml`, and expect real work rather
+    than a version edit -- the release changes the default solver to z3 5.1.0 (from z3 4.x), which
+    can move `ESC_EXPECTED_PROOFS`, and its notes do not say whether the two bundled specs the setup
+    action deletes (`ArrayDeque.jml`, `AtomicLong.jml`) or the missing `JAVA_VERSION` key were fixed.
+    The `rm` without `-f` fails loudly if they are gone, which is the intended signal.
   - **Report the OpenJML bundled-spec defects upstream** (both reproduced on 21.0.27 with a
     minimal standalone class — the reproducers live in this session's notes, re-create before
     filing):
