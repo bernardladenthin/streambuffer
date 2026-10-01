@@ -28,6 +28,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `.github/shared-files.sha256` entry `.github/workflows/publish.yml#<job>` hashes one job (`startgate`,
   `shared-files`, `verify-signing-key`, `check-snapshot`, `check-tag`, and where present
   `verify-signing-key-gradle`, `github-snapshot`, `github-release`).
+- **More shared files, and files identical up to the repository name**: a shared-files entry ending
+  in `?repo` is hashed with the repository's name replaced by `{repo}`. Added: `.editorconfig`,
+  `.gitattributes` (now with `*.gguf binary` everywhere), `FUNDING.yml`, `CODEOWNERS`, the license texts,
+  `SUPPORT.md`, `ISSUE_TEMPLATE/config.yml` and further files listed in `.github/shared-files.sha256`;
+  the signing self-test now runs on Gradle 9.8.0 in all four repositories.
 - **The JDK is named once, in `.java-version`**: every workflow reads it through setup-java's
   `java-version-file` (the `JAVA_VERSION` env and the literal `21`s are gone); `.java-version` and
   `codeql.yml` are now byte-identical in all four sibling repositories and in the shared-files manifest.
