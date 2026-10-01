@@ -17,6 +17,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cancellable pipeline start-gate via a `startgate` GitHub Environment with configurable wait timer.
 
 ### Changed
+- **CI: shared files and the release gate are checked.** The files kept byte-identical with the sibling
+  repositories are listed with their SHA-256 in `.github/shared-files.sha256`; a new `shared-files` job
+  fails on a copy changed here alone and warns on a sibling's differing copy. The same job runs the
+  shared build-check library's tests and `check-release-gate.py`: every job must gate both publish
+  jobs unless `.github/release-gate-exemptions.txt` says why (`vmlens` now gates). The crash-log step
+  and the signing-key preflight are shared scripts (`print-crash-logs.sh`, `verify-signing-key.sh`)
+  instead of copies pasted into the workflow.
+- **Workflow jobs kept identical across the repositories are checked too**: a
+  `.github/shared-files.sha256` entry `.github/workflows/publish.yml#<job>` hashes one job (`startgate`,
+  `shared-files`, `verify-signing-key`, `check-snapshot`, `check-tag`, and where present
+  `verify-signing-key-gradle`, `github-snapshot`, `github-release`).
+- **More shared files, and files identical up to the repository name**: a shared-files entry ending
+  in `?repo` is hashed with the repository's name replaced by `{repo}`. Added: `.editorconfig`,
+  `.gitattributes` (now with `*.gguf binary` everywhere), `FUNDING.yml`, `CODEOWNERS`, the license texts,
+  `SUPPORT.md`, `ISSUE_TEMPLATE/config.yml` and further files listed in `.github/shared-files.sha256`;
+  the signing self-test now runs on Gradle 9.8.0 in all four repositories.
+- **The JDK is named once, in `.java-version`**: every workflow reads it through setup-java's
+  `java-version-file` (the `JAVA_VERSION` env and the literal `21`s are gone); `.java-version` and
+  `codeql.yml` are now byte-identical in all four sibling repositories and in the shared-files manifest.
+  The one-JDK `test` matrix became a plain job on `.java-version` (check name `Test`, crash artifact
+  `crash-dumps`); the JPF job still pins 11 + 21 explicitly, since jpf-core needs JDK 11.
+- **CI files are licensed `MIT OR Apache-2.0`**: every `.github` file carrying only the owner's
+  copyright now has the same license header in all four sibling repositories, so the shared ones are
+  byte-identical. `claude.yml`, `claude-code-review.yml`, `scorecard.yml`, `reuse.yml`,
+  `osv-scanner.yml`, `dependabot.yml` and `CODE_OF_CONDUCT.md` joined the shared-files manifest;
+  `osv-scanner.yml` now grants `contents: read` instead of `read-all` (as java-llama.cpp already did).
+- **Workflow run scripts are parsed in the `shared-files` job**: `check-run-scripts.py` runs `bash -n`
+  over every `run:` script of the workflows and composite actions that runs in bash (shell decided as
+  the runner does), so a broken script fails within minutes instead of in the job that runs it.
+- **Maven versions are compared with the sibling repositories**: `check-versions.py` (in the
+  `shared-files` job) warns where a dependency or plugin -- incl. annotation-processor paths and the
+  Spotless formatter version -- is used in another version than in a sibling's default branch.
 - Build and test tooling bumped to latest stable in step with the sibling repos: spotless 3.10.2 → 3.10.3,
   palantir-java-format 2.98.0 → 2.99.0, NullAway 0.14.1 → 0.14.2, archunit-junit5 1.5.0 → 1.5.1.
 - Build plugins bumped to latest stable: `com.diffplug.spotless:spotless-maven-plugin` 3.9.0 → 3.10.0,

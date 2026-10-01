@@ -209,7 +209,7 @@ its deliverable is the plain library jar, not a fat jar — but it runs the same
 dependency cannot change that quietly.
 
 **The gate: `.github/verify-bytecode-version.sh`.** Kept **byte-identical** across java-llama.cpp /
-BitcoinAddressFinder / streambuffer / srcmorph (checksum table in `workspace/crossrepostatus.md`).
+BitcoinAddressFinder / streambuffer / srcmorph (listed in `.github/shared-files.sha256`, checked by the `shared-files` job).
 It opens every `.class` in every jar it is given and fails on any whose class-file major version
 exceeds `--max-major`:
 
@@ -239,6 +239,29 @@ Java / javadoc source level to ≥ 9, read**
 backstop — added because it previously had none. Convention + the `excludedScopes=[test,provided]`
 enforcer default gotcha are in
 [`../workspace/policies/dependency-convergence-pinning.md`](../workspace/policies/dependency-convergence-pinning.md).
+
+## Shared files and the release gate (`shared-files` job)
+
+Files kept byte-identical with java-llama.cpp, BitcoinAddressFinder, srcmorph and streambuffer are
+listed with their SHA-256 in **`.github/shared-files.sha256`** — the reference for what must stay
+equal. An entry `.github/workflows/publish.yml#<job>` stands for one job of the workflow: the jobs kept
+identical across the repositories (`startgate`, `shared-files`, `verify-signing-key`, `check-snapshot`,
+`check-tag`, `verify-signing-key-gradle`, `github-snapshot`, `github-release`) are checked like files. An entry ending in `?repo` covers a file or job identical up to the
+repository's name (hashed with the name replaced by `{repo}`), e.g. `SUPPORT.md?repo`.
+The `shared-files` job of `publish.yml` (gating both publish jobs) fails when a listed file changed here alone and warns when another repository's
+default branch lists it with a different hash. To change a shared file, change every copy, then run
+`python3 .github/check-shared-files.py --write` in each repository. The shared build-check library
+(`.github/buildcheck/`, stdlib-only Python with unit tests: `python3 -m unittest discover -s
+.github/buildcheck/tests -t .github`) also runs **`check-release-gate.py`**: every job must gate both
+publish jobs unless `.github/release-gate-exemptions.txt` names it with a reason, and
+**`check-versions.py`**, which **warns** where a Maven dependency or plugin (incl. the Spotless
+formatter version) is used here in another version than in a sibling repository -- Dependabot bumps
+each repository on its own, so this is where the drift shows -- and **`check-run-scripts.py`**, which
+runs `bash -n` over every `run:` script of the workflows and composite actions that runs in bash, so
+a broken script (a lost line continuation, say) fails here instead of in the job running it. The JDK every
+workflow uses is `.java-version` (setup-java's `java-version-file`), the same shared file in all four. Details and the
+reasoning (copies with a checksum rather than a shared actions repository):
+[`../workspace/crossrepostatus.md`](../workspace/crossrepostatus.md), "Cross-repo byte-identical files".
 
 ## Open TODOs
 
