@@ -2,7 +2,7 @@
 
 # SPDX-FileCopyrightText: 2026 Bernard Ladenthin <bernard.ladenthin@gmail.com>
 #
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: MIT OR Apache-2.0
 
 # Post-`package` smoke for the PACKAGED library jar: puts it on a classpath, exactly as a consumer
 # does, and calls the API through the JDK single-file source launcher.
