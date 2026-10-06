@@ -48,14 +48,15 @@ annotated, so everything below is genuinely still open.
       `java/util/Collections.jml:116-117` (`singletonList`, `values` → RAC compile error):
       **open.** Both are the original errors of the closed
       [OpenJML/OpenJML#806](https://github.com/OpenJML/OpenJML/issues/806) ("repaired" there in
-      2024 — true for ESC/check, never for RAC; neither file changed in that window). Comment
-      left on #806 (2026-09-13, ArrayDeque only), no reply. Fix (`-RAC` on ArrayDeque:30;
-      `-RAC`/`+RAC` via `size()`/`get(0)` for Collections) + red/green testspecs cases
-      (`java-util-ArrayDeque`, `java-util-Collections`) verified locally on 21.0.27; submit like
-      #29/#982. Once released: drop the `ArrayDeque.jml` `rm`.
-    - Missing `JAVA_VERSION` key in the bundled `jdk/release`: still missing in 21.0.28.
-  - **Invariants + non-static inner classes break RAC — confirmed OpenJML bug, not yet
-    reported.** RAC checks the outer class's invariant inside the inner class's constructor and
+      2024 — true for ESC/check, never for RAC; neither file changed in that window).
+      **Reported** with a sweep over all bundled specs (9 files fail `--rac`) and a proposed fix in
+      [OpenJML/OpenJML#1012](https://github.com/OpenJML/OpenJML/issues/1012) (2026-10-07).
+      Fix + red/green testspecs cases prepared locally, offered as PRs. Once released: drop the
+      `ArrayDeque.jml` `rm`.
+    - Missing `JAVA_VERSION` key in the bundled `jdk/release`: still missing in 21.0.28
+      (reported in #1012).
+  - **Invariants + non-static inner classes break RAC — confirmed OpenJML bug, reported in
+    [OpenJML/OpenJML#1012](https://github.com/OpenJML/OpenJML/issues/1012).** RAC checks the outer class's invariant inside the inner class's constructor and
     reads the field on the inner class → `NoSuchFieldError` at runtime (21.0.27 and 21.0.28).
     Minimal reproducer:
     ```java
