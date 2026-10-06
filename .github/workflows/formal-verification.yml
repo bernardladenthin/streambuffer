@@ -62,13 +62,13 @@ permissions:
   contents: read
 
 env:
-  OPENJML_VERSION: "21.0.27"
-  # SHA-256 of openjml-ubuntu-24.04-21.0.27.zip, taken from the GitHub release asset digest
-  # (https://github.com/OpenJML/OpenJML/releases/tag/21.0.27). ubuntu-latest is ubuntu-24.04,
+  OPENJML_VERSION: "21.0.28"
+  # SHA-256 of openjml-ubuntu-24.04-21.0.28.zip, taken from the GitHub release asset digest
+  # (https://github.com/OpenJML/OpenJML/releases/tag/21.0.28). ubuntu-latest is ubuntu-24.04,
   # matching the asset. When bumping the version: update both values, re-test the RAC spec
   # fixups in .github/actions/setup-openjml/action.yml, and re-try the class invariants noted
   # in src/main/jml/net/ladenthin/streambuffer/StreamBuffer.jml.
-  OPENJML_SHA256: "325b93e0133736053cadb536d4dc6c9c6523e104691724135e4e03457188b06d"
+  OPENJML_SHA256: "0a151820c4e680e32cb2e399a02615182c748fc24e308865b317783d4836df8a"
   # The ESC scope: the complete static, sequential core of StreamBuffer. Every method listed
   # here MUST prove — and the count guard below additionally fails the job if the number of
   # completed proofs is not exactly ESC_EXPECTED_PROOFS, so a typo here (or a rename in the

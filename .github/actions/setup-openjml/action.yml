@@ -6,7 +6,7 @@ name: Set up OpenJML
 description: >
   Installs a pinned, checksum-verified OpenJML release (Ubuntu x64 build) into
   $RUNNER_TEMP/openjml and exposes the location as the OPENJML_HOME environment
-  variable. The unzipped distribution (~1 GB, zip 392 MB) is cached keyed on
+  variable. The unzipped distribution (~1 GB, zip ~490 MB) is cached keyed on
   version + checksum + fixup revision. Known-broken bundled JDK specification
   files are deleted on install (see the fixup step below); because the deletion
   happens before the cache is saved, cache hits already contain the fixed tree.
@@ -47,17 +47,19 @@ runs:
     - name: Delete known-broken bundled JDK specs (fixups v1)
       if: steps.cache.outputs.cache-hit != 'true'
       shell: bash
-      # Both files ship broken in OpenJML 21.0.27 and break the RAC layer; deleting a
+      # Both files ship broken in OpenJML 21.0.27 and 21.0.28 and break the RAC layer; deleting a
       # bundled spec degrades the affected JDK class to default (empty) contracts, which
       # is exactly what this repo needs — StreamBuffer's own contracts are the ones being
       # checked. `rm` without -f: if an upgrade removes/fixes these files upstream, this
       # step fails loudly and the fixup (plus the cache-key suffix) must be revisited.
       #   - ArrayDeque.jml: references the undeclared model variable `containsNull`;
       #     `openjml --rac` fails with "cannot find symbol: containsNull".
+      #     Still open upstream (comment on OpenJML/OpenJML#806, closed issue).
       #   - concurrent/atomic/AtomicLong.jml: RAC-generated checks read the private field
       #     AtomicLong.value across the module boundary; every test touching the
       #     statistics counters then dies with java.lang.IllegalAccessError.
-      #     Upstream fix: OpenJML/Specs#29 (+ test OpenJML/OpenJML#982); drop this rm once released.
+      #     Upstream fix: OpenJML/Specs#29 + OpenJML/OpenJML#982, merged into dev-21 on
+      #     2026-10-05, NOT in 21.0.28 (built from Specs 1a91cb6); drop this rm once released.
       run: |
         set -euo pipefail
         rm "$RUNNER_TEMP/openjml/specs/java/util/ArrayDeque.jml"
@@ -66,7 +68,7 @@ runs:
     - name: Repair the bundled JDK release file (fixups v1)
       if: steps.cache.outputs.cache-hit != 'true'
       shell: bash
-      # OpenJML 21.0.27's bundled jdk/release omits the JAVA_VERSION key. maven-surefire-plugin
+      # OpenJML 21.0.27's and 21.0.28's bundled jdk/release omit the JAVA_VERSION key. maven-surefire-plugin
       # reads that key to fingerprint a forked <jvm> (SystemUtils.toJdkVersionFromReleaseFile);
       # without it the RAC job — which forks this exact JVM so the org.jmlspecs bigint runtime
       # class resolves — dies before any test with an NPE. Add the key if it is missing.
