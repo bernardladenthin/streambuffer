@@ -35,7 +35,7 @@ SPDX-License-Identifier: Apache-2.0
         <jspecify.version>1.0.1</jspecify.version>
         <checker.version>4.3.0</checker.version>
         <spotless.version>3.10.3</spotless.version>
-        <palantir-java-format.version>2.100.0</palantir-java-format.version>
+        <palantir-java-format.version>2.102.0</palantir-java-format.version>
         <spotbugs.version>4.10.4.1</spotbugs.version>
         <fb-contrib.version>7.7.4</fb-contrib.version>
         <findsecbugs.version>1.14.0</findsecbugs.version>
