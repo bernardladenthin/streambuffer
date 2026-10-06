@@ -78,7 +78,7 @@ The `@GuardedBy("bufferLock")` lock discipline is gated separately by Error Pron
 build. The Checker Framework Lock Checker was evaluated as a further layer and deferred — see
 TODO.md "Formal verification".
 
-**Local commands** (OpenJML 21.0.27 — a native Windows build exists since this release;
+**Local commands** (OpenJML 21.0.28, pinned in the workflow; native Windows builds exist since 21.0.27;
 `<openjml>` = unzipped release dir, `<cp>` = output of
 `mvn dependency:build-classpath -Dmdep.outputFile=... -DincludeScope=compile`):
 
@@ -114,11 +114,11 @@ mvn -P jml-rac -Dopenjml.home=<openjml> -Dopenjml.jdk.java=<openjml>/jdk/bin/jav
   at the ceiling-division boundary). Everything else is proven overflow-free under safe math.
 - The exception-message builder `newInvalidOffsetOrLengthToWriteException` carries an ASSUMED
   (unproven) contract — string concatenation defeats the SMT encoding. Do not inline it back.
-- NO class invariants in the `.jml`: adding instance invariants to this class made OpenJML 21.0.27's
-  RAC abort with a catastrophic javac `Lower` AssertionError ("no enclosing instance"). This was
-  NOT minimally reproducible (invariant + inner classes alone compiles fine — see TODO.md), so it
-  may be an artifact of a specific spec construct rather than a clean OpenJML bug; invariants stay
-  omitted defensively. Re-test on upgrades.
+- NO class invariants in the `.jml`: OpenJML RAC (21.0.27 and 21.0.28) checks the outer class's
+  invariant inside the constructor of a non-static inner class and reads the field on the wrong
+  class → `NoSuchFieldError` at runtime (14-line reproducer: private field + invariant + inner
+  class). On this class every test fails (258/285). An earlier 21.0.27 compile crash
+  ("no enclosing instance") was not reproduced. Re-test on upgrades.
 - `//@ nullable_by_default` at the class head is load-bearing for RAC: without it JML's
   non-null-by-default inserts an implicit non-null precondition on every reference parameter, so
   the null-argument tests hit `JmlAssertionError.Precondition` instead of the specified NPE.
@@ -139,7 +139,8 @@ mvn -P jml-rac -Dopenjml.home=<openjml> -Dopenjml.jdk.java=<openjml>/jdk/bin/jav
   `.github/actions/setup-openjml` (`ArrayDeque.jml`: undeclared `containsNull`;
   `atomic/AtomicLong.jml`: RAC reads the private field `value` → `IllegalAccessError`;
   upstream fix [OpenJML/Specs#29](https://github.com/OpenJML/Specs/pull/29) + test
-  [OpenJML/OpenJML#982](https://github.com/OpenJML/OpenJML/pull/982), both open).
+  [OpenJML/OpenJML#982](https://github.com/OpenJML/OpenJML/pull/982), merged into `dev-21`,
+  not yet released — still broken in 21.0.28).
 - RAC classes are class-file 65 and live only under `target/rac-classes` — they never enter the
   shipped jar, so the Java 8 bytecode floor is unaffected.
 

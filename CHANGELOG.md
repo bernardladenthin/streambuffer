@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cancellable pipeline start-gate via a `startgate` GitHub Environment with configurable wait timer.
 
 ### Changed
+- Formal verification: OpenJML 21.0.28 (from 21.0.27; default solver z3 5.1.0). ESC 14/14 and RAC
+  285/285 unchanged; the bundled-spec workarounds stay (the upstream fixes are not in 21.0.28).
 - **CI: shared files and the release gate are checked.** The files kept byte-identical with the sibling
   repositories are listed with their SHA-256 in `.github/shared-files.sha256`; a new `shared-files` job
   fails on a copy changed here alone and warns on a sibling's differing copy. The same job runs the
