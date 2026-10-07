@@ -66,6 +66,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `setMaxAllocationSize` clamps larger values to it.
 
 ### Fixed
+- **CI: snapshot deploy fails with HTTP 401 on Maven 3.10 (seen in java-llama.cpp).** The runners moved to Maven 3.10, which
+  sends a `<server>`'s credentials only to the origins declared for it; for the id `central` that is
+  `https://repo.maven.apache.org`, so the upload to `central.sonatype.com/repository/maven-snapshots/`
+  goes out without credentials ("Not using credentials of server 'central'"). Every `deploy` step now
+  passes `-Dmaven.repository.credentialScope=id`, Maven's own switch back to id-only matching, until a
+  setup-java release can write `<repositoryOrigins>` (`mvn-server-repository-origins`, merged upstream
+  but not yet released).
 - `trim()` with more than 2 GB buffered no longer allocates `new byte[Integer.MAX_VALUE]`, which the
   JVM always rejects ("Requested array size exceeds VM limit"). Allocations are capped at
   `Integer.MAX_VALUE - 8`, the JDK's `SOFT_MAX_ARRAY_LENGTH`.
