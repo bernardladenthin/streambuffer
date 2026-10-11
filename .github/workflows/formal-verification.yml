@@ -88,6 +88,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+      - name: Display CPU Info
+        shell: bash
+        run: bash .github/print-host-info.sh
       - uses: actions/setup-java@v6
         with:
           java-version-file: .java-version
@@ -141,6 +144,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+      - name: Display CPU Info
+        shell: bash
+        run: bash .github/print-host-info.sh
       - uses: actions/setup-java@v6
         with:
           java-version-file: .java-version
@@ -221,6 +227,9 @@ jobs:
       JPF_SHA: "e61e396087983cde00b1e4a5f4b3dde39c0f9f7f"
     steps:
       - uses: actions/checkout@v7
+      - name: Display CPU Info
+        shell: bash
+        run: bash .github/print-host-info.sh
       - uses: actions/setup-java@v6
         with:
           # 21 builds the repo's Java-8 production classes (matching the shipped bytecode);

@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cancellable pipeline start-gate via a `startgate` GitHub Environment with configurable wait timer.
 
 ### Changed
+- Build and test tooling bumped in step with the sibling repositories: Spotless 3.10.4 and Checker
+  Framework 4.3.1. The shared `check-versions.py` now also compares the Kotlin Gradle plugins of a
+  repository with its POMs' Kotlin (nothing to compare here) and reads java-llama.cpp's
+  `examples/server/pom.xml`.
+- **CI prints the runner's CPU** at the top of `test`, `vmlens` and the three formal-verification jobs
+  (`.github/print-host-info.sh`, a shared file of the four repositories): Z3's proof times and the
+  Lincheck and jcstress runs depend on it.
 - Formal verification: OpenJML 21.0.28 (from 21.0.27; default solver z3 5.1.0). ESC 14/14 and RAC
   285/285 unchanged; the bundled-spec workarounds stay (the upstream fixes are not in 21.0.28).
 - **CI: shared files and the release gate are checked.** The files kept byte-identical with the sibling
