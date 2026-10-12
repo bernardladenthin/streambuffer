@@ -73,6 +73,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `setMaxAllocationSize` clamps larger values to it.
 
 ### Fixed
+- **CI: the GitHub `snapshot` pre-release holds exactly the current build, and the release assets
+  include the pom.** `gh release upload --clobber` replaces same-named assets and never removes any
+  other, so the `snapshot` release accumulated: the 1.2.0-SNAPSHOT jar and javadoc jar (unsigned, from before the
+  signature check existed) and three SpotBugs plugin jars (`fb-contrib-7.6.4.jar`, `fb-contrib-7.7.4.jar`,
+  `findsecbugs-plugin-1.14.0.jar`) an old collect step uploaded from `target/spotbugs/` in 2026-05, 5 of its
+  11 assets. `github-snapshot` now deletes every asset
+  the run did not upload, after the upload and each printed by name; versioned releases are never
+  pruned, and the next snapshot run clears the backlog by itself. The collect steps copy
+  `<artifactId>-<version>.pom` + `.pom.asc` as well (Central had them, the release did not), and
+  the signature check counts every attachable type (`*.jar`, `*.aar`, `*.pom`) instead of jars
+  alone. Shared job text with the two sibling repositories (`shared-files.sha256`), the convention
+  in `workspace/policies/fat-jar-release-assets.md`.
 - **CI: snapshot deploy fails with HTTP 401 on Maven 3.10 (seen in java-llama.cpp).** The runners moved to Maven 3.10, which
   sends a `<server>`'s credentials only to the origins declared for it; for the id `central` that is
   `https://repo.maven.apache.org`, so the upload to `central.sonatype.com/repository/maven-snapshots/`

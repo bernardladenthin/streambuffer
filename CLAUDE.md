@@ -241,6 +241,19 @@ backstop — added because it previously had none. Convention + the `excludedSco
 enforcer default gotcha are in
 [`../workspace/policies/dependency-convergence-pinning.md`](../workspace/policies/dependency-convergence-pinning.md).
 
+## Release assets
+
+The thin jar, its sources and javadoc jars and the pom are attached to the GitHub `snapshot`
+pre-release and to every versioned release with the `.asc` maven-gpg wrote at deploy; no fat jar
+exists here. The attach jobs are shared text with the two sibling Maven-only repositories
+(`publish.yml#github-snapshot` / `#github-release` in `shared-files.sha256`): the collect steps copy
+`<artifactId>-<version>.pom` + `.pom.asc` with the jars (maven-gpg writes both into `target/`), the
+signature check counts every attachable type (`*.jar`, `*.aar`, `*.pom`), and `github-snapshot` ends
+by deleting every asset of the `snapshot` pre-release that the run did not upload, each printed by
+name -- `gh release upload --clobber` never removed anything, so the release accumulated every past
+version. Versioned releases are never pruned. See the policy's "Attach first, then go red" and "The
+`snapshot` pre-release holds exactly the current upload".
+
 ## Shared files and the release gate (`shared-files` job)
 
 Files kept byte-identical with java-llama.cpp, BitcoinAddressFinder, srcmorph and streambuffer are
