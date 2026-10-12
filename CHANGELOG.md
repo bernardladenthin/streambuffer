@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cancellable pipeline start-gate via a `startgate` GitHub Environment with configurable wait timer.
 
 ### Changed
+- Build tooling: spotbugs-maven-plugin 4.10.4.1 -> 4.10.5.0 (SpotBugs 4.10.5, the first release that reads
+  JSpecify; nothing to report here), in step with the sibling repositories.
 - Build and test tooling bumped in step with the sibling repositories: Spotless 3.10.4 and Checker
   Framework 4.3.1. The shared `check-versions.py` now also compares the Kotlin Gradle plugins of a
   repository with its POMs' Kotlin (nothing to compare here) and reads java-llama.cpp's
