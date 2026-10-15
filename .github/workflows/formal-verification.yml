@@ -87,11 +87,11 @@ jobs:
     # notwithstanding); the job-level timeout is the hard stop.
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Display CPU Info
         shell: bash
         run: bash .github/print-host-info.sh
-      - uses: actions/setup-java@v6
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
         with:
           java-version-file: .java-version
           distribution: temurin
@@ -143,11 +143,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Display CPU Info
         shell: bash
         run: bash .github/print-host-info.sh
-      - uses: actions/setup-java@v6
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
         with:
           java-version-file: .java-version
           distribution: temurin
@@ -226,11 +226,11 @@ jobs:
       # AtomicLong model patch on any bump (jpf-core has no release cadence to track).
       JPF_SHA: "e61e396087983cde00b1e4a5f4b3dde39c0f9f7f"
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Display CPU Info
         shell: bash
         run: bash .github/print-host-info.sh
-      - uses: actions/setup-java@v6
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
         with:
           # 21 builds the repo's Java-8 production classes (matching the shipped bytecode);
           # 11 builds and runs jpf-core.
@@ -259,7 +259,7 @@ jobs:
           echo "== staged annotation jars =="; ls -1 src/test/jpf/lib
       - name: Cache jpf-core build
         id: jpf-cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: jpf-core/build
           key: jpf-core-${{ env.JPF_SHA }}-atomiclong-${{ hashFiles('src/test/jpf/jpf-model/java/util/concurrent/atomic/AtomicLong.java') }}
@@ -304,7 +304,7 @@ jobs:
             echo "### JPF exhaustive interleavings"
             echo "No errors detected over all enumerated schedules ($states states) — no deadlock, no uncaught exception, byte fidelity held."
           } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: jpf-output
