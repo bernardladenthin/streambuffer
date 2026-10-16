@@ -1371,6 +1371,65 @@ public class StreamBufferTest {
             // assert
             assertArrayEquals(written, read, "Read data should match written data");
         }
+
+        @DisplayName("write(byte[]) with safeWrite: a concurrent write(int) does not bypass the clone")
+        @Test
+        public void safeWrite_concurrentSingleByteWrite_arrayStillCloned() throws Exception {
+            // arrange — trim disabled so the deque keeps the caller's array reference if it is not cloned
+            final StreamBuffer sb = new StreamBuffer();
+            sb.setSafeWrite(true);
+            sb.setMaxBufferElements(0);
+            final OutputStream os = sb.getOutputStream();
+            final InputStream is = sb.getInputStream();
+            final byte original = 1;
+            final byte mutated = 2;
+            final AtomicBoolean stop = new AtomicBoolean();
+            final AtomicInteger mutatedBytesRead = new AtomicInteger();
+            final net.jodah.concurrentunit.Waiter waiter = new net.jodah.concurrentunit.Waiter();
+
+            Thread singleByteWriter = new Thread(() -> {
+                try {
+                    while (!stop.get()) {
+                        os.write(0);
+                    }
+                } catch (IOException e) {
+                    waiter.fail(e);
+                }
+            });
+            Thread reader = new Thread(() -> {
+                try {
+                    final byte[] chunk = new byte[4096];
+                    int n;
+                    while ((n = is.read(chunk, 0, 1)) != -1) {
+                        for (int i = 0; i < n; i++) {
+                            if (chunk[i] == mutated) {
+                                mutatedBytesRead.incrementAndGet();
+                            }
+                        }
+                    }
+                } catch (IOException e) {
+                    waiter.fail(e);
+                }
+            });
+
+            // act — mutate each array right after write() returned; safeWrite promises a private copy
+            singleByteWriter.start();
+            reader.start();
+            for (int i = 0; i < 200_000; i++) {
+                final byte[] data = new byte[8];
+                Arrays.fill(data, original);
+                os.write(data);
+                Arrays.fill(data, mutated);
+            }
+            stop.set(true);
+            singleByteWriter.join();
+            os.close();
+            reader.join();
+            waiter.resume();
+
+            // assert
+            assertThat("bytes changed after write() reached the reader", mutatedBytesRead.get(), is(0));
+        }
     }
 
     @Nested
