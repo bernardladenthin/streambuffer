@@ -99,18 +99,10 @@ public class StreamBuffer implements Closeable {
      * A flag to enable a safe write. If safe write is enabled, modifiable byte
      * arrays are cloned before they are written (put) into the FIFO. Benefit:
      * It cost more performance to clone a byte array, but the content is
-     * immutable. This may be revoked by {@link #ignoreSafeWrite}, for example a
-     * byte array was created internally.
+     * immutable. Internally created arrays that never escape (see
+     * {@link #writeSingleByte(int)}) are not cloned.
      */
     private volatile boolean safeWrite = false;
-
-    /**
-     * A flag to disable the {@link StreamBuffer#safeWrite}. I. e. to write a byte array from
-     * the trim method.
-     * It should be used if the reference to the buffer deque is not reachable out of the scope.
-     * It is possible to ignore the safeWrite flag to prevent not necessary clone operations.
-     */
-    private volatile boolean ignoreSafeWrite = false;
 
     /**
      * The maximum buffer elements. A number of maximum elements to invoke the
@@ -1021,13 +1013,8 @@ public class StreamBuffer implements Closeable {
      * @throws IOException if the stream is closed
      */
     private void writeSingleByte(final int b) throws IOException {
-        try {
-            ignoreSafeWrite = true;
-            final byte[] single = new byte[] {(byte) b};
-            writeFromArray(single, 0, single.length);
-        } finally {
-            ignoreSafeWrite = false;
-        }
+        final byte[] single = new byte[] {(byte) b};
+        writeFromArray(single, 0, single.length, false);
     }
 
     /**
@@ -1040,6 +1027,23 @@ public class StreamBuffer implements Closeable {
      * @throws IOException if the stream is closed
      */
     private void writeFromArray(final byte[] b, final int off, final int len) throws IOException {
+        writeFromArray(b, off, len, true);
+    }
+
+    /**
+     * Shared write path of {@link #writeFromArray(byte[], int, int)} and {@link #writeSingleByte(int)}.
+     * Whether the {@link #safeWrite} clone may be skipped is a parameter rather than a field: a field
+     * shared between threads let a concurrent {@code write(int)} switch the clone off for another
+     * thread's {@code write(byte[])}, which then stored the caller's array by reference.
+     *
+     * @param b the source array
+     * @param off the offset in the source array
+     * @param len the number of bytes to write
+     * @param cloneOnSafeWrite {@code false} if {@code b} was created internally and never escapes
+     * @throws IOException if the stream is closed
+     */
+    private void writeFromArray(final byte[] b, final int off, final int len, final boolean cloneOnSafeWrite)
+            throws IOException {
         if (!validateOffsetAndLengthToWrite(b, off, len)) {
             return;
         }
@@ -1050,7 +1054,7 @@ public class StreamBuffer implements Closeable {
         synchronized (bufferLock) {
             if (off == 0 && b.length == len) {
                 // add the full byte[] to the buffer
-                if (tmpSafeWrite && !ignoreSafeWrite) {
+                if (tmpSafeWrite && cloneOnSafeWrite) {
                     buffer.add(b.clone());
                 } else {
                     buffer.add(b);
