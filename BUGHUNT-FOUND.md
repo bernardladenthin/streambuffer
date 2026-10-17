@@ -9,7 +9,7 @@ Repos plus eins. Geprüfte Klassen ohne Fund stehen in [`BUGHUNT-CHECKED.md`](BU
 ## Übersicht
 
 - [F02](#f02) — mittel — *gefixt*
-- [F03](#f03) — mittel — *unsicher / nur beschrieben*
+- [F03](#f03) — mittel — *Designentscheidung, offen für den Nutzer*
 
 ## Funde
 
@@ -30,7 +30,7 @@ Repos plus eins. Geprüfte Klassen ohne Fund stehen in [`BUGHUNT-CHECKED.md`](BU
 - **Schwere:** mittel (falls nicht gewollt) / keine (falls gewollt)
 - **Beschreibung:** Nach dem ersten Byte wartet `readIntoArray` mit `waitForAtLeast(len-1)`, bis der Rest **vollständig** da ist oder der Stream geschlossen wird. `InputStream.read(byte[],int,int)` verlangt nur, bis mindestens ein Byte verfügbar ist zu blockieren, und dann zurückzugeben, was da ist. Praktische Folge: Ein `InputStreamReader`/`BufferedReader` (liest in 8-KiB-Blöcken) über einem offenen StreamBuffer hängt bei einem Request/Response-Protokoll, bis 8 KiB zusammengekommen sind oder geschlossen wird. README („second wait phase“) und die jcstress-Tests zeigen, dass das Verhalten bewusst so gebaut ist – darum kein Fix, nur zur Entscheidung.
 - **Reproduktion:** keine geschrieben (Designfrage).
-- **Status:** unsicher / nur beschrieben
+- **Status:** Designentscheidung, offen für den Nutzer – der Loop fasst diesen Eintrag nicht an (README „second wait phase“ und die jcstress-Tests zeigen, dass das Warten auf alle `len` Bytes gewollt ist). Ändern nur auf ausdrückliche Entscheidung des Nutzers.
 - **Commit:** –
 
 ## Offene Verdachte ohne Fund-ID
