@@ -46,7 +46,7 @@ Repos plus eins. Geprüfte Klassen ohne Fund stehen in [`BUGHUNT-CHECKED.md`](BU
 - **Nicht geprüft:** OpenJML-RAC/ESC (`trim` steht nicht in der `.jml`, kein ESC-Ziel), jcstress- und vmlens-Profil, Lincheck.
 - **CI-Bedarf:** die Pipeline `formal-verification.yml` (RAC-Lauf der Suite gegen den geänderten `trim`) einmal mitlaufen lassen.
 - **Status:** gefixt
-- **Commit:** (folgt)
+- **Commit:** streambuffer `89d2173`
 
 ## Offene Verdachte ohne Fund-ID
 
