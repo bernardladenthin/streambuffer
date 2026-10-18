@@ -869,6 +869,11 @@ public class StreamBuffer implements Closeable {
      * Implementation of {@link SBInputStream#read(byte[], int, int)}. See
      * {@link #availableClamped()} for why this lives in the outer class.
      *
+     * <p>Waits for the first byte, then for all remaining {@code len - 1} bytes
+     * ({@code waitForAtLeast}) unless the stream is closed first. Designed that
+     * way since the first version; {@link #getInputStream()} documents it for
+     * callers.
+     *
      * @param b the destination array
      * @param off the offset in the destination array
      * @param len the maximum number of bytes to read
@@ -1014,11 +1019,12 @@ public class StreamBuffer implements Closeable {
         if (!validateOffsetAndLengthToWrite(b, off, len)) {
             return;
         }
-        requireNonClosed();
         // To be thread safe cache the safeWrite value.
         boolean tmpSafeWrite = isSafeWrite();
 
         synchronized (bufferLock) {
+            // Checked under the lock closeAll() sets the flag under; see closeAll().
+            requireNonClosed();
             if (off == 0 && b.length == len) {
                 // add the full byte[] to the buffer
                 if (tmpSafeWrite && cloneOnSafeWrite) {
@@ -1105,9 +1111,16 @@ public class StreamBuffer implements Closeable {
 
     /**
      * Invoke a close.
+     *
+     * <p>The flag is set under {@link #bufferLock}, the lock a write checks it under, so a write
+     * racing the close is either fully buffered before the close or fails with "Stream closed";
+     * it never appends after the close has returned, when a reader may already have reported the
+     * end of the stream.
      */
     private void closeAll() {
-        streamClosed = true;
+        synchronized (bufferLock) {
+            streamClosed = true;
+        }
         signalModification();
     }
 
@@ -1142,6 +1155,16 @@ public class StreamBuffer implements Closeable {
      * <p>
      * Closing the returned {@link java.io.InputStream InputStream} will close
      * the complete buffer.
+     *
+     * <p>
+     * {@link java.io.InputStream#read(byte[], int, int) read(b, off, len)}
+     * blocks until <b>all</b> {@code len} bytes are available or the buffer is
+     * closed; only then does it return fewer. This is stricter than the
+     * {@code InputStream} contract, which only waits for one byte, and differs
+     * from {@link java.io.PipedInputStream}. A reader that must not wait for a
+     * full block, such as an {@code InputStreamReader} over a request/response
+     * protocol, waits with {@link #waitForAnyData()} and then reads at most
+     * {@link java.io.InputStream#available() available()} bytes.
      *
      * @return an input stream for reading bytes from this buffer.
      */

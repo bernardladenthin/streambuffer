@@ -11,6 +11,22 @@ annotated, so everything below is genuinely still open.
 
 ## Open
 
+- **Run the concurrency and formal-verification suites after the write/close fix (2026-10-18).**
+  `writeFromArray` now checks `streamClosed` under `bufferLock` and `closeAll()` sets it under the
+  same lock, so a write racing a `close()` from another thread is either buffered before the close
+  or fails with "Stream closed" (bug-hunt F149). The default build covers it deterministically
+  (`StreamBufferTest$ConcurrentWriteAndCloseTests`, red before the change) and is green with PIT
+  199/199; these runs were not done and belong to the next joint CI run:
+  - `mvn -Pjcstress test`: the new `jcstress/WriteRacingCloseRace` (writer, closer and reader;
+    outcome `1, -1` is forbidden) and the existing `Close*`/`Write*` termination tests, which now
+    exercise a `close()` that takes `bufferLock`.
+  - `mvn -Pvmlens test`: the reader/writer interleaving test.
+  - The `formal-verification.yml` pipeline: OpenJML ESC (unchanged scope, expect the same proof
+    count) and RAC over the full suite with the new test, plus the `jpf-interleavings` job.
+  - Optional, worth it: extend the JPF harness (`src/test/jpf/`) with a third thread that closes
+    while the writer writes, so the write/close ordering is model-checked exhaustively; today's
+    harness writes and closes from the same thread and cannot see this race.
+
 - **Formal verification — follow-ups.** The two-layer setup (OpenJML ESC proof of the static
   sequential core + OpenJML RAC under the full test suite) landed 2026-09 — see CLAUDE.md
   "Formal Verification" and `.github/workflows/formal-verification.yml`. Still open, in priority

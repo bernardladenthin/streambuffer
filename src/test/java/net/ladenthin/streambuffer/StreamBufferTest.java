@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import java.io.*;
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Semaphore;
@@ -2023,6 +2024,79 @@ public class StreamBufferTest {
             assertAll(
                     () -> assertThat(bytesReadHolder[0], is(5)),
                     () -> assertArrayEquals(new byte[] {1, 2, 3, 4, 5}, Arrays.copyOf(dest, 5)));
+        }
+    }
+
+    @Nested
+    @DisplayName("concurrent write and close")
+    class ConcurrentWriteAndCloseTests {
+
+        /**
+         * A {@code write} that races a {@code close()} from another thread must either be ordered
+         * before the close, its bytes buffered before the close returns, or fail with
+         * "Stream closed". It must never append after the close has completed: a reader that saw
+         * the closed, empty buffer in between has already reported the end of the stream, and those
+         * bytes are lost to it although the write returned normally.
+         *
+         * <p>Deterministic: the trim-start signal runs on the trim thread while it holds the buffer
+         * lock, so a second writer started there parks on that lock; the close happens while it is
+         * parked.
+         */
+        @DisplayName("write racing close(): never appends after close() returned")
+        @Test
+        public void write_closedWhileTheWriterWaitsForTheLock_failsInsteadOfAppendingAfterTheClose() throws Exception {
+            // arrange
+            final StreamBuffer sb = new StreamBuffer();
+            final OutputStream os = sb.getOutputStream();
+            sb.setMaxBufferElements(1); // the second entry triggers a trim
+            final AtomicBoolean fired = new AtomicBoolean(false);
+            final AtomicReference<Thread> lateWriter = new AtomicReference<>();
+            final AtomicReference<IOException> lateWriteFailure = new AtomicReference<>();
+            final AtomicReference<Long> availableWhenClosed = new AtomicReference<>();
+            final Semaphore trimStart = new Semaphore(0) {
+                @Override
+                public void release() {
+                    super.release();
+                    if (!fired.compareAndSet(false, true)) {
+                        return;
+                    }
+                    final Thread writer = new Thread(
+                            () -> {
+                                try {
+                                    os.write(7);
+                                } catch (IOException e) {
+                                    lateWriteFailure.set(e);
+                                }
+                            },
+                            "late-writer");
+                    lateWriter.set(writer);
+                    writer.start();
+                    // this trim holds the buffer lock, so the late writer parks on it
+                    final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+                    while (writer.getState() != Thread.State.BLOCKED && System.nanoTime() < deadline) {
+                        Thread.yield();
+                    }
+                    try {
+                        sb.close();
+                    } catch (IOException e) {
+                        throw new UncheckedIOException(e);
+                    }
+                    availableWhenClosed.set(sb.getAvailableBytesExact());
+                }
+            };
+            sb.addTrimStartSignal(trimStart);
+
+            // act
+            os.write(1);
+            os.write(2);
+            final Thread writer = Objects.requireNonNull(lateWriter.get(), "the trim-start signal did not fire");
+            writer.join(TimeUnit.SECONDS.toMillis(10));
+
+            // assert
+            assertThat(writer.isAlive(), is(false));
+            assertThat(availableWhenClosed.get(), is(2L));
+            assertThat(sb.getAvailableBytesExact(), is(availableWhenClosed.get()));
+            assertThat("the late write must fail with 'Stream closed'", lateWriteFailure.get() != null, is(true));
         }
     }
 

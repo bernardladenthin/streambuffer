@@ -129,7 +129,7 @@ Instead of a fixed circular buffer, `StreamBuffer` uses a `Deque<byte[]>` that g
 
 ### Full `InputStream`/`OutputStream` Compatibility
 
-`StreamBuffer` exposes a standard `InputStream` (via `getInputStream()`) and a standard `OutputStream` (via `getOutputStream()`). Both are full subclass implementations and can be used anywhere those types are accepted.
+`StreamBuffer` exposes a standard `InputStream` (via `getInputStream()`) and a standard `OutputStream` (via `getOutputStream()`). Both are full subclass implementations and can be used anywhere those types are accepted. One deliberate difference: `read(byte[], off, len)` waits for **all** `len` bytes (or `close()`), see [Read](#read).
 
 ### Thread Safety
 
@@ -325,7 +325,16 @@ External observers register `java.util.concurrent.Semaphore` objects via `addSig
 
 ### Read
 
-If no data is available and the stream is not closed, `read()` blocks the calling thread. To avoid blocking, only read as many bytes as `available()` reports. The `waitForAnyData()` and `waitForAtLeast(long)` methods can be used to wait for data before reading.
+If no data is available and the stream is not closed, `read()` blocks the calling thread. `read(byte[], off, len)` goes further: after the first byte it keeps waiting until **all** `len` bytes are buffered, and returns fewer only when the stream is closed. That is stricter than the `InputStream` contract (block until at least one byte) and unlike `PipedInputStream`; it has been the design since the first version.
+
+To avoid blocking, only read as many bytes as `available()` reports. The `waitForAnyData()` and `waitForAtLeast(long)` methods can be used to wait for data before reading:
+
+```java
+sb.waitForAnyData();                               // returns once at least one byte is buffered (or closed)
+int n = is.read(buf, 0, Math.min(buf.length, Math.max(1, is.available())));
+```
+
+This matters for wrappers that read in blocks, such as `InputStreamReader`/`BufferedReader` (8 KiB): over an open buffer in a request/response protocol they wait until a whole block has arrived.
 
 ### Write
 

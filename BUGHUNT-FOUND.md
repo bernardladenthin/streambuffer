@@ -9,9 +9,10 @@ Repos plus eins. Geprüfte Klassen ohne Fund stehen in [`BUGHUNT-CHECKED.md`](BU
 ## Übersicht
 
 - [F02](#f02) — mittel — *gefixt*
-- [F03](#f03) — mittel — *Designentscheidung, offen für den Nutzer*
+- [F03](#f03) — mittel — *Designentscheidung, dokumentiert*
 - [F73](#f73) — hoch — *gefixt*
 - [F110](#f110) — niedrig — *gefixt (Doku)*
+- [F149](#f149) — mittel — *gefixt*
 
 ## Funde
 
@@ -31,8 +32,10 @@ Repos plus eins. Geprüfte Klassen ohne Fund stehen in [`BUGHUNT-CHECKED.md`](BU
 - **Datei:** `src/main/java/net/ladenthin/streambuffer/StreamBuffer.java:912` (`readIntoArray`, „second wait phase“ `waitForAtLeast(missingBytes)`)
 - **Schwere:** mittel (falls nicht gewollt) / keine (falls gewollt)
 - **Beschreibung:** Nach dem ersten Byte wartet `readIntoArray` mit `waitForAtLeast(len-1)`, bis der Rest **vollständig** da ist oder der Stream geschlossen wird. `InputStream.read(byte[],int,int)` verlangt nur, bis mindestens ein Byte verfügbar ist zu blockieren, und dann zurückzugeben, was da ist. Praktische Folge: Ein `InputStreamReader`/`BufferedReader` (liest in 8-KiB-Blöcken) über einem offenen StreamBuffer hängt bei einem Request/Response-Protokoll, bis 8 KiB zusammengekommen sind oder geschlossen wird. README („second wait phase“) und die jcstress-Tests zeigen, dass das Verhalten bewusst so gebaut ist – darum kein Fix, nur zur Entscheidung.
-- **Reproduktion:** keine geschrieben (Designfrage).
-- **Status:** Designentscheidung, offen für den Nutzer – der Loop fasst diesen Eintrag nicht an (README „second wait phase“ und die jcstress-Tests zeigen, dass das Warten auf alle `len` Bytes gewollt ist). Ändern nur auf ausdrückliche Entscheidung des Nutzers.
+- **Historie:** So gebaut seit dem ersten Commit des Nutzers (`9da0dcd`, 2014-09-15): `tryWaitForEnoughBytes(missingBytes)`, Javadoc „blocks until the stream is closed or enough bytes are available“; `16f1df7` (2026-06-03) benannte es nur in `waitForAtLeast` um. Einen Monat später ergänzte der Nutzer `blockDataAvailable()` (`7a780d5`, 2014-10-31, heute `waitForAnyData()`), um ohne volle Blöcke auf Daten zu warten – beides war zusammen gedacht. Festgeschrieben durch `jcstress/WriteUnblocksArrayReadRace`, `CloseUnblocksArrayReadRace` und `read_arrayThreadInterruptedWhileWaitingForSecondByte_throwsIOException`; dokumentiert war es nirgends, und das README nannte die Streams „full … compatibility“.
+- **Entscheidung des Nutzers (Variante A):** Verhalten bleibt, Dokumentation ergänzt: Javadoc von `getInputStream()` und `readIntoArray`, README „Full `InputStream`/`OutputStream` Compatibility“ (eine bewusste Abweichung) und „Deadlock Behavior → Read“ (Semantik, Unterschied zu `PipedInputStream`, Folge für `InputStreamReader`, Muster `waitForAnyData()` + `available()`).
+- **Reproduktion:** keine (Designfrage).
+- **Status:** Designentscheidung, dokumentiert
 - **Commit:** –
 
 <a id="f73"></a>
@@ -63,6 +66,21 @@ Repos plus eins. Geprüfte Klassen ohne Fund stehen in [`BUGHUNT-CHECKED.md`](BU
 - **Status:** gefixt (Doku)
 - **Commit:** 3fc6dba
 
+<a id="f149"></a>
+### F149 – streambuffer: ein `write`, der mit `close()` aus einem anderen Thread zusammentrifft, hängt nach dem `close` an und kehrt normal zurück
+- **Zeit:** 2026-10-18 21:00 UTC
+- **Datei:** `src/main/java/net/ladenthin/streambuffer/StreamBuffer.java` (`writeFromArray`: `requireNonClosed()` vor `synchronized (bufferLock)`; `closeAll()`: Flag ohne Lock)
+- **Schwere:** mittel (Datenverlust für einen Leser, der bei `-1` aufhört; nur bei `close()` aus einem dritten Thread während eines laufenden `write`)
+- **Beschreibung:** Der Schreiber besteht `requireNonClosed()`, ein anderer Thread schließt, ein Leser sieht „geschlossen, 0 Bytes“ und meldet `-1`, danach hängt der Schreiber an und kehrt ohne Exception zurück. Ein erfolgreicher `write` muss vor dem `close` eingeordnet werden, also ist das nicht linearisierbar. Ein Leser, der nach `-1` noch einmal liest, bekäme die Bytes.
+- **Historie:** Seit dem ersten Commit (`9da0dcd`, 2014) steht die Prüfung vor dem Lock. Die Absicht des Projekts zeigt `e61f359` (2026-05-07, Wettlauf `trim()`/`close()`): eine Exception bei einem unbeteiligten `write` und stillschweigend verworfene Bytes wurden als Fehler behoben (`trim_closeCalledDuringTrim_handlesGracefully`, `37132b3`, `8924e88`). Das README verspricht „Parallel close without deadlock“. Weder die JPF-Prüfung (Schreiber und Schließer im selben Thread) noch Lincheck (ohne blockierendes `read`) decken den Fall ab.
+- **Fix:** Entscheidung des Nutzers (Variante A). `requireNonClosed()` steht jetzt in `synchronized (bufferLock)`, und `closeAll()` setzt `streamClosed` unter demselben Lock (das Signal danach). Ein `write` ist damit entweder vor dem `close` vollständig gepuffert – `waitForAtLeast` liest beim geschlossenen Stream `availableBytes` neu und sieht ihn – oder er wirft „Stream closed“. Kosten: ein `close()` wartet auf einen laufenden `write` oder `trim()`.
+- **Reproduktion:** `StreamBufferTest$ConcurrentWriteAndCloseTests#write_closedWhileTheWriterWaitsForTheLock_failsInsteadOfAppendingAfterTheClose`, deterministisch ohne Reflexion: Das Trim-Start-Signal läuft im Trim-Thread, der `bufferLock` hält; dort wird ein zweiter Schreiber gestartet, der am Lock parkt (`Thread.State.BLOCKED`), und während er parkt, wird geschlossen. Erwartet: nach dem `close` bleibt der Puffer bei 2 Bytes, der späte `write` scheitert.
+- **Rot-Grün-Nachweis:** ohne Fix rot („Expected: is <2L> but: was <3L>“ – der späte `write` hängte nach dem `close` an), mit Fix grün; Gegenprobe per `git stash` des Produktionscodes wieder rot, nach `pop` grün. Breit: 304 Tests grün (`StreamBufferTest`, jqwik, Lincheck, Architektur), SpotBugs, Javadoc, PIT 199/199.
+- **Zusätzlich angelegt, nicht ausgeführt:** `jcstress/WriteRacingCloseRace` (Schreiber, Schließer, Leser; Ausgang `1, -1` verboten).
+- **CI-Bedarf:** `mvn -Pjcstress test`, `mvn -Pvmlens test`, die Formal-Verification-Pipeline (ESC, RAC, JPF) – alles in `TODO.md`, „Run the concurrency and formal-verification suites after the write/close fix“.
+- **Status:** gefixt
+- **Commit:** –
+
 ## Offene Verdachte ohne Fund-ID
 
-- 2026-10-18 – `write` gleichzeitig mit `close` aus einem anderen Thread (`StreamBuffer.java:1035` `requireNonClosed` außerhalb von `bufferLock`, `closeAll` ohne Lock): ein `write`, der die Prüfung vor `close()` passiert, hängt seine Bytes erst danach unter dem Lock an und kehrt normal zurück. Ein Leser, der dazwischen `waitForAtLeast` mit `streamClosed == true` und `availableBytes == 0` durchläuft, meldet EOF; die Bytes liegen danach im Puffer (ein weiteres `read()` nach `-1` lieferte sie). Folge: ein erfolgreich zurückgekehrter `write` erreicht einen Leser, der bei `-1` aufhört, nie. Fix wäre `requireNonClosed` innerhalb von `bufferLock` und `streamClosed = true` unter demselben Lock (Sichtbarkeit über die beiden `volatile` Felder bleibt geordnet). Nicht umgesetzt: kein deterministischer Test ohne neue Naht zwischen Prüfung und Lock (das Fenster ist eine Handvoll Anweisungen), und der Fix berührt die OpenJML-Spezifikation (`src/main/jml`) und die PIT-Schwelle 100. Ob ein `write` parallel zu `close` überhaupt unterstützt sein soll, entscheidet der Nutzer.
+Keine (Stand 2026-10-18).
