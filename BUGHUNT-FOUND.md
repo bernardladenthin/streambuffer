@@ -11,6 +11,7 @@ Repos plus eins. Geprüfte Klassen ohne Fund stehen in [`BUGHUNT-CHECKED.md`](BU
 - [F02](#f02) — mittel — *gefixt*
 - [F03](#f03) — mittel — *Designentscheidung, offen für den Nutzer*
 - [F73](#f73) — hoch — *gefixt*
+- [F110](#f110) — niedrig — *nur beschrieben*
 
 ## Funde
 
@@ -47,6 +48,17 @@ Repos plus eins. Geprüfte Klassen ohne Fund stehen in [`BUGHUNT-CHECKED.md`](BU
 - **CI-Bedarf:** die Pipeline `formal-verification.yml` (RAC-Lauf der Suite gegen den geänderten `trim`) einmal mitlaufen lassen.
 - **Status:** gefixt
 - **Commit:** streambuffer `89d2173`
+
+### F110 – streambuffer: Javadoc von `clampToMaxInt` beschreibt die `trim()`-Schleife vor F73
+- **Zeit:** 2026-10-18 09:10 UTC
+- **Datei:** `src/main/java/net/ladenthin/streambuffer/StreamBuffer.java:634` (Javadoc von `clampToMaxInt`)
+- **Schwere:** niedrig
+- **Beschreibung:** Die Javadoc begründet die Klemmung mit dem Ablauf von `trim()`: „The trim() loop reads at most maxAllocationSize bytes per iteration … Loop condition (available > 0) … Next iteration calls available() again“, samt Beispiel für 5 GB. So arbeitete `trim()` bis F73 (`89d2173`), das den Puffer über den eigenen Eingabestrom leerte. Seit F73 kopiert `trim()` direkt aus dem Deque und liest `availableBytes`, ohne `available()` oder `clampToMaxInt`; einziger Aufrufer ist jetzt `availableClamped()` (`InputStream.available()`). Die Javadoc beschreibt also Code, den es nicht mehr gibt – eine Abweichung, die mein eigener Fix F73 hinterlassen hat. Der Code ist korrekt.
+- **Fix:** keiner. Vorschlag: den Absatz „SAFETY GUARANTEE …“ samt Beispiel auf den verbliebenen Zweck kürzen (`available()` meldet höchstens `Integer.MAX_VALUE`, auch wenn mehr als 2 GiB gepuffert sind).
+- **Reproduktion:** keine (reine Doku-Abweichung).
+- **Rot-Grün-Nachweis:** entfällt.
+- **Status:** nur beschrieben (Nutzerregel vom 2026-10-17: gefixt und committet wird nur mit Test; eine reine Doku-Abweichung hat keinen, wie F35)
+- **Commit:** –
 
 ## Offene Verdachte ohne Fund-ID
 
