@@ -36,7 +36,7 @@ Repos plus eins. Geprüfte Klassen ohne Fund stehen in [`BUGHUNT-CHECKED.md`](BU
 - **Entscheidung des Nutzers (Variante A):** Verhalten bleibt, Dokumentation ergänzt: Javadoc von `getInputStream()` und `readIntoArray`, README „Full `InputStream`/`OutputStream` Compatibility“ (eine bewusste Abweichung) und „Deadlock Behavior → Read“ (Semantik, Unterschied zu `PipedInputStream`, Folge für `InputStreamReader`, Muster `waitForAnyData()` + `available()`).
 - **Reproduktion:** keine (Designfrage).
 - **Status:** Designentscheidung, dokumentiert
-- **Commit:** –
+- **Commit:** 1529d3b
 
 <a id="f73"></a>
 ### F73 – streambuffer: ein gleichzeitiger `trim()` lässt `waitForAtLeast`/`read()` einen halb geleerten Puffer sehen
@@ -79,7 +79,7 @@ Repos plus eins. Geprüfte Klassen ohne Fund stehen in [`BUGHUNT-CHECKED.md`](BU
 - **Zusätzlich angelegt, nicht ausgeführt:** `jcstress/WriteRacingCloseRace` (Schreiber, Schließer, Leser; Ausgang `1, -1` verboten).
 - **CI-Bedarf:** `mvn -Pjcstress test`, `mvn -Pvmlens test`, die Formal-Verification-Pipeline (ESC, RAC, JPF) – alles in `TODO.md`, „Run the concurrency and formal-verification suites after the write/close fix“.
 - **Status:** gefixt
-- **Commit:** –
+- **Commit:** 1529d3b
 
 ## Offene Verdachte ohne Fund-ID
 
