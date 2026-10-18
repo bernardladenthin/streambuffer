@@ -631,28 +631,10 @@ public class StreamBuffer implements Closeable {
      * from {@code value > MAX_VALUE} vs {@code value >= MAX_VALUE} (both return
      * the same result when {@code value == MAX_VALUE}).
      *
-     * SAFETY GUARANTEE FOR LARGE BUFFERS:
-     *
-     * This method handles the type mismatch between:
-     * - {@link #availableBytes}: volatile long (0 to 2^63-1, supports future-proof large buffers)
-     * - InputStream.available(): int contract (0 to 2^31-1, ~2.1 billion)
-     *
-     * If availableBytes ever exceeds Integer.MAX_VALUE (e.g., 5GB+ of buffered data):
-     * 1. This method returns Integer.MAX_VALUE (~2.1GB)
-     * 2. The trim() loop reads at most maxAllocationSize (&#x2264; MAX_ARRAY_LENGTH) bytes per iteration
-     * 3. Loop condition (available > 0) allows continuation
-     * 4. Next iteration calls available() again, reads remaining bytes
-     * 5. Process repeats until all availableBytes are consolidated
-     *
-     * Result: NO DATA LOSS, NO OVERFLOW - all data is processed correctly.
-     *
-     * EXAMPLE FLOW (5GB data):
-     *   Iteration 1: available() &#x2192; clamped to 2,147,483,647 bytes &#x2192; read and consolidate
-     *   Iteration 2: available() &#x2192; clamped to remaining bytes &#x2192; read and consolidate
-     *   ... continues until availableBytes == 0
-     *
-     * This design allows StreamBuffer to theoretically support buffers larger than 2GB
-     * while maintaining compatibility with the InputStream API contract that uses int.
+     * <p>Used by {@code available()}: {@link #availableBytes} is a {@code long} and can exceed
+     * {@link Integer#MAX_VALUE} when more than 2&nbsp;GiB are buffered, while
+     * {@link java.io.InputStream#available()} returns an {@code int}. Such a value is reported as
+     * {@link Integer#MAX_VALUE}; the buffered data itself is unaffected.
      *
      * Package-private for direct unit testing.
      */

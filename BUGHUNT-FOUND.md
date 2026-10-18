@@ -11,7 +11,7 @@ Repos plus eins. Geprüfte Klassen ohne Fund stehen in [`BUGHUNT-CHECKED.md`](BU
 - [F02](#f02) — mittel — *gefixt*
 - [F03](#f03) — mittel — *Designentscheidung, offen für den Nutzer*
 - [F73](#f73) — hoch — *gefixt*
-- [F110](#f110) — niedrig — *nur beschrieben*
+- [F110](#f110) — niedrig — *gefixt (Doku)*
 
 ## Funde
 
@@ -55,10 +55,12 @@ Repos plus eins. Geprüfte Klassen ohne Fund stehen in [`BUGHUNT-CHECKED.md`](BU
 - **Datei:** `src/main/java/net/ladenthin/streambuffer/StreamBuffer.java:634` (Javadoc von `clampToMaxInt`)
 - **Schwere:** niedrig
 - **Beschreibung:** Die Javadoc begründet die Klemmung mit dem Ablauf von `trim()`: „The trim() loop reads at most maxAllocationSize bytes per iteration … Loop condition (available > 0) … Next iteration calls available() again“, samt Beispiel für 5 GB. So arbeitete `trim()` bis F73 (`89d2173`), das den Puffer über den eigenen Eingabestrom leerte. Seit F73 kopiert `trim()` direkt aus dem Deque und liest `availableBytes`, ohne `available()` oder `clampToMaxInt`; einziger Aufrufer ist jetzt `availableClamped()` (`InputStream.available()`). Die Javadoc beschreibt also Code, den es nicht mehr gibt – eine Abweichung, die mein eigener Fix F73 hinterlassen hat. Der Code ist korrekt.
-- **Fix:** keiner. Vorschlag: den Absatz „SAFETY GUARANTEE …“ samt Beispiel auf den verbliebenen Zweck kürzen (`available()` meldet höchstens `Integer.MAX_VALUE`, auch wenn mehr als 2 GiB gepuffert sind).
-- **Reproduktion:** keine (reine Doku-Abweichung).
-- **Rot-Grün-Nachweis:** entfällt.
-- **Status:** nur beschrieben (Nutzerregel vom 2026-10-17: gefixt und committet wird nur mit Test; eine reine Doku-Abweichung hat keinen, wie F35)
+- **Historie:** Der Absatz „SAFETY GUARANTEE …“ kam mit `d3b9731` (2026-04-15) und stimmte damals: `trim()` lief über `while ((available = is.available()) > 0)`. Mein F73-Fix `89d2173` (2026-10-18) hat `trim()` auf das direkte Kopieren aus dem Deque umgestellt und die Javadoc übersehen. JML-Spezifikation und ESC-Beweis betreffen nur die Funktion und bleiben gültig.
+- **Gleiche Art, mitbehoben:** README „Default: `Integer.MAX_VALUE`“ bei `maxAllocationSize` (seit `80d8c71`, 2026-04-15); seit `f88be77` (2026-09-30) ist der Default `MAX_ARRAY_LENGTH = Integer.MAX_VALUE - 8` und der Setter klemmt darauf. Code richtig, README veraltet.
+- **Fix:** Entscheidung des Nutzers (Variante A): Javadoc auf den verbliebenen Zweck gekürzt (`available()` meldet höchstens `Integer.MAX_VALUE`, wenn mehr als 2 GiB gepuffert sind), README nennt den richtigen Default. `clampToMaxInt` bleibt (ESC-Beweisumfang samt Zählung).
+- **Reproduktion:** keine (reine Doku-Abweichung); `clampToMaxInt` ist durch die bestehenden direkten Tests und den ESC-Beweis abgedeckt.
+- **Rot-Grün-Nachweis:** – (Doku-Korrektur, Freigabe des Nutzers für Doku ohne roten Test)
+- **Status:** gefixt (Doku)
 - **Commit:** –
 
 ## Offene Verdachte ohne Fund-ID

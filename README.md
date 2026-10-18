@@ -243,7 +243,7 @@ sb.setMaxAllocationSize(1024 * 1024);  // cap each consolidated chunk at 1 MiB
 long current = sb.getMaxAllocationSize();
 ```
 
-- Default: `Integer.MAX_VALUE` (effectively one chunk per trim pass).
+- Default: `Integer.MAX_VALUE - 8`, the largest array the JVM reliably allocates (effectively one chunk per trim pass); larger values passed to `setMaxAllocationSize` are capped to it.
 - Throws `IllegalArgumentException` if the value is ≤ 0.
 - Trim is skipped automatically when the resulting chunk count would not be smaller than the current `Deque` size — this prevents repeated no-op trims when `maxAllocationSize` is very small.
 
