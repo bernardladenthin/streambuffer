@@ -61,7 +61,7 @@ Repos plus eins. Geprüfte Klassen ohne Fund stehen in [`BUGHUNT-CHECKED.md`](BU
 - **Reproduktion:** keine (reine Doku-Abweichung); `clampToMaxInt` ist durch die bestehenden direkten Tests und den ESC-Beweis abgedeckt.
 - **Rot-Grün-Nachweis:** – (Doku-Korrektur, Freigabe des Nutzers für Doku ohne roten Test)
 - **Status:** gefixt (Doku)
-- **Commit:** –
+- **Commit:** 3fc6dba
 
 ## Offene Verdachte ohne Fund-ID
 
