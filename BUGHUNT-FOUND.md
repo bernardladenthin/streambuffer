@@ -49,6 +49,7 @@ Repos plus eins. Geprüfte Klassen ohne Fund stehen in [`BUGHUNT-CHECKED.md`](BU
 - **Status:** gefixt
 - **Commit:** streambuffer `89d2173`
 
+<a id="f110"></a>
 ### F110 – streambuffer: Javadoc von `clampToMaxInt` beschreibt die `trim()`-Schleife vor F73
 - **Zeit:** 2026-10-18 09:10 UTC
 - **Datei:** `src/main/java/net/ladenthin/streambuffer/StreamBuffer.java:634` (Javadoc von `clampToMaxInt`)
