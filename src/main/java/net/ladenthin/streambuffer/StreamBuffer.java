@@ -467,67 +467,52 @@ public class StreamBuffer implements Closeable {
      * write operation. The method checks itself if the buffer should be trimmed
      * or not.
      * <strong>MUST be called inside {@code synchronized(bufferLock)}.</strong>
-     * Sets {@link #isTrimRunning} volatile flag to prevent statistics updates during internal I/O.
+     * Sets the {@link #isTrimRunning} volatile flag while it runs. The buffered byte count
+     * ({@link #availableBytes}) stays constant throughout.
      * Respects {@link #maxAllocationSize} limit when allocating byte arrays.
      */
-    // Non-atomic update on the volatile availableBytes field at the
-    // "availableBytes += chunk.length" line is safe because the entire method
-    // body runs under bufferLock (see @GuardedBy and the synchronized block
-    // in the caller). volatile guarantees visibility to readers outside the
-    // lock; bufferLock guarantees atomicity of the read-modify-write.
+    // Non-atomic update on the volatile positionAtCurrentBufferEntry field is
+    // safe because the entire method body runs under bufferLock (see @GuardedBy
+    // and the synchronized block in the caller). volatile guarantees visibility
+    // to readers outside the lock; bufferLock guarantees atomicity of the
+    // read-modify-write.
     @SuppressWarnings("NonAtomicVolatileUpdate")
     @GuardedBy("bufferLock")
-    private void trim() throws IOException {
+    private void trim() {
         if (shouldTrim()) {
             isTrimRunning = true;
             try {
                 releaseTrimStartSignals();
 
                 /*
-                 * Need to store more bufs, may it is not possible to read out all
-                 * data at once. The available method only returns an int value
-                 * instead a long value. Store all read parts of the full buffer in
-                 * a deque.
+                 * Copy the buffered bytes into chunks of at most maxAllocationSize
+                 * directly from the FIFO. availableBytes is deliberately left untouched:
+                 * waitForAtLeast(long) and available() read it without bufferLock, and
+                 * draining it to zero and filling it up again (as reading through the
+                 * input stream did) let a waiter observe the intermediate count, e.g.
+                 * a read() reporting the end of an open stream that still held data.
                  */
                 final Deque<byte[]> tmpBuffer = new ArrayDeque<>();
-
-                int available;
-                // empty the current buffer, read out all bytes
-                while ((available = is.available()) > 0) {
-                    // Limit each allocation to maxAllocationSize
-                    final int toAllocate = (int) Math.min(available, maxAllocationSize);
-                    final byte[] buf = new byte[toAllocate];
-                    // read out of the buffer
-                    // and store the result to the tmpBuffer
-                    int read = is.read(buf);
-                    // should never happen
-                    assert read == toAllocate : "Read not enough bytes from buffer.";
-                    tmpBuffer.add(buf);
-                }
-                /*
-                 * Write all previously read parts back to the buffer directly.
-                 * We are already holding bufferLock and the chunks were
-                 * just produced internally, so going through SBOutputStream#write
-                 * is unnecessary and would fail at requireNonClosed() if close()
-                 * is invoked concurrently — discarding tmpBuffer and losing
-                 * every byte that trim already drained.
-                 */
-                while (!tmpBuffer.isEmpty()) {
-                    // Deque.pollFirst() may return null per the JDK contract; the
-                    // !isEmpty guard above makes it non-null here in practice, but
-                    // neither NullAway's flow analyzer nor the Checker Framework
-                    // Nullness Checker bridge that loop-guard reasoning, so we make
-                    // the non-null contract explicit.
-                    final byte[] chunk = tmpBuffer.pollFirst();
-                    if (chunk == null) {
-                        throw new java.util.NoSuchElementException(
-                                "tmpBuffer.pollFirst() returned null despite a successful isEmpty() check"
-                                        + " (remaining=" + tmpBuffer.size()
-                                        + ", indicates a concurrent modification of tmpBuffer).");
+                long remaining = availableBytes;
+                while (remaining > 0) {
+                    final int toAllocate = (int) Math.min(remaining, maxAllocationSize);
+                    final byte[] chunk = new byte[toAllocate];
+                    int filled = 0;
+                    while (filled < toAllocate) {
+                        final byte[] first = buffer.getFirst();
+                        final int toCopy = Math.min(first.length - positionAtCurrentBufferEntry, toAllocate - filled);
+                        System.arraycopy(first, positionAtCurrentBufferEntry, chunk, filled, toCopy);
+                        filled += toCopy;
+                        positionAtCurrentBufferEntry += toCopy;
+                        if (positionAtCurrentBufferEntry == first.length) {
+                            buffer.pollFirst();
+                            positionAtCurrentBufferEntry = 0;
+                        }
                     }
-                    buffer.add(chunk);
-                    availableBytes += chunk.length;
+                    tmpBuffer.add(chunk);
+                    remaining -= toAllocate;
                 }
+                buffer.addAll(tmpBuffer);
             } finally {
                 isTrimRunning = false;
                 releaseTrimEndSignals();

@@ -10,6 +10,7 @@ Repos plus eins. Geprüfte Klassen ohne Fund stehen in [`BUGHUNT-CHECKED.md`](BU
 
 - [F02](#f02) — mittel — *gefixt*
 - [F03](#f03) — mittel — *Designentscheidung, offen für den Nutzer*
+- [F73](#f73) — hoch — *gefixt*
 
 ## Funde
 
@@ -32,6 +33,20 @@ Repos plus eins. Geprüfte Klassen ohne Fund stehen in [`BUGHUNT-CHECKED.md`](BU
 - **Reproduktion:** keine geschrieben (Designfrage).
 - **Status:** Designentscheidung, offen für den Nutzer – der Loop fasst diesen Eintrag nicht an (README „second wait phase“ und die jcstress-Tests zeigen, dass das Warten auf alle `len` Bytes gewollt ist). Ändern nur auf ausdrückliche Entscheidung des Nutzers.
 - **Commit:** –
+
+<a id="f73"></a>
+### F73 – streambuffer: ein gleichzeitiger `trim()` lässt `waitForAtLeast`/`read()` einen halb geleerten Puffer sehen
+- **Zeit:** 2026-10-18 01:35 UTC
+- **Datei:** `src/main/java/net/ladenthin/streambuffer/StreamBuffer.java:496` (`trim`), `:794` (`waitForAtLeast`)
+- **Schwere:** hoch
+- **Beschreibung:** `trim()` (läuft im Schreib-Thread unter `bufferLock`) leerte den Puffer, indem es über den eigenen `InputStream` las, und schrieb die Bytes danach zurück. Dabei sank das `volatile` Feld `availableBytes` Schritt für Schritt bis 0 und stieg dann wieder. `waitForAtLeast(long)` liest das Feld **ohne** Lock und zweimal: einmal in der Schleifenbedingung, einmal für den Rückgabewert. Fällt ein Trim dazwischen, gibt die Methode weniger zurück als verlangt, obwohl der Stream offen ist und keine Daten verbraucht wurden – entgegen ihrer Javadoc („blocks until at least `bytes` bytes are available, or the stream is closed“). Folgen über die privaten Lesepfade: `read()` prüft `waitForAnyData() < 1` und meldet bei einem Zwischenwert 0 das **Ende eines offenen Streams, der noch Daten hält** (ein Leser bricht ab, die Daten gehen verloren); `read(byte[],…)` liefert verkürzt. Ein `close()` aus einem dritten Thread während eines Trims ergibt über den `streamClosed`-Zweig dasselbe. Ausgelöst wird es im Normalbetrieb: jeder Schreibvorgang, der mehr als `maxBufferElements` (Vorgabe 100) Einträge erzeugt, trimmt.
+- **Fix:** `trim()` kopiert die Einträge direkt aus der Deque in Blöcke zu höchstens `maxAllocationSize` (Ausgangsposition `positionAtCurrentBufferEntry` berücksichtigt) und lässt `availableBytes` unverändert. Kein Lesen über den Stream mehr, `throws IOException` und der Null-Check des Zwischenpuffers entfallen. README (Trim-Abschnitt, Statistik) nachgezogen; die Zeile zum längst entfernten `ignoreSafeWrite`-Flag (aus F02) war ohnehin veraltet.
+- **Reproduktion:** `StreamBufferTest$ConcurrentTrimAndWriteTests#waitForAtLeast_concurrentTrim_neverReturnsFewerBytesThanRequested` – niemand liest, `maxBufferElements` 1000, Schreiber schreibt Einzelbytes, ein Wartender ruft `waitForAtLeast(gesehen)` und prüft, dass nicht weniger zurückkommt. Mit Fix ist das deterministisch (ohne Leser sinkt `availableBytes` nie), ohne Fix ein Stresstest, der in Millisekunden rot wird.
+- **Rot-Grün-Nachweis:** ohne Fix rot in 4 von 4 Läufen („Expected: is null but: was "waitForAtLeast(998) returned 997 on an open stream"“, ebenso 44001→44000, 4001→4000, 989→988), 28 ms bis zum Fund; mit Fix grün in 3 von 3 Läufen (2/2 der Klasse); Gegenprobe per `git stash` wieder rot, nach `pop` grün. Breit: `StreamBufferTest` 287/287, `StreamBufferArchitectureTest` 10/10, `StreamBufferProperties` 5/5; `spotbugs:check` grün; PIT 199/199 getötet (Test strength 100 %).
+- **Nicht geprüft:** OpenJML-RAC/ESC (`trim` steht nicht in der `.jml`, kein ESC-Ziel), jcstress- und vmlens-Profil, Lincheck.
+- **CI-Bedarf:** die Pipeline `formal-verification.yml` (RAC-Lauf der Suite gegen den geänderten `trim`) einmal mitlaufen lassen.
+- **Status:** gefixt
+- **Commit:** (folgt)
 
 ## Offene Verdachte ohne Fund-ID
 

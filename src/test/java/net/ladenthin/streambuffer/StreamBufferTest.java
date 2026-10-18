@@ -2084,6 +2084,47 @@ public class StreamBufferTest {
             assertThat(is.available(), is(0));
             assertThat(sb.isClosed(), is(true));
         }
+
+        @DisplayName("waitForAtLeast(): a concurrent trim never makes it return fewer bytes than requested")
+        @Test
+        @Timeout(60)
+        public void waitForAtLeast_concurrentTrim_neverReturnsFewerBytesThanRequested() throws Exception {
+            // arrange — nobody reads, so the buffered byte count can only grow; a trim consolidates
+            // 1000 single-byte entries at a time while the waiter reads the count without the lock
+            final StreamBuffer sb = new StreamBuffer();
+            sb.setMaxBufferElements(1_000);
+            final OutputStream os = sb.getOutputStream();
+            final AtomicReference<String> violation = new AtomicReference<>();
+
+            Thread waiter = new Thread(() -> {
+                try {
+                    while (violation.get() == null && !sb.isClosed()) {
+                        final long seen = sb.getAvailableBytesExact();
+                        if (seen > 0) {
+                            final long returned = sb.waitForAtLeast(seen);
+                            if (returned < seen) {
+                                violation.compareAndSet(
+                                        null,
+                                        "waitForAtLeast(" + seen + ") returned " + returned + " on an open stream");
+                            }
+                        }
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+
+            // act
+            waiter.start();
+            for (int i = 0; i < 2_000_000 && violation.get() == null; i++) {
+                os.write(1);
+            }
+            os.close();
+            waiter.join();
+
+            // assert
+            assertThat(violation.get(), is((String) null));
+        }
     }
 
     @Nested

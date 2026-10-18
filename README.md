@@ -168,7 +168,7 @@ sb.setMaxBufferElements(50);  // trim when more than 50 elements are queued
 sb.setMaxBufferElements(0);   // disable trimming entirely
 ```
 
-Trimming is triggered by writes, not by `setMaxBufferElements`. The trim internally bypasses `safeWrite` (via an `ignoreSafeWrite` flag) because the byte arrays it produces are not reachable from outside the buffer.
+Trimming is triggered by writes, not by `setMaxBufferElements`. The trim copies the buffered arrays directly into the consolidated ones, without going through the streams, so `safeWrite` does not apply (the arrays it produces are not reachable from outside the buffer) and the buffered byte count stays constant while it runs: a concurrent `waitForAtLeast` or `available()` never sees a partly drained buffer.
 
 If `maxAllocationSize` is set (see below), trim may produce multiple smaller chunks instead of one. Trim is also skipped automatically when consolidation would not reduce the chunk count below `maxBufferElements` — for example, when `maxAllocationSize` is small enough that the resulting chunk count would still exceed the threshold. This prevents repeated no-op trims on every write.
 
@@ -209,7 +209,7 @@ Signals are stored in a `CopyOnWriteArrayList` for thread-safe iteration. The "m
 
 ### Statistics Tracking
 
-`StreamBuffer` tracks cumulative I/O statistics for the bytes flowing through the user-facing API. Internal reads and writes performed by the trim operation are excluded — `isTrimRunning` is checked before updating the counters so the statistics always reflect user I/O only.
+`StreamBuffer` tracks cumulative I/O statistics for the bytes flowing through the user-facing API. The trim operation is excluded: it consolidates the buffered arrays directly, without reading or writing through the streams, so the statistics always reflect user I/O only.
 
 ```java
 StreamBuffer sb = new StreamBuffer();
