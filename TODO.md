@@ -22,7 +22,8 @@ annotated, so everything below is genuinely still open.
     exercise a `close()` that takes `bufferLock`.
   - `mvn -Pvmlens test`: the reader/writer interleaving test.
   - The `formal-verification.yml` pipeline: OpenJML ESC (unchanged scope, expect the same proof
-    count) and RAC over the full suite with the new test, plus the `jpf-interleavings` job.
+    count) and RAC over the full suite with the new test, plus the `jpf-interleavings` job. The RAC
+    run also covers bug-hunt F73 (the changed `trim`), which was never run against RAC either.
   - Optional, worth it: extend the JPF harness (`src/test/jpf/`) with a third thread that closes
     while the writer writes, so the write/close ordering is model-checked exhaustively; today's
     harness writes and closes from the same thread and cannot see this race.
