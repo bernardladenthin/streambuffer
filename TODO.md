@@ -109,8 +109,10 @@ annotated, so everything below is genuinely still open.
     re-scoping spike to see whether a *partial* invariant (e.g. non-negativity + position bounds
     proven on a static extraction of the read/write inner loops) is reachable more cheaply.
   - **On every OpenJML upgrade:** re-try dropping the two spec-file deletions in
-    `.github/actions/setup-openjml/action.yml` (bump the cache-key fixup suffix), and re-try the
-    four class invariants documented in the `.jml` header.
+    `.github/actions/setup-openjml/action.yml` (bump the cache-key fixup suffix), re-try the
+    four class invariants documented in the `.jml` header, and, once #1050 is fixed, drop the RAC
+    scaling (`streambuffer.test.rac` and `jqwik.tries.default` in the `jml-rac` profile,
+    `StreamBufferTest.iterations`).
   - **Evaluated and rejected 2026-09** (do not re-open without new facts) — deductive/model-checking
     alternatives beyond OpenJML: **KeY 3.0.0** — could
     re-prove the same static scope with archived `.proof` files, but proof replay is

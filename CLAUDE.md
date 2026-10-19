@@ -150,6 +150,11 @@ mvn -P jml-rac -Dopenjml.home=<openjml> -Dopenjml.jdk.java=<openjml>/jdk/bin/jav
   `IllegalAccessError`), was fixed upstream by [OpenJML/Specs#29](https://github.com/OpenJML/Specs/pull/29)
   + [OpenJML/OpenJML#982](https://github.com/OpenJML/OpenJML/pull/982), released in 21.0.29; its
   `rm` is gone, and the suite passes against the bundled file (285/285).
+- Under `-Pjml-rac` the stress loops of `StreamBufferTest` and the jqwik tries are scaled down
+  (`streambuffer.test.rac`, `jqwik.tries.default` 100): RAC prints a ~10 KB stack trace for every
+  `System.arraycopy`/`clone` (an uncompiled model method of the bundled JDK spec,
+  [OpenJML/OpenJML#1050](https://github.com/OpenJML/OpenJML/issues/1050)), and unscaled the job ran
+  into its timeout with every contract holding. Do not remove the scaling before a release fixes it.
 - RAC classes are class-file 65 and live only under `target/rac-classes` — they never enter the
   shipped jar, so the Java 8 bytecode floor is unaffected.
 

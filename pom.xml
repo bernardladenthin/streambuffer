@@ -854,7 +854,8 @@ SPDX-License-Identifier: Apache-2.0
                                     and clone prints a ~10 KB stack trace for an uncompiled model
                                     method of the bundled JDK spec, so the concurrent-trim test's
                                     2 million writes took 7,344 s and 21 GB of log, far past this
-                                    job's timeout, with every contract holding.
+                                    job's timeout, with every contract holding. OpenJML/OpenJML#1050;
+                                    drop this and jqwik.tries.default below once a release fixes it.
                                 -->
                                 <streambuffer.test.rac>true</streambuffer.test.rac>
                                 <!--

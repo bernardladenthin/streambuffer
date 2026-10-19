@@ -59,7 +59,9 @@ public class StreamBufferTest {
      * 10 KB, because the bundled JDK specification uses a model method that is not compiled
      * ({@code Arrays.equalArrays}); a loop of millions of writes then spends hours writing log and runs
      * into the job's timeout without any contract being violated (measured: 2 million single-byte
-     * writes through trim, 7,344 s and 21 GB of log).
+     * writes through trim, 7,344 s and 21 GB of log). Reported as
+     * <a href="https://github.com/OpenJML/OpenJML/issues/1050">OpenJML/OpenJML#1050</a>; once a
+     * release carries the fix, the scaling can go.
      */
     static final boolean UNDER_RAC = Boolean.getBoolean("streambuffer.test.rac");
 
