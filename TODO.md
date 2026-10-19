@@ -25,9 +25,6 @@ annotated, so everything below is genuinely still open.
   - The `formal-verification.yml` pipeline: OpenJML ESC (unchanged scope, expect the same proof
     count) and RAC over the full suite with the new test, plus the `jpf-interleavings` job. The RAC
     run also covers bug-hunt F73 (the changed `trim`), which was never run against RAC either.
-  - Optional, worth it: extend the JPF harness (`src/test/jpf/`) with a third thread that closes
-    while the writer writes, so the write/close ordering is model-checked exhaustively; today's
-    harness writes and closes from the same thread and cannot see this race.
 
 - **Formal verification — follow-ups.** The two-layer setup (OpenJML ESC proof of the static
   sequential core + OpenJML RAC under the full test suite) landed 2026-09 — see CLAUDE.md

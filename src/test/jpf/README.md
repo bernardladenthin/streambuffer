@@ -28,7 +28,18 @@ reporting:
 - **byte fidelity** — the reader must receive exactly the two bytes, in order, then EOF (an explicit
   `throw`, validated with a negative control so it cannot be vacuous).
 
-Last confirmed run: **no errors detected**, ~14,000 states, maxDepth 130.
+Last confirmed run: **no errors detected**, 13,616 states, maxDepth 130.
+
+A second harness (`JpfWriteCloseHarness.java`, run configuration `WriteClose.jpf`) puts the writer,
+a separate closer and the reader in three threads, so a write can race the close — which the first
+harness cannot show, since its writer closes after its own writes. The writer writes two single
+bytes, each of which either succeeds or fails with "Stream closed"; JPF checks over every
+interleaving that a write after a failed write fails too, and that the reader receives **exactly**
+the bytes whose write returned normally, in order. That is the property bug-hunt finding F149 broke
+(a write passed the closed check outside the lock and added its bytes after the reader had already
+seen the end). Last confirmed run: **no errors detected**, 75,438 states (~15–25 s); against the
+production classes before the F149 fix (`1529d3b^`) it reports "reader got 1 bytes, but 2 writes
+returned normally" after 3,956 states, so the oracle is not vacuous.
 
 ## Files
 
@@ -36,6 +47,8 @@ Last confirmed run: **no errors detected**, ~14,000 states, maxDepth 130.
 |---|---|
 | `net/ladenthin/streambuffer/jpf/JpfStreamBufferHarness.java` | the model-checked harness (the oracle) |
 | `StreamBuffer.jpf` | JPF run configuration (target + classpath) |
+| `net/ladenthin/streambuffer/jpf/JpfWriteCloseHarness.java` | the write/close harness (writer, closer, reader) |
+| `WriteClose.jpf` | its JPF run configuration (same classpath) |
 | `jpf-model/java/util/concurrent/atomic/AtomicLong.java` | a completed `AtomicLong` model that patches a jpf-core stub (see below) |
 
 ## Why the AtomicLong patch
@@ -74,8 +87,9 @@ docker run --rm -v "$WORK/jpf-core:/jpf" -v "$SB:/sb" -w /jpf eclipse-temurin:11
   cp "$(find ~/.m2 /root/.m2 -name "checker-qual-*.jar"        2>/dev/null | head -1)" lib/checker-qual.jar
   cp "$(find ~/.m2 /root/.m2 -name "jspecify-*.jar"            2>/dev/null | head -1)" lib/jspecify.jar
   cp "$(find ~/.m2 /root/.m2 -name "error_prone_annotations-*.jar" 2>/dev/null | head -1)" lib/error-prone-annotations.jar
-  javac --release 8 -cp streambuffer-classes -d out net/ladenthin/streambuffer/jpf/JpfStreamBufferHarness.java
+  javac --release 8 -cp streambuffer-classes -d out net/ladenthin/streambuffer/jpf/*.java
   java -jar /jpf/build/RunJPF.jar StreamBuffer.jpf
+  java -jar /jpf/build/RunJPF.jar WriteClose.jpf
 '
 ```
 

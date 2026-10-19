@@ -274,9 +274,11 @@ jobs:
           cp src/test/jpf/jpf-model/java/util/concurrent/atomic/AtomicLong.java \
              jpf-core/src/classes/modules/java.base/java/util/concurrent/atomic/AtomicLong.java
           (cd jpf-core && ./gradlew --no-daemon buildJars -x test)
-      - name: Model-check the harness (JDK 11)
-        # RunJPF exits 0 even when it reports "error #N", so the result is gated on the log below,
-        # never on the exit code.
+      - name: Model-check the harnesses (JDK 11)
+        # RunJPF exits 0 even when it reports "error #N", so the result is gated on the logs below,
+        # never on the exit code. Two harnesses: StreamBuffer.jpf (writer that also closes, reader) and
+        # WriteClose.jpf (writer, closer and reader in three threads -- the order of write and close,
+        # bug hunt F149, which the first one cannot see).
         run: |
           set -euo pipefail
           export JAVA_HOME="$JAVA_HOME_11_X64"
@@ -284,29 +286,31 @@ jobs:
           rm -rf out streambuffer-classes && mkdir -p out streambuffer-classes
           cp -r "$GITHUB_WORKSPACE/target/classes/net" streambuffer-classes/
           "$JAVA_HOME/bin/javac" --release 8 -cp streambuffer-classes -d out \
-            net/ladenthin/streambuffer/jpf/JpfStreamBufferHarness.java
+            net/ladenthin/streambuffer/jpf/JpfStreamBufferHarness.java \
+            net/ladenthin/streambuffer/jpf/JpfWriteCloseHarness.java
           "$JAVA_HOME/bin/java" -jar "$GITHUB_WORKSPACE/jpf-core/build/RunJPF.jar" StreamBuffer.jpf \
             | tee jpf-output.log
-      - name: Gate on the JPF result
+          "$JAVA_HOME/bin/java" -jar "$GITHUB_WORKSPACE/jpf-core/build/RunJPF.jar" WriteClose.jpf \
+            | tee jpf-output-write-close.log
+      - name: Gate on the JPF results
         run: |
           set -euo pipefail
-          log=src/test/jpf/jpf-output.log
-          if grep -qE '^error #' "$log"; then
-            echo "::error::JPF reported an interleaving defect (see log)."
-            exit 1
-          fi
-          if ! grep -q 'no errors detected' "$log"; then
-            echo "::error::JPF did not finish cleanly ('no errors detected' absent) — treat as failure."
-            exit 1
-          fi
-          states="$(grep -oE 'new=[0-9]+' "$log" | head -1 || echo 'new=?')"
-          {
-            echo "### JPF exhaustive interleavings"
-            echo "No errors detected over all enumerated schedules ($states states) — no deadlock, no uncaught exception, byte fidelity held."
-          } >> "$GITHUB_STEP_SUMMARY"
+          echo "### JPF exhaustive interleavings" >> "$GITHUB_STEP_SUMMARY"
+          for log in src/test/jpf/jpf-output.log src/test/jpf/jpf-output-write-close.log; do
+            if grep -qE '^error #' "$log"; then
+              echo "::error::JPF reported an interleaving defect (see $log)."
+              exit 1
+            fi
+            if ! grep -q 'no errors detected' "$log"; then
+              echo "::error::JPF did not finish cleanly ('no errors detected' absent in $log) — treat as failure."
+              exit 1
+            fi
+            states="$(grep -oE 'new=[0-9]+' "$log" | head -1 || echo 'new=?')"
+            echo "$(basename "$log"): no errors detected over all enumerated schedules ($states states) — no deadlock, no uncaught exception, byte fidelity held." >> "$GITHUB_STEP_SUMMARY"
+          done
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: jpf-output
-          path: src/test/jpf/jpf-output.log
+          path: src/test/jpf/jpf-output*.log
           if-no-files-found: ignore

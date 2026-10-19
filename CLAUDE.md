@@ -69,9 +69,11 @@ deliberately not part of the synchronous Publish pipeline and never a required c
 2. **OpenJML RAC**: the existing JUnit suite runs against RAC-instrumented classes
    (violations throw), checking the static contracts plus the instance/stream-adapter contracts.
 3. **JPF interleavings** (`src/test/jpf/`, scheduled/dispatch CI job `jpf-interleavings`): Java
-   PathFinder exhaustively model-checks the concurrent read/write/close protocol. Requires JDK 11;
-   builds jpf-core from a pinned commit with a one-file `AtomicLong` model patch; the harness is
-   compiled at `--release 8` and run under JPF. Local recipe (Docker+JDK 11) in
+   PathFinder exhaustively model-checks the concurrent read/write/close protocol with two harnesses:
+   `StreamBuffer.jpf` (a writer that closes after its writes, a reader) and `WriteClose.jpf` (writer,
+   closer and reader in three threads -- the order of write and close, which the first cannot see;
+   red before bug-hunt fix F149). Requires JDK 11; builds jpf-core from a pinned commit with a
+   one-file `AtomicLong` model patch; the harnesses are compiled at `--release 8` and run under JPF. Local recipe (Docker+JDK 11) in
    `src/test/jpf/README.md`. Never touches the shipped jar.
 
 The `@GuardedBy("bufferLock")` lock discipline is gated separately by Error Prone in the default
