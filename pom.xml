@@ -834,6 +834,15 @@ SPDX-License-Identifier: Apache-2.0
                                     is lifted. JUnit reads this config parameter from a system property.
                                 -->
                                 <junit.jupiter.execution.timeout.mode>disabled</junit.jupiter.execution.timeout.mode>
+                                <!--
+                                    Scales the stress loops of StreamBufferTest down (its
+                                    iterations(normal, underRac)): under RAC every System.arraycopy
+                                    and clone prints a ~10 KB stack trace for an uncompiled model
+                                    method of the bundled JDK spec, so the concurrent-trim test's
+                                    2 million writes took 7,344 s and 21 GB of log, far past this
+                                    job's timeout, with every contract holding.
+                                -->
+                                <streambuffer.test.rac>true</streambuffer.test.rac>
                             </systemPropertyVariables>
                             <!--
                                 This excludes list REPLACES the pluginManagement one (Maven merges

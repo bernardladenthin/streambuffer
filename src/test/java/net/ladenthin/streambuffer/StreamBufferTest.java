@@ -53,6 +53,29 @@ public class StreamBufferTest {
      */
     static final byte anyValue = 42;
 
+    /**
+     * Whether the suite runs against the RAC-instrumented classes ({@code -Pjml-rac} sets the system
+     * property). There every {@code System.arraycopy} and {@code clone} prints a stack trace of about
+     * 10 KB, because the bundled JDK specification uses a model method that is not compiled
+     * ({@code Arrays.equalArrays}); a loop of millions of writes then spends hours writing log and runs
+     * into the job's timeout without any contract being violated (measured: 2 million single-byte
+     * writes through trim, 7,344 s and 21 GB of log).
+     */
+    static final boolean UNDER_RAC = Boolean.getBoolean("streambuffer.test.rac");
+
+    /**
+     * The iteration count of a stress loop: {@code normal} in the default build, {@code underRac}
+     * against the RAC-instrumented classes, where the contracts are what is checked and a few
+     * thousand iterations exercise every specified path.
+     *
+     * @param normal   the iterations in the default build
+     * @param underRac the iterations under RAC
+     * @return the iteration count for this run
+     */
+    static int iterations(int normal, int underRac) {
+        return UNDER_RAC ? underRac : normal;
+    }
+
     @Nested
     @DisplayName("roundtrip")
     class RoundtripTests {
@@ -1416,7 +1439,7 @@ public class StreamBufferTest {
             // act — mutate each array right after write() returned; safeWrite promises a private copy
             singleByteWriter.start();
             reader.start();
-            for (int i = 0; i < 200_000; i++) {
+            for (int i = 0, n = iterations(200_000, 2_000); i < n; i++) {
                 final byte[] data = new byte[8];
                 Arrays.fill(data, original);
                 os.write(data);
@@ -2190,7 +2213,8 @@ public class StreamBufferTest {
 
             // act
             waiter.start();
-            for (int i = 0; i < 2_000_000 && violation.get() == null; i++) {
+            // 2 million writes are about 2,000 trims of 1,000 entries; under RAC 5,000 writes, i.e. 5 trims
+            for (int i = 0, n = iterations(2_000_000, 5_000); i < n && violation.get() == null; i++) {
                 os.write(1);
             }
             os.close();
