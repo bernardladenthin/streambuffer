@@ -56,19 +56,22 @@ annotated, so everything below is genuinely still open.
       `ArrayDeque.jml` `rm`.
     - Missing `JAVA_VERSION` key in the bundled `jdk/release`: missing in 21.0.28 (reported in #1012),
       **present again in 21.0.29**; the guarded repair step is a no-op there and stays as a guard.
-  - **RAC evaluates a `signals (E e)` clause for an exception of another type — suspected OpenJML
-    bug, not yet verified or filed** (bug-hunt measurement S3, `BUGHUNT-MEASUREMENTS.md`). The spec
+  - **RAC evaluates a `signals (E e)` clause for an exception of another type — confirmed OpenJML
+    bug, reported in [OpenJML/OpenJML#1050](https://github.com/OpenJML/OpenJML/issues/1050)** (2026-10-19; reproduced on 21.0.28 and on `dev-21` `529ac454da`,
+    `BUGHUNT-MEASUREMENTS.md`, „OpenJML-Verdachtsfälle (RAC)“). The spec
     of `waitForAtLeast` allows `InterruptedException` (`signals_only IllegalArgumentException,
     InterruptedException`) and constrains only the other one (`signals (IllegalArgumentException e)
     bytes <= 0`). When a read is interrupted, RAC prints `JML undefined exceptional postcondition -
     exception thrown` with `ClassCastException: InterruptedException cannot be cast to
     IllegalArgumentException` (stack at `waitForAnyData`, which calls `waitForAtLeast`). By JML's
     semantics the clause only applies when the exception is an instance of `E`, so nothing should be
-    reported; the guess is a cast without an `instanceof` guard. Harmless here (reported, not thrown,
-    under `rac=exception`; the test stays green). To do: confirm with a minimal reproducer, then file
-    it together with the release awaited for Specs#29.
-  - **RAC prints a full stack trace per call for an uncompiled model method — suspected OpenJML
-    usability defect, not yet filed.** Every `System.arraycopy` and `clone` under RAC logs
+    reported. Confirmed: the call-site check casts without an `instanceof` guard when the predicate
+    folds to `false` for the actual argument (`waitForAtLeast(1L)`), `JmlAssertionAdder.applyHelper`.
+    Harmless here (reported, not thrown, under `rac=exception`; the test stays green). To do: re-run
+    once a release carries the fix.
+  - **RAC prints a full stack trace per call for an uncompiled model method — confirmed OpenJML
+    usability defect, reported in [OpenJML/OpenJML#1050](https://github.com/OpenJML/OpenJML/issues/1050)** (2026-10-19, same issue; 1000 `arraycopy` = 1000 traces, also
+    on `dev-21`; compiling with `-quiet` silences it). Every `System.arraycopy` and `clone` under RAC logs
     `Skipping a specification clause because it contains an uncompiled model method: 'boolean
     java.util.Arrays.equalArrays` plus a `NoSuchMethodError` stack trace (about 10 KB), once per
     call rather than once per clause. That is what made the concurrent-trim test take 7,344 s and

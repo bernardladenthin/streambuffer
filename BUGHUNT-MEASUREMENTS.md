@@ -590,7 +590,7 @@ liegt beim Nutzer.
 
 Zwei Verdachtsfälle aus S3 (TODO.md, „Formal verification — follow-ups“) wurden am 2026-10-19 geprüft:
 in streambuffer, mit eigenständigen Minimalreproduzenten und gegen einen selbst gebauten OpenJML-`dev-21`.
-Nichts wurde upstream gemeldet, kommentiert oder angelegt. Die Rohlogs sind nicht ins Repository übernommen.
+Beide Befunde wurden am 2026-10-19 in einem Issue gemeldet: [OpenJML/OpenJML#1050](https://github.com/OpenJML/OpenJML/issues/1050). Die Rohlogs sind nicht ins Repository übernommen.
 
 **Umgebung**
 
@@ -863,8 +863,8 @@ of a constant expression are not converted to the constant“), das `Arithmetic.
 `signals`-Prädikat mit den tatsächlichen Argumenten konstant `false` wird. Er besteht in 21.0.28 und dev-21. Für
 streambuffer ist er harmlos: Er wird nur gemeldet, nicht geworfen, der Test bleibt grün, und kein Vertrag ist verletzt.
 Die Meldung ist eine Falschmeldung. Ein Workaround in streambuffer ist nicht nötig. Ein Argument, das keine Konstante
-ist, würde die Meldung vermeiden, wäre aber eine Codeänderung nur für das Werkzeug und wird nicht empfohlen. Upstream
-melden (Entwurf unten).
+ist, würde die Meldung vermeiden, wäre aber eine Codeänderung nur für das Werkzeug und wird nicht empfohlen. Gemeldet
+als [OpenJML/OpenJML#1050](https://github.com/OpenJML/OpenJML/issues/1050).
 
 ---
 
@@ -989,13 +989,13 @@ wird bei jeder Ausführung erneut mit vollem Stacktrace gemeldet. Das ist der Me
 
 Für streambuffer gibt es zwei Möglichkeiten. Man behält die Skalierung der Stressschleifen unter `-Pjml-rac` bei. Oder
 man kompiliert die RAC-Klassen mit `-quiet`. Das unterdrückt die Meldung vollständig, verschweigt aber auch künftige
-„übersprungene Klausel“-Hinweise. **Nicht geprüft:** der volle streambuffer-Lauf mit `-quiet`. Upstream melden (Entwurf
-unten). Vorschlag: einmal pro Klausel oder Methode melden, Stacktrace nur bei höherer Verbosität. Zusätzlich oder
+„übersprungene Klausel“-Hinweise. **Nicht geprüft:** der volle streambuffer-Lauf mit `-quiet`. Gemeldet als
+[OpenJML/OpenJML#1050](https://github.com/OpenJML/OpenJML/issues/1050). Vorschlag: einmal pro Klausel oder Methode melden, Stacktrace nur bei höherer Verbosität. Zusätzlich oder
 stattdessen die zwei `byte[]`-Klauseln mit `-RAC` markieren oder durch ein ausführbares `\forall` ersetzen.
 
 ---
 
-### Issue-Entwurf A (nicht eingereicht)
+### Issue-Entwurf A (eingereicht, zusammen mit B, als #1050)
 
 **Titel:** RAC: call-site check of a callee's `signals (E e) P` casts the exception to `E` without `instanceof` when `P` folds to `false` → spurious "JML undefined exceptional postcondition - exception thrown"
 
@@ -1076,7 +1076,7 @@ Thanks again for OpenJML!
 
 ---
 
-### Issue-Entwurf B (nicht eingereicht)
+### Issue-Entwurf B (eingereicht, zusammen mit A, als #1050)
 
 **Titel:** RAC: a skipped clause with an uncompiled model method prints a full stack trace on every execution (`System.arraycopy`/`byte[].clone()` → `Arrays.equalArrays`)
 
