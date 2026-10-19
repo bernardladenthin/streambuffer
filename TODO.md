@@ -16,7 +16,8 @@ annotated, so everything below is genuinely still open.
   same lock, so a write racing a `close()` from another thread is either buffered before the close
   or fails with "Stream closed" (bug-hunt F149). The default build covers it deterministically
   (`StreamBufferTest$ConcurrentWriteAndCloseTests`, red before the change) and is green with PIT
-  199/199; these runs were not done and belong to the next joint CI run:
+  199/199; these runs were not done and belong to the next joint CI run (measurement brief with
+  answer fields: `BUGHUNT-MEASUREMENTS.md`, S1–S4):
   - `mvn -Pjcstress test`: the new `jcstress/WriteRacingCloseRace` (writer, closer and reader;
     outcome `1, -1` is forbidden) and the existing `Close*`/`Write*` termination tests, which now
     exercise a `close()` that takes `bufferLock`.
