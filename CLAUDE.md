@@ -44,7 +44,10 @@ mvn test-compile exec:java \
 `-prof gc` reports `gc.alloc.rate.norm` (bytes allocated per op) — useful for spotting hidden allocations on the read/write hot paths. `-prof async` produces flamegraphs and requires async-profiler installed locally; CI does not run it.
 
 `mvn test` also runs:
-- **jqwik properties** (`StreamBufferProperties`) — picked up by Surefire as a JUnit 6 engine.
+- **jqwik properties** (`StreamBufferProperties`) — a JUnit Platform engine; Surefire runs the class
+  only because `pom.xml` adds `**/*Properties.java` to its include patterns (until 2026-10-19 it ran
+  in no build, since the name matches none of Surefire's defaults). Under `-Pjml-rac` they run with
+  100 tries instead of 1000 (`jqwik.tries.default`).
 - **Lincheck** linearizability test (`StreamBufferLincheckTest`) over the non-blocking subset (`write`, `available`, `close`, `isClosed`).
 
 **Opt-in jcstress concurrency stress tests:**

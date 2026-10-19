@@ -298,6 +298,20 @@ SPDX-License-Identifier: Apache-2.0
                         <excludes>
                             <exclude>**/vmlens/*.java</exclude>
                         </excludes>
+                        <!--
+                            Surefire's default patterns plus **/*Properties.java: the jqwik class
+                            StreamBufferProperties (5 @Property, 1000 tries each) matched none of the
+                            defaults, so no surefire run ever executed it: not the default build, not
+                            -Pvmlens, not -Pjml-rac; yet CLAUDE.md and the jml-rac profile counted
+                            on it. Listing <includes> replaces the defaults, hence all of them here.
+                        -->
+                        <includes>
+                            <include>**/Test*.java</include>
+                            <include>**/*Test.java</include>
+                            <include>**/*Tests.java</include>
+                            <include>**/*TestCase.java</include>
+                            <include>**/*Properties.java</include>
+                        </includes>
                     </configuration>
                 </plugin>
                 <plugin>
@@ -843,6 +857,14 @@ SPDX-License-Identifier: Apache-2.0
                                     job's timeout, with every contract holding.
                                 -->
                                 <streambuffer.test.rac>true</streambuffer.test.rac>
+                                <!--
+                                    The same cost for the jqwik properties: 5 properties at the
+                                    default 1000 tries took 434 s under RAC (8 vCPU). 100 tries
+                                    still drive every specified method through generated inputs.
+                                    jqwik reads this JUnit Platform configuration parameter from a
+                                    system property, like the timeout mode above.
+                                -->
+                                <jqwik.tries.default>100</jqwik.tries.default>
                             </systemPropertyVariables>
                             <!--
                                 This excludes list REPLACES the pluginManagement one (Maven merges
