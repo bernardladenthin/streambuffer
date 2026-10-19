@@ -583,3 +583,567 @@ also genau den Fehler, den das heutige Harness nicht sehen kann, und beweist fü
 wie das heutige Harness (13.616), Laufzeit weiter im Sekundenbereich. Aus Sicht der Messung spricht nichts
 dagegen, sie dauerhaft aufzunehmen, etwa als zweites `target` im Job `jpf-interleavings`. Die Entscheidung
 liegt beim Nutzer.
+
+---
+
+## OpenJML-Verdachtsfälle (RAC)
+
+Zwei Verdachtsfälle aus S3 (TODO.md, „Formal verification — follow-ups“) wurden am 2026-10-19 geprüft:
+in streambuffer, mit eigenständigen Minimalreproduzenten und gegen einen selbst gebauten OpenJML-`dev-21`.
+Nichts wurde upstream gemeldet, kommentiert oder angelegt. Die Rohlogs sind nicht ins Repository übernommen.
+
+**Umgebung**
+
+- Maschine: DigitalOcean-Droplet, 4 geteilte vCPU (`lscpu`: `DO-Regular`), 8 GB RAM (plus 8 GB Swapfile, für den
+  Build angelegt), 160 GB Platte, Ubuntu 24.04.5 LTS, Kernel `6.8.0-142-generic`.
+- JDK für Maven und den dev-21-Build: Temurin `21.0.12.1+1`. Maven `3.9.11`.
+- streambuffer: Branch `ccr-90fc5f6a-vs4s0f`, `98000f5` („Record the two suspected OpenJML defects and drop the done
+  measurement item“), frisch von GitHub geklont.
+- **OpenJML 21.0.28:** `openjml-ubuntu-24.04-21.0.28.zip`, SHA-256 gegen den Workflow-Wert geprüft
+  (`/root/openjml.zip: OK`). Fixups genau wie in `.github/actions/setup-openjml`: `rm specs/java/util/ArrayDeque.jml`,
+  `rm specs/java/util/concurrent/atomic/AtomicLong.jml` und `JAVA_VERSION="21"` an `jdk/release` angehängt.
+  `openjml --version` gibt `openjml 21.0.28` aus. Laut `version-info.txt` wurde der Build aus OpenJML `01a0fe69db3d`
+  und Specs `1a91cb699082` erzeugt. Der Tag `21.0.28` zeigt auf `5df29e0f52c8`. `JmlAssertionAdder.java` und
+  `runtime/Utils.java` sind in beiden Commits byteidentisch. Die Zeilenangaben unten gelten daher für beide.
+- **OpenJML dev-21:** selbst gebaut nach `.github/workflows/build.yml` und den Actions `os-setup`, `openjml-checkout`
+  und `openjml-build`. Dazu gehörten die apt-Pakete aus `os-setup`, flache Klone von OpenJML `dev-21`
+  (`529ac454da0ab45ed1c103b7206fa8b6dc04d7dc`, Stand 2026-10-17, 232 Commits nach 21.0.28) und Specs `dev-21`
+  (`dc9f6be7c095`), außerdem OpenJMLDemo, JMLAnnotations und openjml.github.io sowie ein sparse-Checkout von
+  `smtlib/Solvers` (`Solvers-linux`). Danach `./configure && make release`. Der Start war um 15:19:04 UTC.
+  `Finished building target 'default (exploded-image)'` kam gegen 15:44 UTC, nach rund 25 Minuten.
+  `make release` brach danach in `post → openjml-lsp → vsix` ab: `/bin/sh: 1: npm: not found` / `make[3]: *** [Makefile:121: vsix] Error 127`.
+  Dieser Schritt baut nur die VS-Code-Erweiterung und ist für RAC unerheblich.
+  Die Distribution wurde deshalb von Hand so zusammengesetzt, wie `post` das Zip baut: `release-temp/` plus
+  `cp -rL build/linux-x86_64-server-release/jdk` plus `Solvers-linux`. `JAVA_VERSION` kam mit der Regel aus dem
+  `post`-Target dazu. `openjml --version` gibt `openjml 21.0.28a` aus. `version-info.txt` nennt `OpenJML 529ac454da0a…`
+  und `Specs dc9f6be7c095…`. Auf dev-21 wurden keine Spezifikationsdateien gelöscht.
+- RAC-Programme liefen immer mit der JVM von OpenJML (`<openjml>/jdk/bin/java`), mit `jmlruntime.jar` im Klassenpfad.
+
+---
+
+### Verdacht 1: `signals (E e) P` wird für eine Ausnahme eines anderen Typs ausgewertet
+
+**Ergebnis:** **Bestätigt, aber enger als vermutet.** Der Fehler steckt im Code, den RAC **an der Aufrufstelle**
+erzeugt, um die Ausnahme-Nachbedingungen des Aufgerufenen zu prüfen. Am Aufgerufenen selbst tritt er nicht auf. Er
+zeigt sich nur, wenn das `signals`-Prädikat nach dem Einsetzen der tatsächlichen Argumente zum Literal `false` gefaltet
+wird. In streambuffer passiert das, weil `waitForAnyData()` `waitForAtLeast(1L)` aufruft: Aus `bytes <= 0` wird dort
+`1L <= 0`, also `false`.
+
+Dann entfällt der `instanceof`-Schutz, der Cast `(IllegalArgumentException) exception` bleibt aber stehen. Eine
+`InterruptedException` (von `signals_only` erlaubt) löst dadurch eine `ClassCastException` aus. RAC fängt sie ab und
+meldet `JML undefined exceptional postcondition - exception thrown`.
+
+- Bestätigt in streambuffer, auf 21.0.28 und dev-21.
+- Der Minimalreproduzent aus dem Auftrag mit `m(1)` (`int`-Literal) löst den Fehler **nicht** aus, weder auf 21.0.28
+  noch auf dev-21. Mit `m(1L)` löst er ihn aus.
+- Mit einem Argument, das keine Konstante ist, tritt der Fehler nicht auf.
+- Die Meldung erscheint **an jeder Aufrufstelle**: direkt aus `main` **und** über `caller()`. Ob `caller()` eine
+  Spezifikation hat (`signals_only InterruptedException;` wie `waitForAnyData`) oder nicht, ändert nichts.
+- Unter `-Dorg.jmlspecs.openjml.rac=exception` wird **nichts geworfen**. Es wird nur gemeldet, der Exit-Code ist 0.
+  Der Grund: Der erzeugte `catch (RuntimeException)` ruft `Utils.reportException(String, RuntimeException)` auf, und
+  das gibt nur aus (`System.out.println` + `printStackTrace`). Das prüft weder `rac=exception` noch sonst eine
+  Einstellung.
+- Gegenproben: (a) ohne `signals`-Klausel keine Meldung, (b) mit `signals (Exception e) true;` keine Meldung, (c) eine
+  echte Verletzung liefert die richtige Meldung `JML signals condition is false` ohne CCE und wirft unter
+  `rac=exception` einen `JmlAssertionError` (Exit 1). Das Orakel ist also nicht leer.
+
+**streambuffer (Aufgabe 1)**, 21.0.28, RAC-Rezept aus dem Workflow (`--rac --rac-show-source=line --code-math=java
+--spec-math=java`). Danach
+`mvn -B --no-transfer-progress -P jml-rac -Dopenjml.home=… -Dopenjml.jdk.java=…/jdk/bin/java '-Dtest=StreamBufferTest$ThreadInterruptionDuringReadTests' test`
+(`openjml-sb-2128.log`). Der Testteil vollständig und wörtlich:
+
+```
+[INFO] Running net.ladenthin.streambuffer.StreamBufferTest
+[INFO] Running thread interruption during read()
+java.lang.NoSuchMethodError: 'boolean java.io.IOException.standardThrowable(java.lang.Throwable)'
+	at net.ladenthin.streambuffer.StreamBuffer.readIntoArray(StreamBuffer.java:14)
+	at net.ladenthin.streambuffer.StreamBuffer$SBInputStream.read(StreamBuffer.java:1080)
+	at net.ladenthin.streambuffer.StreamBufferTest$ThreadInterruptionDuringReadTests.lambda$read_arrayThreadInterruptedWhileWaitingForSecondByte_throwsIOException$1(StreamBufferTest.java:2673)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+Skipping a specification clause because it contains an uncompiled model method: 'boolean java.io.IOException.standardThrowable
+JML undefined exceptional postcondition - exception thrown
+java.lang.ClassCastException: class java.lang.InterruptedException cannot be cast to class java.lang.IllegalArgumentException (java.lang.InterruptedException and java.lang.IllegalArgumentException are in module java.base of loader 'bootstrap')
+	at net.ladenthin.streambuffer.StreamBuffer.waitForAnyData(StreamBuffer.java:418)
+	at net.ladenthin.streambuffer.StreamBuffer.readSingleByte(StreamBuffer.java:835)
+	at net.ladenthin.streambuffer.StreamBuffer$SBInputStream.read(StreamBuffer.java:1073)
+	at net.ladenthin.streambuffer.StreamBufferTest$ThreadInterruptionDuringReadTests.lambda$read_threadInterrupted_throwsIOException$0(StreamBufferTest.java:2630)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+java.lang.NoSuchMethodError: 'boolean java.io.IOException.standardThrowable(java.lang.Throwable)'
+	at net.ladenthin.streambuffer.StreamBuffer.readSingleByte(StreamBuffer.java:14)
+	at net.ladenthin.streambuffer.StreamBuffer$SBInputStream.read(StreamBuffer.java:1073)
+	at net.ladenthin.streambuffer.StreamBufferTest$ThreadInterruptionDuringReadTests.lambda$read_threadInterrupted_throwsIOException$0(StreamBufferTest.java:2630)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+Skipping a specification clause because it contains an uncompiled model method: 'boolean java.io.IOException.standardThrowable
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.474 s -- in thread interruption during read()
+[INFO] Tests run: 0, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.508 s -- in net.ladenthin.streambuffer.StreamBufferTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+```
+
+Die Meldung kommt genau einmal, der Test bleibt grün (wie in S3). Auf dev-21 ist sie identisch, bis auf die Laufzeit
+`1.288 s` (`openjml-sb-dev21.log`). Die Zeilennummer `StreamBuffer.java:418` zeigt nicht auf `waitForAnyData`
+(Zeilen 804–806, die Zeile 418 liegt in `validateOffsetAndLengthToWrite`). Die `.jml` hat nur 384 Zeilen. RAC ordnet
+dem eingefügten Code hier eine falsche Zeile zu. Im Minimalreproduzenten ist es die Zeile der `signals`-Klausel
+(`SignalsRepro.java:5`). Nebenbei zeigt dieser Lauf einen zweiten Fall von Verdacht 2: `IOException.standardThrowable`.
+
+**Bytecode-Beleg (streambuffer).** `javap -c -p` der RAC-Klasse, `waitForAnyData()` (`openjml-waitForAnyData-2128-javap.log`).
+Der Cast steht ohne `instanceof` davor, die Bedingung ist die Konstante `false` (`iconst_0`):
+
+```
+     955: aload         11
+     957: checkcast     #482                // class java/lang/IllegalArgumentException
+     960: astore        14
+     962: iconst_0
+     963: istore        15
+     965: ldc_w         #2196               // String src/main/java/net/ladenthin/streambuffer/StreamBuffer.java:805: verify: JML signals condition is false
+     ...
+     984: ldc           #69                 // String JML undefined exceptional postcondition - exception thrown
+     986: aload         14
+     988: invokestatic  #17                 // Method org/jmlspecs/runtime/Utils.reportException:(Ljava/lang/String;Ljava/lang/RuntimeException;)V
+```
+
+**Minimalreproduzent (Aufgabe 2).** Die Vorlage aus dem Auftrag, Variante `base`:
+
+```java
+public class SignalsRepro {
+  /*@ public behavior
+    @   requires true;
+    @   signals_only IllegalArgumentException, InterruptedException;
+    @   signals (IllegalArgumentException e) x <= 0;
+    @*/
+  public static void m(long x) throws InterruptedException {
+    if (x <= 0) throw new IllegalArgumentException();
+    throw new InterruptedException();
+  }
+  public static void caller() throws InterruptedException { m(1); }
+  public static void main(String[] a) {
+    try { m(1); } catch (InterruptedException e) { System.out.println("direct ok"); }
+    try { caller(); } catch (InterruptedException e) { System.out.println("via caller ok"); }
+  }
+}
+```
+
+Weitere Varianten:
+
+- `speccaller`: wie `base`, `caller()` zusätzlich mit `public behavior requires true; signals_only InterruptedException;`.
+- `nonconst`: wie `speccaller`, Argument `long one = a.length + 1;` statt eines Literals.
+- `nosignals`: Gegenprobe (a).
+- `sigexc`: Gegenprobe (b).
+- `violation`: Gegenprobe (c), `if (x == 1) throw new IllegalArgumentException();`.
+
+Jede Variante lief einmal wörtlich (`m(1)`) und einmal mit allen `m(1)` durch `m(1L)` ersetzt. Ablauf jeweils:
+`openjml --rac -d out SignalsRepro.java`, dann `<openjml>/jdk/bin/java -cp out:<openjml>/jmlruntime.jar SignalsRepro`,
+ohne und mit `-Dorg.jmlspecs.openjml.rac=exception`.
+
+| Variante | `m(1)` (int-Literal) | `m(1L)` (long-Literal) |
+|---|---|---|
+| `base` | keine Meldung | Meldung direkt **und** über `caller()` |
+| `speccaller` | keine Meldung | Meldung direkt **und** über `caller()` |
+| `nonconst` | keine Meldung | keine Meldung |
+| (a) `nosignals` | keine Meldung | keine Meldung |
+| (b) `sigexc` | keine Meldung | keine Meldung |
+| (c) `violation` | richtige Verletzung, kein CCE | richtige Verletzung, kein CCE |
+
+Die Tabelle ist auf 21.0.28 und dev-21 identisch (`openjml-signals-{2128,dev21}{,-1L}.log`). Mit `m(1)` lieferten
+alle Läufe nur `direct ok` / `via caller ok` und `run exit=0`. Die Sweep-Läufe (`openjml-sweep-*.log`) zeigen, dass die
+Mathe-Optionen keine Rolle spielen. `--code-math=java --spec-math=java` ändert nichts: `1` bleibt ohne, `1L` mit Meldung.
+
+Ausgabe `base` mit `m(1L)`, 21.0.28. Ohne und mit `-Dorg.jmlspecs.openjml.rac=exception` ist sie wörtlich gleich, auf
+dev-21 ebenfalls:
+
+```
+JML undefined exceptional postcondition - exception thrown
+java.lang.ClassCastException: class java.lang.InterruptedException cannot be cast to class java.lang.IllegalArgumentException (java.lang.InterruptedException and java.lang.IllegalArgumentException are in module java.base of loader 'bootstrap')
+	at SignalsRepro.main(SignalsRepro.java:5)
+direct ok
+JML undefined exceptional postcondition - exception thrown
+java.lang.ClassCastException: class java.lang.InterruptedException cannot be cast to class java.lang.IllegalArgumentException (java.lang.InterruptedException and java.lang.IllegalArgumentException are in module java.base of loader 'bootstrap')
+	at SignalsRepro.caller(SignalsRepro.java:5)
+	at SignalsRepro.main(SignalsRepro.java:14)
+via caller ok
+run exit=0
+```
+
+Gegenprobe (c) mit `m(1L)`, ohne `rac=exception` (gemeldet) und mit (geworfen):
+
+```
+SignalsRepro.java:7: verify: JML signals condition is false
+  public static void m(long x) throws InterruptedException {
+                     ^
+SignalsRepro.java:5: verify: Associated declaration: SignalsRepro.java:7:
+    @   signals (IllegalArgumentException e) x <= 0;
+        ^
+SignalsRepro.java:12: verify: JML signals condition is false
+    try { m(1L); } catch (IllegalArgumentException e) { System.out.println("direct IAE caught: " + e); }
+           ^
+SignalsRepro.java:5: verify: Associated declaration: SignalsRepro.java:12:
+    @   signals (IllegalArgumentException e) x <= 0;
+        ^
+direct IAE caught: java.lang.IllegalArgumentException
+run exit=0
+== run WITH -Dorg.jmlspecs.openjml.rac=exception
+Exception in thread "main" org.jmlspecs.runtime.JmlAssertionError: SignalsRepro.java:7: verify: JML signals condition is false
+  public static void m(long x) throws InterruptedException {
+                     ^
+SignalsRepro.java:5: verify: Associated declaration: SignalsRepro.java:7:
+    @   signals (IllegalArgumentException e) x <= 0;
+        ^
+	at java.base/org.jmlspecs.runtime.Utils.createException(Utils.java:143)
+	at java.base/org.jmlspecs.runtime.Utils.assertionFailureL(Utils.java:94)
+	at SignalsRepro.m(SignalsRepro.java:7)
+	at SignalsRepro.main(SignalsRepro.java:12)
+run exit=1
+```
+
+Bytecode der Aufrufstelle in `main()` (`openjml-javap-callsite.log`): Mit `m(1)` steht ein Schutz vor dem Cast und die
+Bedingung wird ausgewertet. Mit `m(1L)` fehlt der Schutz und die Bedingung ist konstant. Die Gegenüberstellung ist
+gekürzt (Konstantenpool-Kommentare verkürzt). Die wörtlichen Zeilen stehen im Log.
+
+```
+### m(1)                                              ### m(1L)
+374: instanceof    IllegalArgumentException           368: aload         7
+377: istore        12                                 370: checkcast     IllegalArgumentException
+379: iload         12                                 373: astore        10
+381: ifeq          422                                375: iconst_0
+384: aload         9                                  376: istore        11
+386: checkcast     IllegalArgumentException           378: ldc  "…verify: JML signals condition is false…"
+389: astore        13
+391: lload         5
+393: lconst_0
+394: lcmp
+```
+
+**Ort im Quelltext (Aufgabe 4).** Die Datei ist
+`OpenJMLsrc/src/jdk.compiler/share/classes/org/jmlspecs/openjml/esc/JmlAssertionAdder.java`. Die Stelle liegt in
+`applyHelper` (21.0.28: ab Z. 9910, dev-21: ab Z. 10165), im Zweig `signalsClauseKind` der Schleife „Assuming
+exceptional postconditions“ für den Aufgerufenen. Der Text ist in beiden Versionen identisch (diff leer):
+
+| | 21.0.28 | dev-21 (`529ac454da`) |
+|---|---|---|
+| `if (ct == SignalsClauseExtension.signalsClauseKind)` | 12311 | 12566 |
+| Cast-Deklaration, Bedingung auf dem **unkonvertierten** `ex` (`!treeutils.isFalseLit(ex)`) | 12322–12331, `TypeCast` in 12326 | 12577–12586, `TypeCast` in 12581 |
+| `instanceof`-Schutz nur, wenn das **konvertierte** `e` kein `false`-Literal ist (`!treeutils.isFalseLit(e)`), sonst `ex = trueLit` | 12340–12347 | 12595–12602 |
+| `If(newTempIfNeeded(ex), bl, null)` | 12349 | 12604 |
+| `wrapRuntimeException(…, "JML undefined exceptional postcondition - exception thrown", …)` | 12351–12353 | 12606–12608 |
+
+```java
+JCVariableDecl vdo = ((JmlMethodClauseSignals) clause).vardef;
+Type vdtype = syms.exceptionType;
+if (vdo != null && vdo.name != null && !treeutils.isFalseLit(ex)       // ex = unconverted clause expression
+        && exceptionDeclCall != null) {
+    ...
+    JCExpression tc = M.at(vdo).TypeCast(vdo.type, exceptionId);      // the cast, inside bl
+    ...
+}
+...
+JCExpression e = convertJML(ex, condition, false, mpsym);             // x := 1L  ->  1L <= 0  ->  false
+...
+ex = treeutils.trueLit;
+if (vdo != null && !treeutils.isFalseLit(e) && exceptionDeclCall != null) {   // guard dropped when e is false
+    ex = M.at(clause).TypeTest(... exceptionDeclCall.sym ..., vdtype) ...;
+    ...
+}
+JCBlock bl = popBlock(that, check8);
+JCStatement st = M.at(clause).If(newTempIfNeeded(ex), bl, null);       // if (true) { E e = (E) ex; ... }
+```
+
+Die Prüfung am Aufgerufenen ist korrekt geschützt, trotz des Kommentars `// FIXME - need to check exception type of
+the exception` (21.0.28 Z. 6016–6063, dev-21 Z. 6115–6162). Dort wird `test` immer als `instanceof` gebaut.
+
+Naheliegender Fix: In Z. 12341 (dev-21: 12596) `!treeutils.isFalseLit(e)` streichen, sodass der Typtest immer
+entsteht, wenn `vdo`/`exceptionDeclCall` existieren. Dann gilt `if (exc instanceof E) { E e = (E) exc; assume false; }`,
+und das ist auch die richtige Semantik für ein konstant falsches `P`. **Nicht geprüft:** Der Fix wurde weder gebaut
+noch getestet.
+
+dev-21 enthält keinen Commit, der diese Stelle betrifft. Die nächstliegenden sind `b3812e9b3b` („Issue #1019 — operands
+of a constant expression are not converted to the constant“), das `Arithmetic.java` ändert, und `6913458947`
+(„Issue #1018“). Der dev-21-Lauf zeigt das Verhalten unverändert.
+
+**Folgerung:** Ein echter OpenJML-RAC-Fehler. Er betrifft nur die Aufrufstellen-Prüfung und nur dann, wenn das
+`signals`-Prädikat mit den tatsächlichen Argumenten konstant `false` wird. Er besteht in 21.0.28 und dev-21. Für
+streambuffer ist er harmlos: Er wird nur gemeldet, nicht geworfen, der Test bleibt grün, und kein Vertrag ist verletzt.
+Die Meldung ist eine Falschmeldung. Ein Workaround in streambuffer ist nicht nötig. Ein Argument, das keine Konstante
+ist, würde die Meldung vermeiden, wäre aber eine Codeänderung nur für das Werkzeug und wird nicht empfohlen. Upstream
+melden (Entwurf unten).
+
+---
+
+### Verdacht 2: Stacktrace pro Aufruf bei nicht kompilierter Modellmethode (`Arrays.equalArrays`)
+
+**Ergebnis:** **Bestätigt**, auf 21.0.28 und dev-21 gleich. Jede Ausführung eines `System.arraycopy` (`byte[]`) und
+jedes `byte[].clone()` gibt einmal `java.lang.NoSuchMethodError` samt Stacktrace aus, gefolgt von `Skipping a
+specification clause because it contains an uncompiled model method: 'boolean java.util.Arrays.equalArrays`. Das
+passiert pro Aufruf, nicht pro Klausel: Bei 1000 Aufrufen kommt die Meldung 1000-mal.
+
+Die Größe pro Meldung hängt nur von der Stacktiefe ab. Im Minimalprogramm (ein Frame) sind es 355 Bytes für
+arraycopy und 242 Bytes für clone. Die ≈10 KB in streambuffer kommen von den tiefen surefire/JUnit-Stacks. Die
+Mathe-Optionen ändern nichts. Die arraycopy-Signatur enthält auch unter `--spec-math=java`
+`org.jmlspecs.lang.internal.bigint`, weil die Modellmethode in `Arrays.jml` mit `\bigint`-Parametern deklariert ist.
+
+Kompilieren mit `-quiet` unterdrückt die Ausgabe vollständig. Eine echte Verletzung wird unter `-quiet` weiterhin
+geworfen (Gegenprobe auf 21.0.28).
+
+**Reproduzenten:**
+
+```java
+public class ArraycopyRepro {
+  public static void main(String[] a) {
+    int n = a.length > 0 ? Integer.parseInt(a[0]) : 1000;
+    byte[] src = new byte[16];
+    byte[] dst = new byte[16];
+    for (int i = 0; i < n; i++) {
+      System.arraycopy(src, 0, dst, 0, src.length);
+    }
+    System.out.println("arraycopy done: " + n);
+  }
+}
+```
+
+```java
+public class CloneRepro {
+  public static void main(String[] a) {
+    int n = a.length > 0 ? Integer.parseInt(a[0]) : 1000;
+    byte[] src = new byte[16];
+    long sum = 0;
+    for (int i = 0; i < n; i++) {
+      byte[] c = src.clone();
+      sum += c.length;
+    }
+    System.out.println("clone done: " + n + " " + sum);
+  }
+}
+```
+
+`openjml --rac [--code-math=java --spec-math=java] -d out X.java`, dann
+`<openjml>/jdk/bin/java -cp out:<openjml>/jmlruntime.jar X <n>`. Gezählt mit `wc -c`, `wc -l`,
+`grep -c 'Skipping a specification clause'` und `grep -c '^java.lang.NoSuchMethodError'`
+(`openjml-copy-{2128,dev21}.log`). 21.0.28 und dev-21 liefern identische Zahlen:
+
+| Programm | Optionen | n | Bytes | Zeilen | `Skipping…` | `NoSuchMethodError` | Exit |
+|---|---|---|---|---|---|---|---|
+| ArraycopyRepro | Standard | 1 | 373 | 4 | 1 | 1 | 0 |
+| ArraycopyRepro | Standard | 1000 | 355021 | 3001 | 1000 | 1000 | 0 |
+| ArraycopyRepro | `--code-math=java --spec-math=java` | 1000 | 355021 | 3001 | 1000 | 1000 | 0 |
+| CloneRepro | Standard | 1 | 259 | 4 | 1 | 1 | 0 |
+| CloneRepro | Standard | 1000 | 242023 | 3001 | 1000 | 1000 | 0 |
+| CloneRepro | `--code-math=java --spec-math=java` | 1000 | 242023 | 3001 | 1000 | 1000 | 0 |
+| ArraycopyRepro | `-quiet` | 1000 | 21 | 1 | 0 | – | 0 |
+| CloneRepro | `-quiet` | 1000 | 23 | 1 | 0 | – | 0 |
+
+Vollständige Ausgabe bei n=1 (21.0.28, wörtlich):
+
+```
+java.lang.NoSuchMethodError: 'boolean java.util.Arrays.equalArrays(byte[], org.jmlspecs.lang.internal.bigint, byte[], org.jmlspecs.lang.internal.bigint, org.jmlspecs.lang.internal.bigint)'
+	at ArraycopyRepro.main(ArraycopyRepro.java:11)
+Skipping a specification clause because it contains an uncompiled model method: 'boolean java.util.Arrays.equalArrays
+arraycopy done: 1
+```
+
+```
+java.lang.NoSuchMethodError: 'boolean java.util.Arrays.equalArrays(byte[], byte[])'
+	at CloneRepro.main(CloneRepro.java:12)
+Skipping a specification clause because it contains an uncompiled model method: 'boolean java.util.Arrays.equalArrays
+clone done: 1 16
+```
+
+Auch hier stimmen die Zeilennummern nicht. `:11` und `:12` sind jeweils die letzte Zeile der Datei, nicht die Zeile
+mit `arraycopy` (7) bzw. `clone` (7). Das abgeschnittene `'boolean java.util.Arrays.equalArrays` ohne
+Parameterliste ist so gewollt: `reportNoSuchMethod` schneidet die Meldung am ersten `(` ab.
+
+**Betroffene Klauseln** (Pfade relativ zur Distribution `<openjml>/specs/`, Zeilen aus dem 21.0.28-Zip):
+
+- `System.arraycopy` mit `byte[]`: der Fall `requires (src instanceof byte[]) && (dest instanceof byte[]) …` in
+  `java/lang/System.jml:260–269`. Die Klausel ist `java/lang/System.jml:268`
+  `ensures java.util.Arrays.equalArrays(da,destPos,sa,srcPos,length_);`. Sie ruft die Modellmethode ohne Rumpf
+  `java/util/Arrays.jml:968`
+  `model public static spec_pure helper boolean equalArrays(byte[] arr1, \bigint index1, byte[] arr2, \bigint index2, \bigint len);`
+  auf. Die übrigen Elementtypen haben dieselbe Form (`System.jml:202, 213, 224, 235, 246, 257`).
+- `byte[].clone()`: der Fall `requires this instanceof byte[];` in `java/lang/Object.jml:164–169`. Die Klausel ist
+  `java/lang/Object.jml:168` `ensures java.util.Arrays.equalArrays((byte[])\result,(byte[])this);` und ruft
+  `java/util/Arrays.jml:984` `model public static spec_pure helper boolean equalArrays(byte[] arr1, byte[] arr2);` auf.
+  Die anderen Elementtypen nutzen hier ein ausführbares `\forall`, nur `byte[]` die Modellmethode.
+- Nebenbefund aus dem streambuffer-Lauf: `new IOException(cause)` löst dasselbe aus. Die Klausel ist
+  `java/io/IOException.jml:21` `ensures standardThrowable(cause);` und ruft `java/lang/Throwable.jml:93` auf (Modellmethode
+  ohne Rumpf).
+- In Specs `dev-21` (`dc9f6be7c095`) sind `Object.jml`, `Arrays.jml`, `IOException.jml` und `Throwable.jml`
+  byteidentisch zum 21.0.28-Stand. `System.jml` unterscheidet sich nur durch zwei entfernte Zeilen
+  (`@Deprecated` + Javadoc, alte Z. 378–379). Die Zeilen oben gelten also auch für dev-21.
+
+**Ort im Quelltext:**
+
+- Laufzeit: `OpenJMLsrc/src/java.base/share/classes/org/jmlspecs/runtime/Utils.java:296–304`
+  `reportNoSuchMethod(NoSuchMethodError, String)` ruft `t.printStackTrace(System.out)` und `report(msg)` auf. Es gibt
+  keinen Zustand, der bereits gemeldete Klauseln oder Methoden unterdrückt. Die Datei ist auf 21.0.28 und dev-21
+  identisch.
+- Übersetzer: `JmlAssertionAdder.java` erzeugt um jede Klausel `catch (NoSuchMethodError) { Utils.reportNoSuchMethod(…) }`,
+  außer wenn `boolean quiet = utils.jmlverbose == 0` gilt. Dann ist der catch-Block leer. Die Stellen sind:
+  - `wrapRuntimeException`: 21.0.28 Z. 2931, `quiet` in Z. 2952, Aufruf in Z. 2964; dev-21 Z. 2935/2956/2968.
+  - Prüfung der Nachbedingungen: 21.0.28 Z. 6207/6222 und 6263/6278; dev-21 Z. 6306/6321 und 6362/6377.
+  - `makeRACTry`: 21.0.28 Z. 21295/21300/21312; dev-21 Z. 21604/21609/21621.
+
+  Die Ortsangabe wird immer mit `null` überschrieben (`// FIXME - really need to propagate the location of the call`).
+
+**Folgerung:** Kein falsches Ergebnis, aber ein echter Mangel an der Benutzbarkeit. Eine einmal übersprungene Klausel
+wird bei jeder Ausführung erneut mit vollem Stacktrace gemeldet. Das ist der Mechanismus hinter den 7.344 s und
+21 GB Log aus S3. Er besteht in 21.0.28 und dev-21 unverändert.
+
+Für streambuffer gibt es zwei Möglichkeiten. Man behält die Skalierung der Stressschleifen unter `-Pjml-rac` bei. Oder
+man kompiliert die RAC-Klassen mit `-quiet`. Das unterdrückt die Meldung vollständig, verschweigt aber auch künftige
+„übersprungene Klausel“-Hinweise. **Nicht geprüft:** der volle streambuffer-Lauf mit `-quiet`. Upstream melden (Entwurf
+unten). Vorschlag: einmal pro Klausel oder Methode melden, Stacktrace nur bei höherer Verbosität. Zusätzlich oder
+stattdessen die zwei `byte[]`-Klauseln mit `-RAC` markieren oder durch ein ausführbares `\forall` ersetzen.
+
+---
+
+### Issue-Entwurf A (nicht eingereicht)
+
+**Titel:** RAC: call-site check of a callee's `signals (E e) P` casts the exception to `E` without `instanceof` when `P` folds to `false` → spurious "JML undefined exceptional postcondition - exception thrown"
+
+[Assisted by Claude Code.] I'm not a JML/OpenJML expert; this came up while running streambuffer's test suite under
+RAC, and most of the analysis was done with Claude Code. I reproduced it with the 21.0.28 release (Ubuntu build) and
+with `dev-21` built from source (`529ac454da`). I may have misread the cause, so **please treat this as a starting
+point and verify it in your own Claude session**.
+
+**What happens.** A method may throw two exception types (`signals_only IllegalArgumentException,
+InterruptedException`), and a `signals` clause constrains only one of them (`signals (IllegalArgumentException e) x <= 0`).
+If a call site passes an argument for which the predicate is constant-false (here the `long` literal `1L`), and the
+callee throws the *other* allowed exception, the RAC code at the call site reports a `ClassCastException`. As far as I
+understand JML, `signals (E e) P` only applies when the exception is an `E`, so nothing should be reported.
+
+```java
+public class SignalsRepro {
+  /*@ public behavior
+    @   requires true;
+    @   signals_only IllegalArgumentException, InterruptedException;
+    @   signals (IllegalArgumentException e) x <= 0;
+    @*/
+  public static void m(long x) throws InterruptedException {
+    if (x <= 0) throw new IllegalArgumentException();
+    throw new InterruptedException();
+  }
+  public static void caller() throws InterruptedException { m(1L); }
+  public static void main(String[] a) {
+    try { m(1L); } catch (InterruptedException e) { System.out.println("direct ok"); }
+    try { caller(); } catch (InterruptedException e) { System.out.println("via caller ok"); }
+  }
+}
+```
+
+```
+$ openjml --rac -d out SignalsRepro.java      # compiles, exit 0
+$ openjml-java -cp out SignalsRepro            # same output with -Dorg.jmlspecs.openjml.rac=exception, exit 0
+JML undefined exceptional postcondition - exception thrown
+java.lang.ClassCastException: class java.lang.InterruptedException cannot be cast to class java.lang.IllegalArgumentException (java.lang.InterruptedException and java.lang.IllegalArgumentException are in module java.base of loader 'bootstrap')
+	at SignalsRepro.main(SignalsRepro.java:5)
+direct ok
+JML undefined exceptional postcondition - exception thrown
+java.lang.ClassCastException: class java.lang.InterruptedException cannot be cast to class java.lang.IllegalArgumentException (java.lang.InterruptedException and java.lang.IllegalArgumentException are in module java.base of loader 'bootstrap')
+	at SignalsRepro.caller(SignalsRepro.java:5)
+	at SignalsRepro.main(SignalsRepro.java:14)
+via caller ok
+```
+
+What I checked around it (same on 21.0.28 and `dev-21`):
+
+- With `m(1)` (an `int` literal) or a non-constant argument, nothing is reported.
+- Without the `signals` clause, or with `signals (Exception e) true;`, nothing is reported.
+- A real violation (throwing `IllegalArgumentException` for `x == 1`) is reported correctly as `JML signals condition
+  is false`, and it is thrown under `rac=exception`.
+- `--code-math=java --spec-math=java` makes no difference.
+- The callee-side check is fine. It is only the call-site code.
+
+**Where I think it comes from** (`JmlAssertionAdder.applyHelper`, signals branch, 21.0.28 lines 12311–12353, `dev-21`
+12566–12608). The cast `(E) exception` is declared when the *unconverted* clause expression is not `false` (12322).
+The `instanceof E` guard is only built when the *converted* expression `e` is not a `false` literal (12341). With `x :=
+1L`, `e` becomes `false`, the guard becomes `true`, and the cast runs unconditionally. `javap` confirms this: with
+`m(1L)` there is a `checkcast IllegalArgumentException` followed by `iconst_0` and no `instanceof`. With `m(1)` there
+is `instanceof`/`ifeq` before the cast.
+
+A possible fix, untested, which you may well do differently: build the type test whenever the variable was declared,
+i.e. drop `!treeutils.isFalseLit(e)` from the condition in line 12341 (`dev-21` 12596).
+
+**Smaller things noticed:**
+
+- The message is only printed, even with `-Dorg.jmlspecs.openjml.rac=exception`, because the `catch (RuntimeException)`
+  calls `Utils.reportException`. That is probably intended for "undefined", just mentioning it.
+- The line number in the stack (`SignalsRepro.java:5`, the clause line) points at the specification rather than at the
+  call. In streambuffer it shows `StreamBuffer.java:418`, which is neither the call nor the clause.
+
+In streambuffer this shows up once per run of `StreamBufferTest$ThreadInterruptionDuringReadTests`, because
+`waitForAnyData()` is `return waitForAtLeast(1L);`. The tests stay green.
+
+Thanks again for OpenJML!
+
+---
+
+### Issue-Entwurf B (nicht eingereicht)
+
+**Titel:** RAC: a skipped clause with an uncompiled model method prints a full stack trace on every execution (`System.arraycopy`/`byte[].clone()` → `Arrays.equalArrays`)
+
+[Assisted by Claude Code.] I'm not a JML/OpenJML expert; this came up while running streambuffer's test suite under
+RAC, and most of the analysis was done with Claude Code. I reproduced it with the 21.0.28 release (Ubuntu build) and
+with `dev-21` built from source (`529ac454da`, Specs `dc9f6be`). **Please treat this as a starting point and verify it
+in your own Claude session.**
+
+**What happens.** Each execution of a `System.arraycopy` on `byte[]` and each `byte[].clone()` prints a
+`NoSuchMethodError` with its full stack trace, plus `Skipping a specification clause because it contains an uncompiled
+model method`. This repeats on every call, not once per clause:
+
+```java
+public class ArraycopyRepro {
+  public static void main(String[] a) {
+    int n = a.length > 0 ? Integer.parseInt(a[0]) : 1000;
+    byte[] src = new byte[16];
+    byte[] dst = new byte[16];
+    for (int i = 0; i < n; i++) {
+      System.arraycopy(src, 0, dst, 0, src.length);
+    }
+    System.out.println("arraycopy done: " + n);
+  }
+}
+```
+
+```
+$ openjml --rac -d out ArraycopyRepro.java
+$ openjml-java -cp out ArraycopyRepro 1
+java.lang.NoSuchMethodError: 'boolean java.util.Arrays.equalArrays(byte[], org.jmlspecs.lang.internal.bigint, byte[], org.jmlspecs.lang.internal.bigint, org.jmlspecs.lang.internal.bigint)'
+	at ArraycopyRepro.main(ArraycopyRepro.java:11)
+Skipping a specification clause because it contains an uncompiled model method: 'boolean java.util.Arrays.equalArrays
+arraycopy done: 1
+$ openjml-java -cp out ArraycopyRepro 1000 | grep -c 'Skipping a specification clause'
+1000
+```
+
+With 1000 iterations the output is 355,021 bytes (3,001 lines). The same loop with `src.clone()` gives
+`NoSuchMethodError: 'boolean java.util.Arrays.equalArrays(byte[], byte[])'` 1000 times. `--code-math=java
+--spec-math=java` changes nothing. Each message is only as large as the stack. Under a test framework that is about
+10 KB per call. In streambuffer, one stress test (2 million single-byte writes, with periodic buffer consolidation that
+calls `arraycopy` once per buffered chunk) ran for 7,344 s under RAC, with every contract holding. By the time that run
+was stopped, its log held the message 2,003,546 times in about 21 GB.
+
+**The clauses involved** (unchanged on Specs `dev-21`):
+
+- `java/lang/System.jml:268` (`byte[]` case of `arraycopy`): `ensures java.util.Arrays.equalArrays(da,destPos,sa,srcPos,length_);`
+  This calls `java/util/Arrays.jml:968`, a model method without a body. The other element types (lines 202–257) have
+  the same shape.
+- `java/lang/Object.jml:168` (`byte[]` case of `clone`): `ensures java.util.Arrays.equalArrays((byte[])\result,(byte[])this);`
+  This calls `Arrays.jml:984`. The other element types use an executable `\forall` here.
+- The same pattern with `new IOException(cause)`: `java/io/IOException.jml:21` calls `Throwable.standardThrowable(Throwable)`.
+
+**Where the repetition comes from, as far as I can see.** `JmlAssertionAdder` wraps each clause in
+`catch (NoSuchMethodError) { Utils.reportNoSuchMethod(e, null) }` (`wrapRuntimeException`, `makeRACTry`, and the
+postcondition checks). `Utils.reportNoSuchMethod` (`runtime/Utils.java:296–304`) always calls `printStackTrace` and
+has no memory of what it already reported. Compiling with `-quiet` (`jmlverbose == 0`) generates an empty catch block
+and silences it completely. That is a workaround for us, but it also hides every other skipped-clause note.
+
+**Possible improvements**, you will know better:
+
+- report each skipped clause (or each missing model method) only once per run, and print the stack trace only at a
+  higher verbosity;
+- and/or make the two `byte[]` clauses executable (`\forall`, like the other `clone` cases) or `-RAC`, in the style of
+  Specs `43ab561`.
+
+Related: the location passed to `reportNoSuchMethod` is always `null` (`// FIXME - really need to propagate the location
+of the call`), and the line number in the stack is the last line of the file (`:11`), not the call.
+
+Thanks for OpenJML!
