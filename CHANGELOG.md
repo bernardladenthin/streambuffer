@@ -26,6 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CI prints the runner's CPU** at the top of `test`, `vmlens` and the three formal-verification jobs
   (`.github/print-host-info.sh`, a shared file of the four repositories): Z3's proof times and the
   Lincheck and jcstress runs depend on it.
+- Formal verification: OpenJML 21.0.29 (from 21.0.28). ESC 14/14 (1.7 s locally: SMT commands are now
+  pipelined) and RAC 285/285 unchanged. The `AtomicLong.jml` workaround is gone -- the upstream fix
+  (OpenJML/Specs#29) shipped in 21.0.29 -- while `ArrayDeque.jml` is still deleted at install. Class
+  invariants still break RAC (now `NoSuchMethodError` on the inner stream classes), so they stay out.
+- Build tooling: `anthropics/claude-code-action` v1.0.255 (from v1.0.252) and Gradle 9.8.2 in the shared
+  `verify-signing-key-gradle` job, in step with the sibling repositories.
 - Formal verification: OpenJML 21.0.28 (from 21.0.27; default solver z3 5.1.0). ESC 14/14 and RAC
   285/285 unchanged; the bundled-spec workarounds stay (the upstream fixes are not in 21.0.28).
 - **CI: shared files and the release gate are checked.** The files kept byte-identical with the sibling

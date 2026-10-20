@@ -88,6 +88,9 @@ public class StreamBuffer implements Closeable {
     // NoSuchFieldError ("SBInputStream does not have member field 'long availableBytes'");
     // 258/285 tests fail. Minimal reproducer: private field + invariant + inner class (see
     // TODO.md). An earlier 21.0.27 compile crash ("no enclosing instance") was not reproduced.
+    // 21.0.29: the minimal reproducer passes, but these four invariants on this class still break
+    // RAC with NoSuchMethodError on SBOutputStream.JML$INV$$<n>() (106 errors) -- the same
+    // defect with a different symptom.
     // The candidate invariants
     // (0 <= availableBytes, 0 <= positionAtCurrentBufferEntry, 1 <= maxAllocationSize,
     // 0 <= maxObservedBytes) would have been RAC-only value anyway — the ESC layer proves
