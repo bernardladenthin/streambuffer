@@ -118,10 +118,13 @@ mvn -P jml-rac -Dopenjml.home=<openjml> -Dopenjml.jdk.java=<openjml>/jdk/bin/jav
   invariant inside the constructor of a non-static inner class and reads the field on the wrong
   class → `NoSuchFieldError` at runtime (14-line reproducer: private field + invariant + inner
   class). On this class every test fails (258/285). An earlier 21.0.27 compile crash
-  ("no enclosing instance") was not reproduced. **21.0.29 changed the symptom, not the defect:**
+  ("no enclosing instance") was not reproduced. **21.0.29 fixed that case but not this class:**
   the 14-line reproducer runs clean there, but the four candidate invariants on this class still
-  break RAC -- `NoSuchMethodError` on `StreamBuffer$SBOutputStream.JML$INV$$<n>()` (RAC calls the
-  outer class's invariant check on the inner class), 106 errors (measured 2026-10-20). Re-test on upgrades.
+  break RAC -- `NoSuchMethodError` on `StreamBuffer$SBOutputStream.JML$INV$$<n>()`, 106 errors
+  (measured 2026-10-20). Cause (narrowed down 2026-10-21): an inner-class method calling an outer
+  instance method *without a qualifier* (`writeSingleByte(b)`); RAC checks the callee's receiver
+  invariant on `this` (the inner object) instead of `StreamBuffer.this`. `Outer.this.m()` runs clean.
+  Reproducer in TODO.md. Re-test on upgrades.
 - `//@ nullable_by_default` at the class head is load-bearing for RAC: without it JML's
   non-null-by-default inserts an implicit non-null precondition on every reference parameter, so
   the null-argument tests hit `JmlAssertionError.Precondition` instead of the specified NPE.
@@ -139,12 +142,13 @@ mvn -P jml-rac -Dopenjml.home=<openjml> -Dopenjml.jdk.java=<openjml>/jdk/bin/jav
   The setup action also patches `jdk/release` to add the `JAVA_VERSION` key surefire needs to
   fork that JVM (missing in 21.0.27/21.0.28, present again in 21.0.29; the guarded step is a no-op
   there and stays as a regression guard).
-- One bundled OpenJML JDK spec is known-broken and deleted at install time by
-  `.github/actions/setup-openjml` (`ArrayDeque.jml`: undeclared `containsNull`, still in 21.0.29).
-  The second one, `atomic/AtomicLong.jml` (RAC read the private field `value` →
-  `IllegalAccessError`), was fixed upstream by [OpenJML/Specs#29](https://github.com/OpenJML/Specs/pull/29)
-  + [OpenJML/OpenJML#982](https://github.com/OpenJML/OpenJML/pull/982), released in 21.0.29; its
-  `rm` is gone, and the suite passes against the bundled file (285/285).
+- No bundled OpenJML JDK spec is deleted at install any more (fixups v3). Up to 21.0.28 two were
+  broken under RAC and deleted by `.github/actions/setup-openjml`: `ArrayDeque.jml` (undeclared
+  `containsNull`, fixed via [OpenJML/OpenJML#1012](https://github.com/OpenJML/OpenJML/issues/1012))
+  and `atomic/AtomicLong.jml` (RAC read the private field `value` → `IllegalAccessError`, fixed by
+  [OpenJML/Specs#29](https://github.com/OpenJML/Specs/pull/29) +
+  [OpenJML/OpenJML#982](https://github.com/OpenJML/OpenJML/pull/982)). Both fixes are in 21.0.29;
+  the suite passes against the unmodified distribution (285/285).
 - RAC classes are class-file 65 and live only under `target/rac-classes` — they never enter the
   shipped jar, so the Java 8 bytecode floor is unaffected.
 

@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cancellable pipeline start-gate via a `startgate` GitHub Environment with configurable wait timer.
 
 ### Changed
+- Formal verification: the last bundled-spec workaround is gone. OpenJML 21.0.29 also ships the RAC fix
+  for `ArrayDeque.jml` (OpenJML/OpenJML#1012), so the setup action no longer deletes any bundled spec
+  (fixups v3); RAC 285/285 against the unmodified 21.0.29 distribution. The class-invariant blocker is
+  narrowed down: RAC miscompiles an unqualified call from an inner-class method to an outer instance
+  method (`writeSingleByte(b)` in `SBOutputStream`), see TODO.md.
 - Build tooling: spotbugs-maven-plugin 4.10.4.1 -> 4.10.5.0 (SpotBugs 4.10.5, the first release that reads
   JSpecify; nothing to report here), in step with the sibling repositories.
 - Build and test tooling bumped in step with the sibling repositories: Spotless 3.10.4 and Checker
@@ -28,7 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Lincheck and jcstress runs depend on it.
 - Formal verification: OpenJML 21.0.29 (from 21.0.28). ESC 14/14 (1.7 s locally: SMT commands are now
   pipelined) and RAC 285/285 unchanged. The `AtomicLong.jml` workaround is gone -- the upstream fix
-  (OpenJML/Specs#29) shipped in 21.0.29 -- while `ArrayDeque.jml` is still deleted at install. Class
+  (OpenJML/Specs#29) shipped in 21.0.29 -- while `ArrayDeque.jml` was still deleted at install. Class
   invariants still break RAC (now `NoSuchMethodError` on the inner stream classes), so they stay out.
 - Build tooling: `anthropics/claude-code-action` v1.0.255 (from v1.0.252) and Gradle 9.8.2 in the shared
   `verify-signing-key-gradle` job, in step with the sibling repositories.
