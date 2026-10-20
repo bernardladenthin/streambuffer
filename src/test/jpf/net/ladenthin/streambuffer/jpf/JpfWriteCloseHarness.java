@@ -30,7 +30,7 @@ import net.ladenthin.streambuffer.StreamBuffer;
  * </ul>
  *
  * <p>Measured with the pinned jpf-core: with the F149 fix no errors over 75,438 states (about 15 s);
- * against the production classes before the fix ({@code 1529d3b^}) JPF finds the race after 3,956
+ * against the production classes before the fix ({@code 6ece270^}) JPF finds the race after 3,956
  * states: "reader got 1 bytes, but 2 writes returned normally". Keep the payload at two bytes; the
  * state space grows fast.
  */

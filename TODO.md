@@ -58,7 +58,7 @@ annotated, so everything below is genuinely still open.
       **present again in 21.0.29**; the guarded repair step is a no-op there and stays as a guard.
   - **RAC evaluates a `signals (E e)` clause for an exception of another type — confirmed OpenJML
     bug, reported in [OpenJML/OpenJML#1050](https://github.com/OpenJML/OpenJML/issues/1050)** (2026-10-19; reproduced on 21.0.28 and on `dev-21` `529ac454da`,
-    `BUGHUNT-MEASUREMENTS.md`, „OpenJML-Verdachtsfälle (RAC)“, in commit `5d4819b`, removed since). The spec
+    `BUGHUNT-MEASUREMENTS.md`, „OpenJML-Verdachtsfälle (RAC)“, in commit `0620aa7`, removed since). The spec
     of `waitForAtLeast` allows `InterruptedException` (`signals_only IllegalArgumentException,
     InterruptedException`) and constrains only the other one (`signals (IllegalArgumentException e)
     bytes <= 0`). When a read is interrupted, RAC prints `JML undefined exceptional postcondition -

@@ -38,7 +38,7 @@ interleaving that a write after a failed write fails too, and that the reader re
 the bytes whose write returned normally, in order. That is the property bug-hunt finding F149 broke
 (a write passed the closed check outside the lock and added its bytes after the reader had already
 seen the end). Last confirmed run: **no errors detected**, 75,438 states (~15–25 s); against the
-production classes before the F149 fix (`1529d3b^`) it reports "reader got 1 bytes, but 2 writes
+production classes before the F149 fix (`6ece270^`) it reports "reader got 1 bytes, but 2 writes
 returned normally" after 3,956 states, so the oracle is not vacuous.
 
 ## Files
