@@ -62,7 +62,7 @@ annotated, so everything below is genuinely still open.
     **21.0.29: the minimal reproducer below runs clean, the defect on this class does not go away** --
     with the four candidate invariants RAC throws `NoSuchMethodError` on
     `StreamBuffer$SBOutputStream.JML$INV$$<n>()` (the outer invariant check called on the inner
-    class), 106 errors, then the suite hangs in a trim test (measured 2026-10-20). A reproducer for
+    class), 106 errors (measured 2026-10-20). A reproducer for
     #1012 therefore needs an inner class whose methods run while the outer invariant is checked.
     Minimal reproducer:
     ```java

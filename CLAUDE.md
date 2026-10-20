@@ -121,8 +121,7 @@ mvn -P jml-rac -Dopenjml.home=<openjml> -Dopenjml.jdk.java=<openjml>/jdk/bin/jav
   ("no enclosing instance") was not reproduced. **21.0.29 changed the symptom, not the defect:**
   the 14-line reproducer runs clean there, but the four candidate invariants on this class still
   break RAC -- `NoSuchMethodError` on `StreamBuffer$SBOutputStream.JML$INV$$<n>()` (RAC calls the
-  outer class's invariant check on the inner class), 106 errors before the suite hung in a
-  trim test (measured 2026-10-20). Re-test on upgrades.
+  outer class's invariant check on the inner class), 106 errors (measured 2026-10-20). Re-test on upgrades.
 - `//@ nullable_by_default` at the class head is load-bearing for RAC: without it JML's
   non-null-by-default inserts an implicit non-null precondition on every reference parameter, so
   the null-argument tests hit `JmlAssertionError.Precondition` instead of the specified NPE.
