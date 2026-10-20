@@ -140,9 +140,13 @@ public class StreamBuffer implements Closeable {
 
     /**
      * Flag set to true while trim is rearranging internal buffers.
-     * Volatile so it's visible to all threads — used to skip statistics updates during trim.
+     * Volatile so it's visible to all threads; {@link #isTrimRunning()} exposes it.
      * Set to true at start of trim body, set to false in finally block.
-     * This ensures totalBytesRead and totalBytesWritten always represent user I/O only.
+     * Trim itself copies straight from the FIFO and never reads or writes through the
+     * streams. The flag matters for code that runs on the trim thread while trim is in
+     * progress: a trim signal whose {@code release()} writes reaches the write path again
+     * (bufferLock is reentrant), and must neither start a nested trim (see
+     * {@link #shouldTrim()}) nor be counted in the statistics.
      */
     private volatile boolean isTrimRunning = false;
 
@@ -608,8 +612,10 @@ public class StreamBuffer implements Closeable {
     @GuardedBy("bufferLock")
     boolean shouldTrim() {
         /*
-         * Prevent recursive trim: if trim is already running, its internal
-         * writes must never trigger another trim (infinite recursion / stack overflow).
+         * Prevent recursive trim: a write that reaches this point while trim is
+         * running (only possible on the trim thread itself, from a trim signal's
+         * release(), since bufferLock is reentrant) must not start another trim
+         * over the deque the running one is rearranging.
          */
         if (isTrimRunning) {
             return false;
@@ -752,9 +758,11 @@ public class StreamBuffer implements Closeable {
     }
 
     /**
-     * This method mustn't be called in a synchronized context, the variable is
-     * volatile.
+     * Fails if the stream is closed. Called under {@link #bufferLock}, the lock
+     * {@link #closeAll()} sets {@link #streamClosed} under, so a write that passes this check
+     * is buffered before a concurrent close completes.
      */
+    @GuardedBy("bufferLock")
     private void requireNonClosed() throws IOException {
         if (streamClosed) {
             throw new IOException("Stream closed (availableBytes=" + availableBytes + ").");
@@ -1104,6 +1112,13 @@ public class StreamBuffer implements Closeable {
         }
     }
 
+    /**
+     * Closes the buffer; both streams then report it as closed.
+     *
+     * <p>Waits for a write or trim in progress on another thread to finish (they hold the same
+     * lock), so a write racing the close is either fully buffered or fails with "Stream closed".
+     * A trim copies every buffered byte, so with a large buffer the wait can be noticeable.
+     */
     @Override
     public void close() throws IOException {
         closeAll();

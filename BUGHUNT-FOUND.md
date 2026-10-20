@@ -24,6 +24,7 @@ Repos plus eins. Geprüfte Klassen ohne Fund stehen in [`BUGHUNT-CHECKED.md`](BU
 - **Beschreibung:** `writeSingleByte()` setzte das **instanzweite** `volatile` Feld `ignoreSafeWrite=true` um seinen eigenen Schreibvorgang. Läuft auf einem anderen Thread gleichzeitig `write(byte[])` mit `setSafeWrite(true)` und bekommt den Lock in diesem Fenster, wird das Array **nicht** geklont, sondern per Referenz in die Deque gelegt. Ändert der Aufrufer sein Array danach (genau das, wovor `safeWrite` schützen soll), liest der Leser die geänderten Bytes. Klassen-Javadoc erlaubt gleichzeitige Aufrufe; ein Test im Repo spricht von „concurrent writers“.
 - **Reproduktion:** `StreamBufferTest$ConcurrentReadWriteTests#safeWrite_concurrentSingleByteWrite_arrayStillCloned` – vor dem Fix rot (geänderte Bytes beim Leser), danach grün; ganze `StreamBufferTest` 286/286 grün.
 - **Status:** gefixt (Feld entfernt, Klon-Erlaubnis als Parameter der privaten Schreibmethode). Nicht geprüft: OpenJML-ESC/RAC-Pipeline (die privaten Schreibmethoden stehen nicht in der `.jml`), PIT, jcstress.
+- **Nachgemessen:** Messauftrag `BUGHUNT-MEASUREMENTS.md` in `5d4819b`, lokal gelaufen 2026-10-19: jcstress (S1) und vmlens (S2) grün, ESC 14/14 und RAC grün (S3); PIT 199/199 getötet (Review 2026-10-20). Die „Nicht geprüft“-Liste oben ist damit erledigt.
 - **Commit:** streambuffer `fb371e0`
 
 <a id="f03"></a>
@@ -49,6 +50,7 @@ Repos plus eins. Geprüfte Klassen ohne Fund stehen in [`BUGHUNT-CHECKED.md`](BU
 - **Rot-Grün-Nachweis:** ohne Fix rot in 4 von 4 Läufen („Expected: is null but: was "waitForAtLeast(998) returned 997 on an open stream"“, ebenso 44001→44000, 4001→4000, 989→988), 28 ms bis zum Fund; mit Fix grün in 3 von 3 Läufen (2/2 der Klasse); Gegenprobe per `git stash` wieder rot, nach `pop` grün. Breit: `StreamBufferTest` 287/287, `StreamBufferArchitectureTest` 10/10, `StreamBufferProperties` 5/5; `spotbugs:check` grün; PIT 199/199 getötet (Test strength 100 %).
 - **Nicht geprüft:** OpenJML-RAC/ESC (`trim` steht nicht in der `.jml`, kein ESC-Ziel), jcstress- und vmlens-Profil, Lincheck.
 - **CI-Bedarf:** die Pipeline `formal-verification.yml` (RAC-Lauf der Suite gegen den geänderten `trim`) einmal mitlaufen lassen.
+- **Nachgemessen:** Messauftrag `BUGHUNT-MEASUREMENTS.md` in `5d4819b`, lokal gelaufen 2026-10-19: RAC der ganzen Suite gegen den geänderten `trim` grün ohne Vertragsverletzung, ESC 14/14, JPF grün, jcstress und vmlens grün (S1–S3); Lincheck läuft in jedem `mvn test` mit. „Nicht geprüft“ und „CI-Bedarf“ oben sind damit erledigt; die RAC-Laufzeit des Trim-Stresstests führte zur Skalierung unter `-Pjml-rac`.
 - **Status:** gefixt
 - **Commit:** streambuffer `89d2173`
 
@@ -78,6 +80,7 @@ Repos plus eins. Geprüfte Klassen ohne Fund stehen in [`BUGHUNT-CHECKED.md`](BU
 - **Rot-Grün-Nachweis:** ohne Fix rot („Expected: is <2L> but: was <3L>“ – der späte `write` hängte nach dem `close` an), mit Fix grün; Gegenprobe per `git stash` des Produktionscodes wieder rot, nach `pop` grün. Breit: 304 Tests grün (`StreamBufferTest`, jqwik, Lincheck, Architektur), SpotBugs, Javadoc, PIT 199/199.
 - **Zusätzlich angelegt, nicht ausgeführt:** `jcstress/WriteRacingCloseRace` (Schreiber, Schließer, Leser; Ausgang `1, -1` verboten).
 - **CI-Bedarf:** `mvn -Pjcstress test`, `mvn -Pvmlens test`, die Formal-Verification-Pipeline (ESC, RAC, JPF) – alles in `TODO.md`, „Run the concurrency and formal-verification suites after the write/close fix“.
+- **Nachgemessen:** Messauftrag `BUGHUNT-MEASUREMENTS.md` in `5d4819b`, lokal gelaufen 2026-10-19: jcstress `WriteRacingCloseRace` grün bei rund 3,54 Milliarden Proben (S1), vmlens grün (S2), ESC 14/14, RAC und JPF grün (S3), dazu die neue JPF-Harness `JpfWriteCloseHarness` mit drei Threads (S4): mit dem Fix fehlerfrei über 75.438 Zustände, gegen `1529d3b^` rot nach 3.956. Sie läuft seither im Job `jpf-interleavings`. Der TODO-Punkt aus „CI-Bedarf“ ist danach gelöscht worden.
 - **Status:** gefixt
 - **Commit:** 1529d3b
 

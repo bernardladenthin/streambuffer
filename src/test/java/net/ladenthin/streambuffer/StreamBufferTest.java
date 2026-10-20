@@ -4659,37 +4659,21 @@ public class StreamBufferTest {
         }
 
         /**
-         * CRITICAL TEST: Exception during trim write phase resets ignoreSafeWrite flag
+         * A caller-side {@link OutputStream} wrapping the buffer's stream throws while the
+         * buffer is full enough to trim. The failure stays in the wrapper: the buffer is not
+         * left in a half-written state, a later safe write and a plain write go through, and
+         * the data written before can be read.
          *
-         * REQUIREMENT: If IOException occurs while trim is writing consolidated data back,
-         * the ignoreSafeWrite flag MUST be reset in the finally block (lines 476-478).
-         * Without this, external code could mutate the buffer while ignoreSafeWrite is true,
-         * causing data corruption or unsafe behavior.
-         *
-         * IMPLEMENTATION FIX (already in place):
-         * Nested try-finally protects the ignoreSafeWrite flag:
-         * ```
-         * try {
-         *     ignoreSafeWrite = true;
-         *     while (!tmpBuffer.isEmpty()) {
-         *         os.write(tmpBuffer.pollFirst());  // ← If IOException here
-         *     }
-         * } finally {
-         *     ignoreSafeWrite = false;              // ← Always executes
-         * }
-         * ```
-         *
-         * TEST APPROACH:
-         * 1. Create custom StreamBuffer that returns throwing OutputStream
-         * 2. Set up conditions to trigger trim
-         * 3. Add throwing semaphore to force trim execution
-         * 4. When trim runs and calls os.write() on consolidated data, throws
-         * 5. Verify ignoreSafeWrite is reset despite exception
-         * 6. Verify stream still usable (flag not stuck in true state)
+         * <p>History: this test was written when {@code trim()} wrote its consolidated chunks
+         * back through the output stream and a shared {@code ignoreSafeWrite} flag had to be
+         * reset in a {@code finally}. Since F02 the clone decision is a parameter of each write
+         * and since F73 trim copies straight from the FIFO without touching the streams, so
+         * neither the flag nor that write path exists any more; what remains is the recovery
+         * check above.
          */
-        @DisplayName("trim(): ignore safe write flag reset during write exception — stream recoverable")
+        @DisplayName("write(): wrapping stream throws — buffer stays usable")
         @Test
-        public void trim_ignoreSafeWriteFlagResetDuringWriteException_streamRecoverable() throws IOException {
+        public void write_wrappingStreamThrows_bufferStaysUsable() throws IOException {
             // arrange — Custom StreamBuffer with throwing output stream
             class FailingWriteStreamBuffer extends StreamBuffer {
                 private boolean shouldThrowOnWrite = false;
@@ -4751,7 +4735,7 @@ public class StreamBufferTest {
             // Disable throwing for recovery tests
             sb.shouldThrowOnWrite = false;
 
-            // assert — Verify exception occurred and ignoreSafeWrite was reset
+            // assert — the wrapper's exception reached the caller, and the buffer still works
             final IOException finalException = caughtException;
             assertAll(
                     () -> {
@@ -4763,14 +4747,11 @@ public class StreamBufferTest {
                                 is("Simulated write failure during trim consolidation"));
                     },
                     () -> {
-                        // CRITICAL: ignoreSafeWrite must be false (finally executed)
-                        // If the flag stayed true, external code could unsafely mutate buffer
-                        // Check by attempting a write with safeWrite enabled
+                        // a safe write after the failure goes through
                         sb.setSafeWrite(true);
                         byte[] safeData = new byte[50];
                         Arrays.fill(safeData, (byte) 99);
-                        os.write(safeData); // Should use safe write (not throw)
-                        // If ignoreSafeWrite was stuck true, this would have different behavior
+                        os.write(safeData);
                     },
                     () -> {
                         // Stream still usable - can write
@@ -5642,23 +5623,24 @@ public class StreamBufferTest {
          *
          * Key Requirements (verified by tests in this section):
          * 1. isTrimRunning flag MUST reset via finally block (even if exceptions occur)
-         *    - Implementation: Lines 440-484 in StreamBuffer.java (try-finally)
-         * 2. ignoreSafeWrite flag MUST reset despite write exceptions
-         *    - Implementation: Lines 470-478 (nested try-finally)
-         * 3. Signal release exceptions must not deadlock stream
-         *    - Implementation: releaseTrimStartSignals() moved INSIDE try block (line 443)
-         * 4. Concurrent close() during trim must not cause race conditions
+         *    - Implementation: the try/finally in StreamBuffer.trim()
+         * 2. Signal release exceptions must not deadlock stream
+         *    - Implementation: releaseTrimStartSignals() is called INSIDE that try block
+         * 3. Concurrent close() during trim must not cause race conditions
          *    - Implementation: bufferLock synchronization prevents interleaving
-         * 5. Configuration changes must not affect running trim
+         * 4. Configuration changes must not affect running trim
          *    - Implementation: Configuration values cached before trim execution
+         *
+         * (Trim copies straight from the FIFO since F73; it no longer reads or writes through
+         * the streams, so there is no read or write phase inside it that could throw.)
          *
          * Each test includes detailed inline documentation explaining the specific
          * exception scenario and why the fix prevents problems.
          */
-        @DisplayName("trim(): exception during read — flag resets in finally")
+        @DisplayName("trim(): triggered by a write — flag is reset afterwards")
         @Test
-        public void trim_exceptionDuringRead_flagResetsInFinally() throws IOException {
-            // arrange — Verify that isTrimRunning is reset even if exception occurs during is.read()
+        public void trim_triggeredByWrite_flagIsResetAfterwards() throws IOException {
+            // arrange — Verify that isTrimRunning is reset once the trim a write triggered is over
             StreamBuffer sb = new StreamBuffer();
             OutputStream os = sb.getOutputStream();
 
@@ -5669,17 +5651,16 @@ public class StreamBufferTest {
             sb.setMaxBufferElements(10);
 
             // act — trigger trim by writing more data
-            // The trim operation should reset isTrimRunning even if exceptions occur
             os.write(new byte[100]);
 
-            // assert — isTrimRunning should be false after trim completes (or fails safely)
+            // assert — isTrimRunning should be false after trim completes
             assertThat(sb.isTrimRunning(), is(false));
         }
 
-        @DisplayName("trim(): exception during write — flag resets in finally")
+        @DisplayName("trim(): of several chunks — flag is reset and data intact")
         @Test
-        public void trim_exceptionDuringWrite_flagResetsInFinally() throws IOException {
-            // arrange — Similar to above but focused on write phase of trim
+        public void trim_ofSeveralChunks_flagIsResetAndDataIntact() throws IOException {
+            // arrange — Similar to above, with several chunks to consolidate and a read back
             StreamBuffer sb = new StreamBuffer();
             OutputStream os = sb.getOutputStream();
             InputStream is = sb.getInputStream();
@@ -5774,15 +5755,14 @@ public class StreamBufferTest {
             sb.removeTrimEndSignal(trimEnded);
         }
 
-        @DisplayName("ignoreSafeWrite(): reset after trim")
+        @DisplayName("trim(): with safe write — all data preserved")
         @Test
-        public void ignoreSafeWrite_resetAfterTrim() throws IOException {
-            // arrange — Verify that ignoreSafeWrite flag is properly reset after trim
+        public void trim_withSafeWrite_allDataPreserved() throws IOException {
+            // arrange — trims while safe write is on must not lose or alter data
             StreamBuffer sb = new StreamBuffer();
             OutputStream os = sb.getOutputStream();
             InputStream is = sb.getInputStream();
 
-            // Enable safe write to test the ignoreSafeWrite flag
             sb.setSafeWrite(true);
 
             // Write data to trigger trim

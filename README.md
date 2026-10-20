@@ -137,6 +137,7 @@ The `InputStream` and `OutputStream` can be used concurrently from different thr
 
 - All `Deque` accesses are guarded by a `bufferLock` object.
 - State fields (`streamClosed`, `safeWrite`, `availableBytes`, `positionAtCurrentBufferEntry`, `maxBufferElements`, `maxAllocationSize`, `isTrimRunning`, `maxObservedBytes`) are `volatile`; the cumulative counters `totalBytesWritten` and `totalBytesRead` are `final AtomicLong` (atomic read-modify-write under concurrent I/O).
+- `close()` takes the same lock, so it waits for a write or trim in progress on another thread: a write racing the close is either fully buffered or fails with "Stream closed", never appended after a reader saw the end of the stream. A trim copies every buffered byte, so with a large buffer that wait can be noticeable.
 - A `Semaphore signalModification` blocks reading threads until data is written or the stream is closed, avoiding busy-waiting. External semaphores can be registered via `addSignal` for thread-decoupled notification.
 
 ### No Write Deadlock

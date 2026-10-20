@@ -28,7 +28,7 @@ reporting:
 - **byte fidelity** — the reader must receive exactly the two bytes, in order, then EOF (an explicit
   `throw`, validated with a negative control so it cannot be vacuous).
 
-Last confirmed run: **no errors detected**, 13,616 states, maxDepth 130.
+Last confirmed run: **no errors detected**, 13,616 states, maxDepth 127.
 
 A second harness (`JpfWriteCloseHarness.java`, run configuration `WriteClose.jpf`) puts the writer,
 a separate closer and the reader in three threads, so a write can race the close — which the first
