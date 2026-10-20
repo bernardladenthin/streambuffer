@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cancellable pipeline start-gate via a `startgate` GitHub Environment with configurable wait timer.
 
 ### Changed
+- **Documented: `read(byte[], off, len)` waits for all `len` bytes** (or for `close()`), a deliberate
+  deviation from the `InputStream` contract that has been the design since the first version but was
+  stated nowhere. The Javadoc of `getInputStream()` and the README ("Full `InputStream`/`OutputStream`
+  Compatibility", "Deadlock Behavior → Read") now say so, with the `waitForAnyData()` + `available()`
+  pattern for request/response protocols; the README's `maxAllocationSize` default reads
+  `Integer.MAX_VALUE - 8`, as the code has it.
 - Build tooling: spotbugs-maven-plugin 4.10.4.1 -> 4.10.5.0 (SpotBugs 4.10.5, the first release that reads
   JSpecify; nothing to report here), in step with the sibling repositories.
 - Build and test tooling bumped in step with the sibling repositories: Spotless 3.10.4 and Checker
@@ -96,6 +102,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the job ran into its timeout with every contract holding.
 
 ### Fixed
+- **`safeWrite` could be bypassed by a concurrent `write(int)`.** A single-byte write set an
+  instance-wide flag that told an array write running on another thread not to clone its array, so
+  with `setSafeWrite(true)` the caller's array could land in the buffer by reference and later changes
+  to it reached the reader. The flag is gone; whether to clone is a parameter of the private write path.
+- **A concurrent `trim()` no longer lets a reader see a half-emptied buffer.** `trim()` drained the
+  buffer through its own input stream and wrote the bytes back, so the buffered count fell to 0 and rose
+  again while `read()` and `waitForAtLeast` read it without the lock: a reader could get fewer bytes
+  than requested, or end of stream, on an open stream. `trim()` now copies the entries straight from the
+  FIFO into blocks of at most `maxAllocationSize` and leaves the count unchanged.
+- **A `write` racing `close()` from another thread can no longer land after the close.** The closed
+  check ran before the lock was taken and `close()` set the flag without it, so a writer that had passed
+  the check could append after a reader had seen "closed, 0 bytes" and reported end of stream. The check
+  now runs under `bufferLock` and `close()` sets the flag under the same lock: a write is either fully
+  buffered before the close or fails with "Stream closed"; `close()` waits for a write or `trim()` in
+  progress on another thread.
 - **CI: the GitHub `snapshot` pre-release holds exactly the current build, and the release assets
   include the pom.** `gh release upload --clobber` replaces same-named assets and never removes any
   other, so the `snapshot` release accumulated: the 1.2.0-SNAPSHOT jar and javadoc jar (unsigned, from before the
