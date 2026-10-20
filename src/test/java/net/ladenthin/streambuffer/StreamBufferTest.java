@@ -3272,7 +3272,7 @@ public class StreamBufferTest {
             long maxAfterTrim = sb.getMaxObservedBytes();
 
             // assert — maxObservedBytes should still reflect user peaks, not trim's internal operations
-            // trim internally reads and writes, but isTrimRunning prevents those from being counted
+            // trim copies straight from the FIFO and does no stream I/O, so it counts nothing
             assertAll(
                     () -> assertThat(sb.getBufferElementCount(), is(1)), // trim consolidated
                     () -> assertThat(sb.isTrimRunning(), is(false)), // trim complete
@@ -3297,7 +3297,7 @@ public class StreamBufferTest {
             sb.setMaxBufferElements(1);
             os.write(new byte[50]);
 
-            // assert — trim's internal read/write should not affect user counters
+            // assert — trim does no stream I/O, so it does not affect the user counters
             // and buffer should be consolidated into one element
             assertAll(
                     () -> assertThat(sb.getTotalBytesWritten(), is(writtenBeforeTrim + 50)),
@@ -3305,6 +3305,98 @@ public class StreamBufferTest {
                     () -> assertThat(sb.getBufferElementCount(), is(1)),
                     () -> assertThat(sb.isTrimRunning(), is(false)) // trim should be complete
                     );
+        }
+
+        @DisplayName("statistics(): write from a trim start signal — is counted")
+        @Test
+        public void statistics_writeFromTrimStartHook_isCounted() throws IOException {
+            // arrange — a trim start signal whose release() writes once, on the trim thread
+            // while isTrimRunning is true (bufferLock is reentrant)
+            final StreamBuffer sb = new StreamBuffer();
+            final OutputStream os = sb.getOutputStream();
+            final InputStream is = sb.getInputStream();
+            sb.setMaxBufferElements(2);
+            final AtomicInteger hookCalls = new AtomicInteger();
+            final Semaphore hook = new Semaphore(0) {
+                @Override
+                public void release() {
+                    if (hookCalls.incrementAndGet() == 1) {
+                        try {
+                            os.write(new byte[] {10, 11, 12});
+                        } catch (IOException e) {
+                            throw new RuntimeException(e);
+                        }
+                    }
+                    super.release();
+                }
+            };
+            sb.addTrimStartSignal(hook);
+
+            // act — the third write triggers the trim that releases the hook
+            os.write(new byte[] {1, 2, 3});
+            os.write(new byte[] {4, 5, 6});
+            os.write(new byte[] {7, 8, 9});
+            final long writtenAfterWrites = sb.getTotalBytesWritten();
+            final long maxObservedAfterWrites = sb.getMaxObservedBytes();
+            final byte[] actual = new byte[12];
+            int total = 0;
+            int n;
+            while (total < actual.length && (n = is.read(actual, total, actual.length - total)) > 0) {
+                total += n;
+            }
+            final int bytesRead = total;
+            sb.removeTrimStartSignal(hook);
+
+            // assert — the hook's bytes are user I/O: counted when written, so the
+            // invariant totalBytesWritten == totalBytesRead + available holds
+            assertAll(
+                    () -> assertThat(hookCalls.get(), is(1)),
+                    () -> assertThat(writtenAfterWrites, is(12L)),
+                    () -> assertThat(maxObservedAfterWrites, is(12L)),
+                    () -> assertThat(bytesRead, is(12)),
+                    () -> assertThat(sb.getTotalBytesRead(), is(12L)),
+                    () -> assertThat(sb.getTotalBytesWritten(), is(sb.getTotalBytesRead())));
+        }
+
+        @DisplayName("statistics(): read from a trim start signal — is counted")
+        @Test
+        public void statistics_readFromTrimStartHook_isCounted() throws IOException {
+            // arrange — a trim start signal whose release() reads one byte, on the trim
+            // thread while isTrimRunning is true (bufferLock is reentrant)
+            final StreamBuffer sb = new StreamBuffer();
+            final OutputStream os = sb.getOutputStream();
+            final InputStream is = sb.getInputStream();
+            sb.setMaxBufferElements(2);
+            final AtomicInteger hookCalls = new AtomicInteger();
+            final AtomicInteger hookReadValue = new AtomicInteger(-2);
+            final Semaphore hook = new Semaphore(0) {
+                @Override
+                public void release() {
+                    if (hookCalls.incrementAndGet() == 1) {
+                        try {
+                            hookReadValue.set(is.read());
+                        } catch (IOException e) {
+                            throw new RuntimeException(e);
+                        }
+                    }
+                    super.release();
+                }
+            };
+            sb.addTrimStartSignal(hook);
+
+            // act — the third write triggers the trim that releases the hook
+            os.write(new byte[] {1, 2, 3});
+            os.write(new byte[] {4, 5, 6});
+            os.write(new byte[] {7, 8, 9});
+            sb.removeTrimStartSignal(hook);
+
+            // assert — the hook's read is user I/O and is counted
+            assertAll(
+                    () -> assertThat(hookCalls.get(), is(1)),
+                    () -> assertThat(hookReadValue.get(), is(1)),
+                    () -> assertThat(sb.getTotalBytesRead(), is(1L)),
+                    () -> assertThat(sb.getTotalBytesWritten(), is(9L)),
+                    () -> assertThat(sb.getAvailableBytesExact(), is(8L)));
         }
     }
 

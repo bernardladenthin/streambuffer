@@ -84,6 +84,18 @@ Repos plus eins. Geprüfte Klassen ohne Fund stehen in [`BUGHUNT-CHECKED.md`](BU
 - **Status:** gefixt
 - **Commit:** 1529d3b
 
+### F212 – streambuffer: I/O aus einem Trim-Start-Signal fehlt in den Statistiken
+- **Zeit:** 2026-10-20 20:31 UTC
+- **Datei:** `src/main/java/net/ladenthin/streambuffer/StreamBuffer.java` (`writeFromArray`: `if (!isTrimRunning)` um `totalBytesWritten`/`updateMaxObservedBytesIfNeeded`; `recordReadStatistics`: `if (!isTrimRunning)` um `totalBytesRead`; Javadoc von `isTrimRunning`)
+- **Schwere:** niedrig (falsche Zähler, nur für I/O aus einem Trim-Start-Signal auf dem Trim-Thread)
+- **Historie:** Gefunden beim Review des Branches am 2026-10-20 (Fund S1-2). Vor F73 (`89d2173`) leerte `trim()` den Puffer über den eigenen `InputStream` und schrieb ihn zurück; die beiden Wächter hielten diese interne I/O aus den Zählern. Seit F73 kopiert `trim()` direkt aus der Deque, die Wächter schlossen nur noch einen Fall aus: ein `write`/`read`, den ein Trim-Start-Signal in seinem `release()` auf dem Trim-Thread macht (`bufferLock` ist reentrant). Die mit F73 umgeschriebene Javadoc von `isTrimRunning` schrieb diesen Ausschluss fest („nor be counted in the statistics“).
+- **Beschreibung:** Ein solcher `write` erhöhte `availableBytes`, aber weder `totalBytesWritten` noch `maxObservedBytes`; ein solcher `read` senkte `availableBytes`, ohne `totalBytesRead` zu erhöhen. Das widerspricht der Javadoc von `getTotalBytesWritten`/`getTotalBytesRead` („by user I/O operations“), dem README („the statistics always reflect user I/O only“) und der Invariante `totalBytesWritten == totalBytesRead + available` (`StreamBufferProperties`): nach dem Auslesen standen 12 gelesene gegen 9 geschriebene Bytes.
+- **Fix:** Die beiden Wächter um die Statistik entfallen, der in `shouldTrim()` bleibt (er verhindert den verschachtelten Trim). Javadoc von `isTrimRunning` und `recordReadStatistics` angepasst, zwei veraltete Testkommentare („trim internally reads and writes …“) korrigiert. Die JML-Spezifikation deckt keine der drei Methoden ab, daher keine Spiegelung nötig; README und Getter-Javadoc stimmen jetzt mit dem Code überein.
+- **Tests:** `StreamBufferTest$StatisticsTests#statistics_writeFromTrimStartHook_isCounted` (Hook schreibt `{10,11,12}` beim ersten Trim; danach `getTotalBytesWritten()` und `getMaxObservedBytes()` 12, nach dem Auslesen `getTotalBytesRead()` 12 und gleich `getTotalBytesWritten()`), `#statistics_readFromTrimStartHook_isCounted` (Hook liest ein Byte; `getTotalBytesRead()` 1, geschrieben 9, verfügbar 8).
+- **Rot-Grün-Nachweis:** ohne Fix rot („Expected: is <12L> but: was <9L>“ dreimal im Schreibtest – geschrieben, maxObserved und geschrieben gegen gelesen –, „Expected: is <1L> but: was <0L>“ im Lesetest), mit Fix grün (`StatisticsTests` 15/15). Breit: ganze Suite grün (306/306: `StreamBufferTest`, jqwik, Lincheck, Architektur), SpotBugs ohne Befund, PIT 197/197 (vorher 199: die beiden Mutanten der entfernten Wächter entfallen).
+- **Status:** gefixt
+- **Commit:** (folgt)
+
 ## Offene Verdachte ohne Fund-ID
 
 Keine (Stand 2026-10-18).

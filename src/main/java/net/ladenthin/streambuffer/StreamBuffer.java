@@ -145,8 +145,8 @@ public class StreamBuffer implements Closeable {
      * Trim itself copies straight from the FIFO and never reads or writes through the
      * streams. The flag matters for code that runs on the trim thread while trim is in
      * progress: a trim signal whose {@code release()} writes reaches the write path again
-     * (bufferLock is reentrant), and must neither start a nested trim (see
-     * {@link #shouldTrim()}) nor be counted in the statistics.
+     * (bufferLock is reentrant), and must not start a nested trim (see
+     * {@link #shouldTrim()}). Such I/O is user I/O and is counted in the statistics.
      */
     private volatile boolean isTrimRunning = false;
 
@@ -730,13 +730,12 @@ public class StreamBuffer implements Closeable {
     }
 
     /**
-     * Record bytes read to statistics if trim is not running.
+     * Record bytes read to statistics. Trim itself never reads through the stream, so
+     * every read reaching this method is user I/O, including one made by a trim signal.
      * Package-private for direct unit testing.
      */
     void recordReadStatistics(long bytesRead) {
-        if (!isTrimRunning) {
-            totalBytesRead.addAndGet(bytesRead);
-        }
+        totalBytesRead.addAndGet(bytesRead);
     }
 
     /**
@@ -1049,10 +1048,8 @@ public class StreamBuffer implements Closeable {
             availableBytes += len;
             // the count must be positive after any write operation
             assert availableBytes > 0 : "More memory used as a long can count";
-            if (!isTrimRunning) {
-                totalBytesWritten.addAndGet(len);
-                updateMaxObservedBytesIfNeeded(availableBytes);
-            }
+            totalBytesWritten.addAndGet(len);
+            updateMaxObservedBytesIfNeeded(availableBytes);
             trim();
         }
         // always at least, signal bytes are written to the buffer
