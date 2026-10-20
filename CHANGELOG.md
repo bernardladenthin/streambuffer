@@ -79,6 +79,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Release Process prompt template moved from `CHANGELOG.md` to `docs/RELEASE.md`.
 - `maxAllocationSize` defaults to `Integer.MAX_VALUE - 8` (was `Integer.MAX_VALUE`);
   `setMaxAllocationSize` clamps larger values to it.
+- **Tests that could pass without checking anything are tightened.** The jqwik properties
+  (`StreamBufferProperties`) now run in every build: their class name matched none of Surefire's
+  default include patterns, so they ran nowhere; under `-Pjml-rac` they use 100 tries instead of 1000.
+  The concurrent `safeWrite` test records every failure of its background threads and checks the byte
+  count, since `Waiter.resume()` never rethrows and a reader that died early left it green. A test
+  whose wrapping output stream threw before it reached the buffer is removed (its message was the
+  test's own). A new test pins that `close()` waits for a write on another thread, the half of the
+  write/close fix the existing single-threaded test does not see. The close-during-trim tests describe
+  the current `trim()`, which copies straight from the FIFO, instead of a read phase and a write-back
+  through the streams.
+- **Formal verification: a third JPF harness** (`WriteClose.jpf`) model-checks writer, closer and
+  reader in three threads, i.e. the order of write and close, which the existing harness cannot see.
+  Under RAC the two stress loops of `StreamBufferTest` are scaled down (`streambuffer.test.rac`):
+  RAC prints a stack trace for every `System.arraycopy`/`clone` (OpenJML/OpenJML#1050), and unscaled
+  the job ran into its timeout with every contract holding.
 
 ### Fixed
 - **CI: the GitHub `snapshot` pre-release holds exactly the current build, and the release assets
@@ -103,6 +118,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   passes `-Dmaven.repository.credentialScope=id`, Maven's own switch back to id-only matching, until a
   setup-java release can write `<repositoryOrigins>` (`mvn-server-repository-origins`, merged upstream
   but not yet released).
+- **Statistics count the I/O of a trim start signal.** A write or read made from a trim start
+  signal's `release()` on the trim thread changed the buffered count but was left out of
+  `getTotalBytesWritten()`, `getMaxObservedBytes()` and `getTotalBytesRead()`, contrary to their
+  Javadoc and to `written == read + available`. The guards dated from when `trim()` read and wrote
+  through the streams itself; it copies straight from the FIFO now, so every counted byte is user
+  I/O. `isTrimRunning` still prevents a nested trim.
 - `trim()` with more than 2 GB buffered no longer allocates `new byte[Integer.MAX_VALUE]`, which the
   JVM always rejects ("Requested array size exceeds VM limit"). Allocations are capped at
   `Integer.MAX_VALUE - 8`, the JDK's `SOFT_MAX_ARRAY_LENGTH`.
