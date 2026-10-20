@@ -7,6 +7,7 @@ import static org.awaitility.Awaitility.await;
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.not;
+import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.number.OrderingComparison.greaterThan;
 import static org.hamcrest.number.OrderingComparison.greaterThanOrEqualTo;
@@ -28,6 +29,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
@@ -1391,8 +1393,10 @@ public class StreamBufferTest {
             reader.start();
             writer.join();
             reader.join();
-            // Re-raises any waiter.fail(...) call on the test thread.
+            // resume() only releases the Waiter; await() is the call that rethrows a waiter.fail(...)
+            // of a background thread on the test thread.
             waiter.resume();
+            waiter.await(1, TimeUnit.SECONDS, 0);
 
             // assert
             assertArrayEquals(written, read, "Read data should match written data");
@@ -1411,15 +1415,20 @@ public class StreamBufferTest {
             final byte mutated = 2;
             final AtomicBoolean stop = new AtomicBoolean();
             final AtomicInteger mutatedBytesRead = new AtomicInteger();
-            final net.jodah.concurrentunit.Waiter waiter = new net.jodah.concurrentunit.Waiter();
+            // A background thread that dies passes the mutation check vacuously (it reads nothing),
+            // so every failure is recorded and every byte is counted, and both are asserted below.
+            final AtomicReference<Throwable> failure = new AtomicReference<>();
+            final AtomicLong singleBytesWritten = new AtomicLong();
+            final AtomicLong bytesRead = new AtomicLong();
 
             Thread singleByteWriter = new Thread(() -> {
                 try {
                     while (!stop.get()) {
                         os.write(0);
+                        singleBytesWritten.incrementAndGet();
                     }
-                } catch (IOException e) {
-                    waiter.fail(e);
+                } catch (Throwable e) {
+                    failure.compareAndSet(null, e);
                 }
             });
             Thread reader = new Thread(() -> {
@@ -1427,21 +1436,23 @@ public class StreamBufferTest {
                     final byte[] chunk = new byte[4096];
                     int n;
                     while ((n = is.read(chunk, 0, 1)) != -1) {
+                        bytesRead.addAndGet(n);
                         for (int i = 0; i < n; i++) {
                             if (chunk[i] == mutated) {
                                 mutatedBytesRead.incrementAndGet();
                             }
                         }
                     }
-                } catch (IOException e) {
-                    waiter.fail(e);
+                } catch (Throwable e) {
+                    failure.compareAndSet(null, e);
                 }
             });
 
             // act — mutate each array right after write() returned; safeWrite promises a private copy
             singleByteWriter.start();
             reader.start();
-            for (int i = 0, n = iterations(200_000, 2_000); i < n; i++) {
+            final int arrayWrites = iterations(200_000, 2_000);
+            for (int i = 0; i < arrayWrites; i++) {
                 final byte[] data = new byte[8];
                 Arrays.fill(data, original);
                 os.write(data);
@@ -1451,10 +1462,15 @@ public class StreamBufferTest {
             singleByteWriter.join();
             os.close();
             reader.join();
-            waiter.resume();
 
             // assert
-            assertThat("bytes changed after write() reached the reader", mutatedBytesRead.get(), is(0));
+            assertAll(
+                    () -> assertThat("failure in a background thread", failure.get(), is(nullValue())),
+                    () -> assertThat(
+                            "bytes the reader consumed",
+                            bytesRead.get(),
+                            is(8L * arrayWrites + singleBytesWritten.get())),
+                    () -> assertThat("bytes changed after write() reached the reader", mutatedBytesRead.get(), is(0)));
         }
     }
 
