@@ -2139,6 +2139,84 @@ public class StreamBufferTest {
             assertThat(sb.getAvailableBytesExact(), is(availableWhenClosed.get()));
             assertThat("the late write must fail with 'Stream closed'", lateWriteFailure.get() != null, is(true));
         }
+
+        /**
+         * {@code close()} from another thread while a write is in progress waits until that write
+         * is buffered: it takes the buffer lock the write holds, so it neither marks the stream
+         * closed in the middle of the write nor lets a reader see a closed buffer the write is
+         * still appending to.
+         *
+         * <p>Deterministic: the trim-start signal runs on the writing thread while it holds the
+         * buffer lock and starts the closer there. The state of the closer, {@code isClosed()} and
+         * the buffered count are recorded inside the signal and asserted after the write, so an
+         * assertion never unwinds through the write. A close that does not take the lock finishes
+         * inside the signal, which ends the wait at once.
+         */
+        @DisplayName("close() racing a write: waits until the write is buffered")
+        @Test
+        public void close_fromAnotherThreadDuringAWrite_waitsUntilTheWriteIsBuffered() throws Exception {
+            // arrange
+            final StreamBuffer sb = new StreamBuffer();
+            final OutputStream os = sb.getOutputStream();
+            sb.setMaxBufferElements(1); // the second entry triggers a trim
+            final AtomicBoolean fired = new AtomicBoolean(false);
+            final AtomicReference<Thread> closer = new AtomicReference<>();
+            final AtomicReference<IOException> closeFailure = new AtomicReference<>();
+            final AtomicReference<Thread.State> closerStateDuringTheWrite = new AtomicReference<>();
+            final AtomicReference<Boolean> closedDuringTheWrite = new AtomicReference<>();
+            final AtomicReference<Long> availableDuringTheWrite = new AtomicReference<>();
+            final Semaphore trimStart = new Semaphore(0) {
+                @Override
+                public void release() {
+                    super.release();
+                    if (!fired.compareAndSet(false, true)) {
+                        return;
+                    }
+                    final Thread thread = new Thread(
+                            () -> {
+                                try {
+                                    sb.close();
+                                } catch (IOException e) {
+                                    closeFailure.set(e);
+                                }
+                            },
+                            "closer");
+                    closer.set(thread);
+                    thread.start();
+                    // this trim holds the buffer lock, so a close that takes it parks on it
+                    final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+                    while (thread.getState() != Thread.State.BLOCKED
+                            && thread.getState() != Thread.State.TERMINATED
+                            && !sb.isClosed()
+                            && System.nanoTime() < deadline) {
+                        Thread.yield();
+                    }
+                    closerStateDuringTheWrite.set(thread.getState());
+                    closedDuringTheWrite.set(sb.isClosed());
+                    availableDuringTheWrite.set(sb.getAvailableBytesExact());
+                }
+            };
+            sb.addTrimStartSignal(trimStart);
+
+            // act
+            os.write(1);
+            os.write(2);
+            final Thread thread = Objects.requireNonNull(closer.get(), "the trim-start signal did not fire");
+            thread.join(TimeUnit.SECONDS.toMillis(10));
+
+            // assert
+            assertAll(
+                    () -> assertThat(
+                            "the closer must wait for the lock",
+                            closerStateDuringTheWrite.get(),
+                            is(Thread.State.BLOCKED)),
+                    () -> assertThat("closed in the middle of the write", closedDuringTheWrite.get(), is(false)),
+                    () -> assertThat(availableDuringTheWrite.get(), is(2L)),
+                    () -> assertThat(thread.isAlive(), is(false)),
+                    () -> assertThat(closeFailure.get(), is(nullValue())),
+                    () -> assertThat(sb.isClosed(), is(true)),
+                    () -> assertThat(sb.getAvailableBytesExact(), is(2L)));
+        }
     }
 
     @Nested
