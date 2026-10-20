@@ -94,7 +94,7 @@ Repos plus eins. Geprüfte Klassen ohne Fund stehen in [`BUGHUNT-CHECKED.md`](BU
 - **Tests:** `StreamBufferTest$StatisticsTests#statistics_writeFromTrimStartHook_isCounted` (Hook schreibt `{10,11,12}` beim ersten Trim; danach `getTotalBytesWritten()` und `getMaxObservedBytes()` 12, nach dem Auslesen `getTotalBytesRead()` 12 und gleich `getTotalBytesWritten()`), `#statistics_readFromTrimStartHook_isCounted` (Hook liest ein Byte; `getTotalBytesRead()` 1, geschrieben 9, verfügbar 8).
 - **Rot-Grün-Nachweis:** ohne Fix rot („Expected: is <12L> but: was <9L>“ dreimal im Schreibtest – geschrieben, maxObserved und geschrieben gegen gelesen –, „Expected: is <1L> but: was <0L>“ im Lesetest), mit Fix grün (`StatisticsTests` 15/15). Breit: ganze Suite grün (306/306: `StreamBufferTest`, jqwik, Lincheck, Architektur), SpotBugs ohne Befund, PIT 197/197 (vorher 199: die beiden Mutanten der entfernten Wächter entfallen).
 - **Status:** gefixt
-- **Commit:** (folgt)
+- **Commit:** 6229af9
 
 ## Offene Verdachte ohne Fund-ID
 
