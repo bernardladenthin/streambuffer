@@ -4706,16 +4706,16 @@ public class StreamBufferTest {
         /**
          * CRITICAL TEST: Exception during trim start signal release doesn't deadlock stream
          *
-         * REQUIREMENT: If releaseTrimStartSignals() throws an exception (line 442),
+         * REQUIREMENT: If releaseTrimStartSignals() throws an exception,
          * the isTrimRunning flag MUST still be properly managed and the stream MUST recover.
          * Without this, the flag stays true forever, blocking all future trim operations.
          *
-         * IMPLEMENTATION RISK:
-         * releaseTrimStartSignals() is called OUTSIDE the try block:
+         * IMPLEMENTATION RISK (before the fix below):
+         * releaseTrimStartSignals() was called OUTSIDE the try block:
          * ```
          * if (shouldTrim()) {
          *     isTrimRunning = true;
-         *     releaseTrimStartSignals();  // ← OUTSIDE try-finally (line 442)
+         *     releaseTrimStartSignals();  // ← OUTSIDE try-finally
          *     try {
          *         // trim logic
          *     } finally {
@@ -4744,7 +4744,7 @@ public class StreamBufferTest {
          * Without this, the flag stays true forever, blocking all future trim operations.
          *
          * IMPLEMENTATION FIX (applied):
-         * Moved releaseTrimStartSignals() INSIDE the try-finally block (line 443):
+         * Moved releaseTrimStartSignals() INSIDE the try-finally block of trim():
          * ```
          * try {
          *     releaseTrimStartSignals();  // ← NOW INSIDE try-finally
@@ -4847,22 +4847,22 @@ public class StreamBufferTest {
         /**
          * CRITICAL TEST: Exception during trim end signal release - flag already reset but exception propagates
          *
-         * REQUIREMENT: If exception occurs in releaseTrimEndSignals() (line 481 finally block),
-         * the isTrimRunning flag MUST already be false (line 480 executes first).
+         * REQUIREMENT: If exception occurs in releaseTrimEndSignals() (finally block of trim()),
+         * the isTrimRunning flag MUST already be false (the reset executes first).
          * However, the exception can suppress notification to signal observers.
          *
          * IMPLEMENTATION ANALYSIS:
          * Finally block order matters:
          * ```
          * } finally {
-         *     isTrimRunning = false;              // ← Line 480: executes FIRST
-         *     releaseTrimEndSignals();            // ← Line 481: executes SECOND
+         *     isTrimRunning = false;              // ← executes FIRST
+         *     releaseTrimEndSignals();            // ← executes SECOND
          * }
          * ```
          *
          * Key difference from trim start test:
-         * - Trim start exception (line 443): flag ALREADY true, exception before reset → DANGEROUS
-         * - Trim end exception (line 481): flag ALREADY reset, exception after → SAFE for flag
+         * - Trim start exception: flag ALREADY true, exception before reset → DANGEROUS
+         * - Trim end exception: flag ALREADY reset, exception after → SAFE for flag
          * - But: Signal observers may not be notified if exception occurs
          *
          * TEST APPROACH:
@@ -4939,7 +4939,7 @@ public class StreamBufferTest {
                     },
                     () -> {
                         // CRITICAL: isTrimRunning must be false (flag was reset BEFORE signal exception)
-                        // Line 480 executes before line 481, so flag is already false
+                        // The reset runs before releaseTrimEndSignals(), so flag is already false
                         // This is different from trim start where flag would be stuck true
                         assertThat(
                                 "isTrimRunning must be false (flag reset before signal release)",
@@ -4969,18 +4969,20 @@ public class StreamBufferTest {
          *
          * IMPLEMENTATION ANALYSIS:
          * Race condition scenario:
-         * - Thread 1: trim() acquired bufferLock, reading/writing internal streams
-         * - Thread 2: close() calls bufferLock, closes output/input streams
+         * - Thread 1: a write holds bufferLock and runs trim(), which copies the
+         *   buffered bytes straight from the FIFO (it never reads or writes through
+         *   the streams, see F73)
+         * - Thread 2: close() → closeAll() sets streamClosed under the same bufferLock
          *
-         * Both methods synchronize on bufferLock:
-         * - trim() (line 443-484): synchronized operations on is/os
-         * - close() (line 995-1010): closes streams, synchronizes access
+         * Both synchronize on bufferLock, so close() waits until the write and its
+         * trim() are done; a write that loses the race fails in requireNonClosed()
+         * before it buffers anything.
          *
-         * Potential issues:
-         * - close() could close streams while trim() is using them
-         * - Could cause IOException during trim read/write
-         * - Could cause NullPointerException if streams become null
-         * - Could lose signal notifications if close() interrupts trim
+         * Potential issues guarded here:
+         * - The write that triggered trim() failing although it was accepted
+         * - Bytes lost or reordered by the trim when close() follows it
+         * - A deadlock between the writer and close()
+         * - Lost signal notifications if close() interrupts trim
          *
          * TEST APPROACH:
          * 1. Use ExecutorService to run threads concurrently
@@ -5023,7 +5025,7 @@ public class StreamBufferTest {
             try {
                 // act — Thread 1: Write data to trigger trim.
                 // Once close() races in, writes correctly throw IOException("Stream closed.")
-                // from the public requireNonClosed() guard — that is expected behaviour and
+                // from the private requireNonClosed() check, under bufferLock — that is expected behaviour and
                 // must not be treated as a test failure.  Only unexpected exceptions are
                 // captured so the assertion below stays meaningful.
                 java.util.concurrent.Future<?> trimTask = executor.submit(() -> {
@@ -5107,33 +5109,34 @@ public class StreamBufferTest {
          *
          * <p>Strategy: hook {@code addTrimStartSignal} with a semaphore whose
          * {@code release()} synchronously calls {@code sb.close()}. The hook runs
-         * on the trim thread itself, BEFORE the read/write-back phases. By the
-         * time trim reaches its write-back phase, {@code streamClosed} is already
-         * {@code true}, so any internal {@code os.write()} call inside trim will
-         * fail at {@code requireNonClosed()}.
+         * on the writing thread inside trim(), which already holds {@code bufferLock};
+         * close() takes the same lock re-entrantly and sets {@code streamClosed}
+         * inside trim's own critical section. Since F73 trim copies straight from
+         * the FIFO, leaves {@code availableBytes} unchanged and never goes through
+         * the streams, so the close cannot reach anything trim still has to do.
          *
          * <p>This is single-threaded — no executor, no latches, no sleeps,
          * no thread-scheduling timing windows.
          *
-         * <p>Asserts the two real bugs:
+         * <p>Asserts:
          * <ol>
-         *   <li>The triggering write must not throw — trim's internal
-         *       reorganization should be insulated from a concurrent close.</li>
-         *   <li>No data loss — every byte written before the close must remain
+         *   <li>The triggering write must not throw — it already passed
+         *       {@code requireNonClosed()} before it buffered its bytes.</li>
+         *   <li>No data loss — all 9 bytes written before the close must remain
          *       readable from the input stream.</li>
          * </ol>
          */
-        @DisplayName("trim(): close during trim — write-back must not throw and must not lose data")
+        @DisplayName("trim(): close during trim — triggering write must not throw and must not lose data")
         @Test
-        public void trim_closeDuringTrim_writeBackDoesNotThrowAndPreservesData() throws IOException {
+        public void trim_closeDuringTrim_triggeringWriteDoesNotThrowAndPreservesData() throws IOException {
             // arrange
             final StreamBuffer sb = new StreamBuffer();
             final OutputStream os = sb.getOutputStream();
             final InputStream is = sb.getInputStream();
 
-            // Hook fires synchronously on the trim thread, BEFORE read/write-back.
-            // Calling close() here makes streamClosed=true deterministically before
-            // trim's internal os.write() runs requireNonClosed().
+            // Hook fires synchronously on the writing thread inside trim(), which holds
+            // bufferLock. Calling close() here sets streamClosed=true deterministically
+            // while trim is still reorganizing the FIFO.
             final Semaphore closeOnTrimStart = new Semaphore(0) {
                 private boolean fired = false;
 
@@ -5158,7 +5161,7 @@ public class StreamBufferTest {
             os.write(new byte[] {4, 5, 6});
 
             // act — this third write pushes element count over maxBufferElements,
-            //       trim() runs, hook closes the stream, write-back hits the bug.
+            //       trim() runs and the hook closes the stream inside it.
             IOException thrown = null;
             try {
                 os.write(new byte[] {7, 8, 9});
@@ -5166,17 +5169,13 @@ public class StreamBufferTest {
                 thrown = e;
             }
 
-            // assert — bug 1: trim's internal write-back must not surface as a
-            // user-visible IOException on a write that was issued while the stream
-            // was still open.
-            assertThat(
-                    "Triggering write must not throw — trim's write-back leaked "
-                            + "an IOException from its internal os.write() requireNonClosed() check",
-                    thrown,
-                    is((IOException) null));
+            // assert — a close from a trim hook must not surface as a user-visible
+            // IOException on a write that was accepted while the stream was still open.
+            assertThat("Triggering write must not throw when a trim hook closes the stream", thrown, is((IOException)
+                    null));
 
-            // assert — bug 2: every byte must still be readable. If trim's
-            // write-back aborted, tmpBuffer was discarded and all 9 bytes are lost.
+            // assert — every byte must still be readable: the close must neither
+            // discard the bytes trim is reorganizing nor change their order.
             final byte[] expected = {1, 2, 3, 4, 5, 6, 7, 8, 9};
             final byte[] actual = new byte[expected.length];
             int total = 0;
@@ -6102,8 +6101,7 @@ public class StreamBufferTest {
      * ROBUSTNESS TESTS: Edge cases and stress scenarios for trim operation
      *
      * Tests verify trim handles:
-     * - Exceptions during read phase (flag reset via finally)
-     * - Exceptions during write phase (flag reset via finally)
+     * - Exceptions from a trim start or trim end signal (flag reset via finally)
      * - Safe write mode enabled during trim
      * - Large buffers with small allocation size constraints
      * - Concurrent signal operations (add/remove signals during trim)
