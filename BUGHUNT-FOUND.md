@@ -13,6 +13,7 @@ Repos plus eins. Geprüfte Klassen ohne Fund stehen in [`BUGHUNT-CHECKED.md`](BU
 - [F73](#f73) — hoch — *gefixt*
 - [F110](#f110) — niedrig — *gefixt (Doku)*
 - [F149](#f149) — mittel — *gefixt*
+- [F212](#f212) — niedrig — *gefixt*
 
 ## Funde
 
@@ -84,6 +85,7 @@ Repos plus eins. Geprüfte Klassen ohne Fund stehen in [`BUGHUNT-CHECKED.md`](BU
 - **Status:** gefixt
 - **Commit:** 1529d3b
 
+<a id="f212"></a>
 ### F212 – streambuffer: I/O aus einem Trim-Start-Signal fehlt in den Statistiken
 - **Zeit:** 2026-10-20 20:31 UTC
 - **Datei:** `src/main/java/net/ladenthin/streambuffer/StreamBuffer.java` (`writeFromArray`: `if (!isTrimRunning)` um `totalBytesWritten`/`updateMaxObservedBytesIfNeeded`; `recordReadStatistics`: `if (!isTrimRunning)` um `totalBytesRead`; Javadoc von `isTrimRunning`)
