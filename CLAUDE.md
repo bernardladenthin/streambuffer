@@ -78,7 +78,7 @@ The `@GuardedBy("bufferLock")` lock discipline is gated separately by Error Pron
 build. The Checker Framework Lock Checker was evaluated as a further layer and deferred — see
 TODO.md "Formal verification".
 
-**Local commands** (OpenJML 21.0.28, pinned in the workflow; native Windows builds exist since 21.0.27;
+**Local commands** (OpenJML 21.0.29, pinned in the workflow; native Windows builds exist since 21.0.27;
 `<openjml>` = unzipped release dir, `<cp>` = output of
 `mvn dependency:build-classpath -Dmdep.outputFile=... -DincludeScope=compile`):
 
@@ -118,7 +118,11 @@ mvn -P jml-rac -Dopenjml.home=<openjml> -Dopenjml.jdk.java=<openjml>/jdk/bin/jav
   invariant inside the constructor of a non-static inner class and reads the field on the wrong
   class → `NoSuchFieldError` at runtime (14-line reproducer: private field + invariant + inner
   class). On this class every test fails (258/285). An earlier 21.0.27 compile crash
-  ("no enclosing instance") was not reproduced. Re-test on upgrades.
+  ("no enclosing instance") was not reproduced. **21.0.29 changed the symptom, not the defect:**
+  the 14-line reproducer runs clean there, but the four candidate invariants on this class still
+  break RAC -- `NoSuchMethodError` on `StreamBuffer$SBOutputStream.JML$INV$$<n>()` (RAC calls the
+  outer class's invariant check on the inner class), 106 errors before the suite hung in a
+  trim test (measured 2026-10-20). Re-test on upgrades.
 - `//@ nullable_by_default` at the class head is load-bearing for RAC: without it JML's
   non-null-by-default inserts an implicit non-null precondition on every reference parameter, so
   the null-argument tests hit `JmlAssertionError.Precondition` instead of the specified NPE.
@@ -134,13 +138,14 @@ mvn -P jml-rac -Dopenjml.home=<openjml> -Dopenjml.jdk.java=<openjml>/jdk/bin/jav
 - RAC forks OpenJML's OWN JVM (`-Dopenjml.jdk.java`), because the bundled JDK library specs pull
   in `org.jmlspecs.lang.internal.bigint`, a class present only in OpenJML's patched JDK image.
   The setup action also patches `jdk/release` to add the `JAVA_VERSION` key surefire needs to
-  fork that JVM.
-- Two bundled OpenJML JDK specs are known-broken and deleted at install time by
-  `.github/actions/setup-openjml` (`ArrayDeque.jml`: undeclared `containsNull`;
-  `atomic/AtomicLong.jml`: RAC reads the private field `value` → `IllegalAccessError`;
-  upstream fix [OpenJML/Specs#29](https://github.com/OpenJML/Specs/pull/29) + test
-  [OpenJML/OpenJML#982](https://github.com/OpenJML/OpenJML/pull/982), merged into `dev-21`,
-  not yet released — still broken in 21.0.28).
+  fork that JVM (missing in 21.0.27/21.0.28, present again in 21.0.29; the guarded step is a no-op
+  there and stays as a regression guard).
+- One bundled OpenJML JDK spec is known-broken and deleted at install time by
+  `.github/actions/setup-openjml` (`ArrayDeque.jml`: undeclared `containsNull`, still in 21.0.29).
+  The second one, `atomic/AtomicLong.jml` (RAC read the private field `value` →
+  `IllegalAccessError`), was fixed upstream by [OpenJML/Specs#29](https://github.com/OpenJML/Specs/pull/29)
+  + [OpenJML/OpenJML#982](https://github.com/OpenJML/OpenJML/pull/982), released in 21.0.29; its
+  `rm` is gone, and the suite passes against the bundled file (285/285).
 - RAC classes are class-file 65 and live only under `target/rac-classes` — they never enter the
   shipped jar, so the Java 8 bytecode floor is unaffected.
 

@@ -34,16 +34,17 @@ annotated, so everything below is genuinely still open.
     reporting upstream (its native peer already implements the methods the stub model never
     declared). Possible extension: a second harness for the array-read / `waitForAtLeast` blocking
     paths (jcstress already covers those; JPF would make them exhaustive too).
-  - **OpenJML bundled-spec defects** (pinned 21.0.28 still ships all of them; it was built from
-    Specs `1a91cb6`, before the fixes below). All three share one cause: a model field declared
+  - **OpenJML bundled-spec defects** (21.0.28 shipped all of them, built from Specs `1a91cb6`;
+    the pinned 21.0.29 carries the AtomicLong fix and still ships the ArrayDeque one). All three share one cause: a model field declared
     only behind `-RAC` in `java/lang/Iterable.jml` (`values`, `containsNull`) or a private
     `java.base` field (`value`) used in a clause RAC compiles.
     - `atomic/Atomic{Long,Integer,Boolean}.jml` (`value` → `IllegalAccessError` at runtime):
-      **fixed upstream, unreleased.** [OpenJML/Specs#29](https://github.com/OpenJML/Specs/pull/29)
+      **fixed upstream, released in 21.0.29** (its contracts are `//-RAC@` there). [OpenJML/Specs#29](https://github.com/OpenJML/Specs/pull/29)
       (`4ebda9c`) + maintainer extension `c365293` on Specs `dev-21`; testspecs
       [OpenJML/OpenJML#982](https://github.com/OpenJML/OpenJML/pull/982) merged into `dev-21`
       (2026-10-05). Verified: streambuffer RAC 285/285 with the fixed spec, 258/285 without.
-      Once released: drop the `AtomicLong.jml` `rm` in `.github/actions/setup-openjml`.
+      **Done 2026-10-20:** the `AtomicLong.jml` `rm` is gone from `.github/actions/setup-openjml`
+      (fixups v2); RAC 285/285 against the bundled 21.0.29 file.
     - `java/util/ArrayDeque.jml:30` (`containsNull` → RAC compile error) and
       `java/util/Collections.jml:116-117` (`singletonList`, `values` → RAC compile error):
       **open.** Both are the original errors of the closed
@@ -53,11 +54,16 @@ annotated, so everything below is genuinely still open.
       [OpenJML/OpenJML#1012](https://github.com/OpenJML/OpenJML/issues/1012) (2026-10-07).
       Fix + red/green testspecs cases prepared locally, offered as PRs. Once released: drop the
       `ArrayDeque.jml` `rm`.
-    - Missing `JAVA_VERSION` key in the bundled `jdk/release`: still missing in 21.0.28
-      (reported in #1012).
+    - Missing `JAVA_VERSION` key in the bundled `jdk/release`: missing in 21.0.28 (reported in #1012),
+      **present again in 21.0.29**; the guarded repair step is a no-op there and stays as a guard.
   - **Invariants + non-static inner classes break RAC — confirmed OpenJML bug, reported in
     [OpenJML/OpenJML#1012](https://github.com/OpenJML/OpenJML/issues/1012).** RAC checks the outer class's invariant inside the inner class's constructor and
     reads the field on the inner class → `NoSuchFieldError` at runtime (21.0.27 and 21.0.28).
+    **21.0.29: the minimal reproducer below runs clean, the defect on this class does not go away** --
+    with the four candidate invariants RAC throws `NoSuchMethodError` on
+    `StreamBuffer$SBOutputStream.JML$INV$$<n>()` (the outer invariant check called on the inner
+    class), 106 errors, then the suite hangs in a trim test (measured 2026-10-20). A reproducer for
+    #1012 therefore needs an inner class whose methods run while the outer invariant is checked.
     Minimal reproducer:
     ```java
     public class Outer {
