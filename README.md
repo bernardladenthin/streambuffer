@@ -247,6 +247,7 @@ long current = sb.getMaxAllocationSize();
 - Default: `Integer.MAX_VALUE - 8`, the largest array the JVM reliably allocates (effectively one chunk per trim pass); larger values passed to `setMaxAllocationSize` are capped to it.
 - Throws `IllegalArgumentException` if the value is ≤ 0.
 - Trim is skipped automatically when the resulting chunk count would not be smaller than the current `Deque` size — this prevents repeated no-op trims when `maxAllocationSize` is very small.
+- Every chunk of a trim pass is allocated before any buffered entry is consolidated. If an allocation fails with `OutOfMemoryError`, the write that triggered the trim throws it and the buffer is left exactly as that write left it (entries, order and byte count), so every byte stays readable and the next write trims again.
 
 ### Trim Observer Signals
 

@@ -1327,6 +1327,66 @@ public class StreamBufferTest {
             // assert — empty write triggers trim path without throwing
             assertDoesNotThrow(() -> os.write(new byte[0]));
         }
+
+        /**
+         * Every chunk of the consolidation is allocated before the FIFO is touched, so an
+         * allocation that fails with an {@link OutOfMemoryError} leaves the buffer exactly as
+         * the write left it: the entries stay, the byte count stays, the trim-end signal fires
+         * and the next write trims again. The failure is provoked through
+         * {@link StreamBuffer#allocateTrimChunk(int)}, the one place {@code trim()} allocates.
+         *
+         * <p>Before this guard, the chunks were allocated one at a time while the entries each
+         * replaced were already polled: the error on a later chunk lost every byte copied so
+         * far, while {@code available()} still counted it.</p>
+         */
+        @DisplayName(
+                "trim(): the allocation of a later chunk fails — the FIFO is untouched and every byte stays readable")
+        @Test
+        public void trim_allocationOfALaterChunkFails_bufferStaysConsistent() throws IOException {
+            // arrange — three 4-byte entries consolidate into chunks of at most 8 bytes; the second allocation fails
+            final AtomicInteger allocations = new AtomicInteger();
+            final StreamBuffer sb = new StreamBuffer() {
+                @Override
+                byte[] allocateTrimChunk(final int size) {
+                    if (allocations.incrementAndGet() == 2) {
+                        throw new OutOfMemoryError("test: the second trim chunk");
+                    }
+                    return super.allocateTrimChunk(size);
+                }
+            };
+            sb.setMaxBufferElements(2);
+            sb.setMaxAllocationSize(8);
+            final Semaphore trimEnded = new Semaphore(0);
+            sb.addTrimEndSignal(trimEnded);
+            final OutputStream os = sb.getOutputStream();
+            os.write(new byte[] {1, 2, 3, 4});
+            os.write(new byte[] {5, 6, 7, 8});
+
+            // act — the third entry starts the trim whose second allocation fails
+            final OutOfMemoryError error =
+                    assertThrows(OutOfMemoryError.class, () -> os.write(new byte[] {9, 10, 11, 12}));
+
+            // assert — the write is in the buffer, the FIFO is as the write left it, the trim is over
+            assertAll(
+                    () -> assertThat(error.getMessage(), is("test: the second trim chunk")),
+                    () -> assertThat(allocations.get(), is(2)),
+                    () -> assertThat(sb.getAvailableBytesExact(), is(12L)),
+                    () -> assertThat(sb.getBufferElementCount(), is(3)),
+                    () -> assertThat(trimEnded.availablePermits(), is(1)));
+
+            // act — the fourth entry trims again, with every allocation succeeding this time
+            os.write(new byte[] {13, 14, 15, 16});
+            final int elementsAfterTrim = sb.getBufferElementCount();
+            final byte[] read = new byte[16];
+            final int count = sb.getInputStream().read(read);
+
+            // assert — two chunks of 8 bytes hold the four entries, and nothing was lost or reordered
+            assertAll(
+                    () -> assertThat(allocations.get(), is(4)),
+                    () -> assertThat(elementsAfterTrim, is(2)),
+                    () -> assertThat(count, is(16)),
+                    () -> assertArrayEquals(new byte[] {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}, read));
+        }
     }
 
     @Nested

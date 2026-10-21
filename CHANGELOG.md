@@ -116,6 +116,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   again while `read()` and `waitForAtLeast` read it without the lock: a reader could get fewer bytes
   than requested, or end of stream, on an open stream. `trim()` now copies the entries straight from the
   FIFO into blocks of at most `maxAllocationSize` and leaves the count unchanged.
+- **A `trim()` whose allocation fails no longer loses buffered bytes.** The consolidation allocated its
+  blocks one at a time, each after the entries of the previous block had already been polled from the
+  FIFO, so an `OutOfMemoryError` on a later block left the buffer with those entries gone while the
+  byte count still included them: a reader then failed or read the wrong bytes. Every block is now
+  allocated before the FIFO is touched, so the error propagates out of the write with the buffer
+  exactly as that write left it, and the next write trims again. The allocation goes through one
+  package-private seam (`allocateTrimChunk`), which is how the test provokes the failure.
 - **A `write` racing `close()` from another thread can no longer land after the close.** The closed
   check ran before the lock was taken and `close()` set the flag without it, so a writer that had passed
   the check could append after a reader had seen "closed, 0 bytes" and reported end of stream. The check

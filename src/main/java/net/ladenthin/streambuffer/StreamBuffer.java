@@ -477,7 +477,9 @@ public class StreamBuffer implements Closeable {
      * <strong>MUST be called inside {@code synchronized(bufferLock)}.</strong>
      * Sets the {@link #isTrimRunning} volatile flag while it runs. The buffered byte count
      * ({@link #availableBytes}) stays constant throughout.
-     * Respects {@link #maxAllocationSize} limit when allocating byte arrays.
+     * Respects {@link #maxAllocationSize} limit when allocating byte arrays, and allocates
+     * every chunk (through {@link #allocateTrimChunk(int)}) before it touches the FIFO: an
+     * {@link OutOfMemoryError} propagates out of the write with the buffer unchanged.
      */
     // Non-atomic update on the volatile positionAtCurrentBufferEntry field is
     // safe because the entire method body runs under bufferLock (see @GuardedBy
@@ -493,22 +495,29 @@ public class StreamBuffer implements Closeable {
                 releaseTrimStartSignals();
 
                 /*
-                 * Copy the buffered bytes into chunks of at most maxAllocationSize
-                 * directly from the FIFO. availableBytes is deliberately left untouched:
+                 * Consolidate the buffered bytes into chunks of at most maxAllocationSize,
+                 * copied directly from the FIFO. Every chunk is allocated before the FIFO is
+                 * touched: an allocation that fails (OutOfMemoryError) then leaves the write
+                 * with the FIFO exactly as it was, instead of with the entries of the chunks
+                 * copied so far already polled, which lost their bytes while availableBytes
+                 * still counted them. availableBytes is deliberately left untouched:
                  * waitForAtLeast(long) and available() read it without bufferLock, and
                  * draining it to zero and filling it up again (as reading through the
                  * input stream did) let a waiter observe the intermediate count, e.g.
                  * a read() reporting the end of an open stream that still held data.
                  */
-                final Deque<byte[]> tmpBuffer = new ArrayDeque<>();
+                final Deque<byte[]> chunks = new ArrayDeque<>();
                 long remaining = availableBytes;
                 while (remaining > 0) {
-                    final int toAllocate = (int) Math.min(remaining, maxAllocationSize);
-                    final byte[] chunk = new byte[toAllocate];
+                    final int size = (int) Math.min(remaining, maxAllocationSize);
+                    chunks.add(allocateTrimChunk(size));
+                    remaining -= size;
+                }
+                for (final byte[] chunk : chunks) {
                     int filled = 0;
-                    while (filled < toAllocate) {
+                    while (filled < chunk.length) {
                         final byte[] first = buffer.getFirst();
-                        final int toCopy = Math.min(first.length - positionAtCurrentBufferEntry, toAllocate - filled);
+                        final int toCopy = Math.min(first.length - positionAtCurrentBufferEntry, chunk.length - filled);
                         System.arraycopy(first, positionAtCurrentBufferEntry, chunk, filled, toCopy);
                         filled += toCopy;
                         positionAtCurrentBufferEntry += toCopy;
@@ -517,15 +526,26 @@ public class StreamBuffer implements Closeable {
                             positionAtCurrentBufferEntry = 0;
                         }
                     }
-                    tmpBuffer.add(chunk);
-                    remaining -= toAllocate;
                 }
-                buffer.addAll(tmpBuffer);
+                buffer.addAll(chunks);
             } finally {
                 isTrimRunning = false;
                 releaseTrimEndSignals();
             }
         }
+    }
+
+    /**
+     * Allocates one chunk of {@link #trim()}'s consolidation. It is the one place
+     * {@code trim()} allocates, so a test in this package can override it and let an
+     * allocation fail with an {@link OutOfMemoryError} at exactly that point, without a
+     * heap small enough to fail it for real.
+     *
+     * @param size the chunk's length, at most {@link #maxAllocationSize}
+     * @return a new array of that length
+     */
+    byte[] allocateTrimChunk(final int size) {
+        return new byte[size];
     }
 
     /**

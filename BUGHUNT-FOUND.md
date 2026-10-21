@@ -14,6 +14,7 @@ Repos plus eins. Geprüfte Klassen ohne Fund stehen in [`BUGHUNT-CHECKED.md`](BU
 - [F110](#f110) — niedrig — *gefixt (Doku)*
 - [F149](#f149) — mittel — *gefixt*
 - [F212](#f212) — niedrig — *gefixt*
+- [F268](#f268) — mittel — *gefixt*
 
 ## Funde
 
@@ -100,6 +101,19 @@ Repos plus eins. Geprüfte Klassen ohne Fund stehen in [`BUGHUNT-CHECKED.md`](BU
 - **Rot-Grün-Nachweis:** ohne Fix rot („Expected: is <12L> but: was <9L>“ dreimal im Schreibtest – geschrieben, maxObserved und geschrieben gegen gelesen –, „Expected: is <1L> but: was <0L>“ im Lesetest), mit Fix grün (`StatisticsTests` 15/15). Breit: ganze Suite grün (306/306: `StreamBufferTest`, jqwik, Lincheck, Architektur), SpotBugs ohne Befund, PIT 197/197 (vorher 199: die beiden Mutanten der entfernten Wächter entfallen).
 - **Status:** gefixt
 - **Commit:** 00fc010
+
+<a id="f268"></a>
+### F268 – streambuffer: ein `OutOfMemoryError` mitten im `trim()` verliert gepufferte Bytes
+- **Zeit:** 2026-10-21 22:58 UTC
+- **Datei:** `src/main/java/net/ladenthin/streambuffer/StreamBuffer.java` (`trim()`: Allokation der Blöcke; neue Naht `allocateTrimChunk(int)`)
+- **Schwere:** mittel (Datenverlust bei Speichermangel während einer Konsolidierung mit mehr als einem Block; bis dahin nur über `maxAllocationSize` erreichbar oder bei einem Puffer nahe der Array-Obergrenze)
+- **Historie:** Gefunden beim Opus-Review des PR #189 am 2026-10-21. Seit F73 (`27aaed6`) kopiert `trim()` die Einträge direkt aus der Deque in Blöcke von höchstens `maxAllocationSize` Bytes. Jeder Block wurde erst allokiert, wenn der vorige fertig kopiert war – und dessen Quelleinträge waren dann schon per `pollFirst()` aus der Deque entfernt.
+- **Beschreibung:** Schlug die Allokation eines späteren Blocks mit `OutOfMemoryError` fehl, lief der Error aus `write()` hinaus (das `finally` setzte `isTrimRunning` zurück und löste die Trim-End-Signale), aber die Deque enthielt nur noch die nicht kopierten Einträge, während `availableBytes` unverändert alle Bytes zählte. Ein nachfolgendes `read()` lief auf `buffer.getFirst()` einer leeren Deque (`NoSuchElementException`) oder lieferte die falschen Bytes; `available()` versprach Daten, die weg waren.
+- **Fix:** `trim()` allokiert jetzt jeden Block, bevor es die Deque anfasst, und kopiert erst danach. Schlägt eine Allokation fehl, ist der Puffer genau so, wie der auslösende `write` ihn hinterlassen hat (Einträge, Reihenfolge, `availableBytes`), und der nächste `write` trimmt erneut. Die eine Allokationsstelle ist die paketprivate Naht `allocateTrimChunk(int)` (`return new byte[size]`): kein toter Aufruf im Produktivcode, und ein Test im selben Paket überschreibt sie und lässt genau die n-te Allokation fehlschlagen, ohne einen Heap, der das real tut. Keine JML-Spiegelung nötig: die `.jml` deklariert `trim()` nicht, die Naht liegt außerhalb der ESC-Liste (14 Beweise unverändert). Javadoc von `trim()`, README (`maxAllocationSize`) und CHANGELOG ergänzt.
+- **Tests:** `StreamBufferTest$TrimTests#trim_allocationOfALaterChunkFails_bufferStaysConsistent` – drei 4-Byte-Einträge, `maxBufferElements` 2, `maxAllocationSize` 8, die zweite Allokation wirft; danach `getAvailableBytesExact()` 12, `getBufferElementCount()` 3, Trim-End-Signal 1 Permit, Error mit der Testmeldung; ein vierter Eintrag trimmt zu zwei 8-Byte-Blöcken (4 Allokationen), `read` liefert alle 16 Bytes in Reihenfolge.
+- **Rot-Grün-Nachweis:** Naht zuerst in die alte Schleife eingezogen, Test rot („Expected: is <3> but: was <1>“ – zwei Einträge schon gepollt, der Zähler stand noch auf 12); nach dem Umbau grün (`TrimTests` 3/3). Breit: ganze Suite grün (307/307: `StreamBufferTest`, jqwik, Lincheck, Architektur), Javadoc-Jar gebaut, SpotBugs ohne Befund, PIT 198/198 (vorher 197: der eine Mutant der neuen Naht, „return null“, stirbt am Kopierschritt).
+- **Status:** gefixt
+- **Commit:** (folgt)
 
 ## Offene Verdachte ohne Fund-ID
 
