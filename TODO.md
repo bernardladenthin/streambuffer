@@ -34,8 +34,8 @@ annotated, so everything below is genuinely still open.
     reporting upstream (its native peer already implements the methods the stub model never
     declared). Possible extension: a second harness for the array-read / `waitForAtLeast` blocking
     paths (jcstress already covers those; JPF would make them exhaustive too).
-  - **OpenJML bundled-spec defects** (21.0.28 shipped all of them, built from Specs `1a91cb6`;
-    the pinned 21.0.29 carries the AtomicLong fix and still ships the ArrayDeque one). All three share one cause: a model field declared
+  - **OpenJML bundled-spec defects — all fixed in 21.0.29, no workaround left (fixups v3)**
+    (21.0.28 shipped all of them, built from Specs `1a91cb6`). All three share one cause: a model field declared
     only behind `-RAC` in `java/lang/Iterable.jml` (`values`, `containsNull`) or a private
     `java.base` field (`value`) used in a clause RAC compiles.
     - `atomic/Atomic{Long,Integer,Boolean}.jml` (`value` → `IllegalAccessError` at runtime):
@@ -47,13 +47,13 @@ annotated, so everything below is genuinely still open.
       (fixups v2); RAC 285/285 against the bundled 21.0.29 file.
     - `java/util/ArrayDeque.jml:30` (`containsNull` → RAC compile error) and
       `java/util/Collections.jml:116-117` (`singletonList`, `values` → RAC compile error):
-      **open.** Both are the original errors of the closed
+      **fixed upstream, released in 21.0.29** (`//-RAC@`, Specs `43ab561`). Both are the original errors of the closed
       [OpenJML/OpenJML#806](https://github.com/OpenJML/OpenJML/issues/806) ("repaired" there in
       2024 — true for ESC/check, never for RAC; neither file changed in that window).
       **Reported** with a sweep over all bundled specs (9 files fail `--rac`) and a proposed fix in
       [OpenJML/OpenJML#1012](https://github.com/OpenJML/OpenJML/issues/1012) (2026-10-07).
-      Fix + red/green testspecs cases prepared locally, offered as PRs. Once released: drop the
-      `ArrayDeque.jml` `rm`.
+      **Done 2026-10-21:** the `ArrayDeque.jml` `rm` is gone (fixups v3); RAC compile and 285/285
+      against the unmodified 21.0.29 distribution.
     - Missing `JAVA_VERSION` key in the bundled `jdk/release`: missing in 21.0.28 (reported in #1012),
       **present again in 21.0.29**; the guarded repair step is a no-op there and stays as a guard.
   - **RAC evaluates a `signals (E e)` clause for an exception of another type — confirmed OpenJML
@@ -84,9 +84,27 @@ annotated, so everything below is genuinely still open.
     **21.0.29: the minimal reproducer below runs clean, the defect on this class does not go away** --
     with the four candidate invariants RAC throws `NoSuchMethodError` on
     `StreamBuffer$SBOutputStream.JML$INV$$<n>()` (the outer invariant check called on the inner
-    class), 106 errors (measured 2026-10-20). A reproducer for
-    #1012 therefore needs an inner class whose methods run while the outer invariant is checked.
-    Minimal reproducer:
+    class), 106 errors (measured 2026-10-20).
+    **Narrowed down 2026-10-21 (21.0.29):** the trigger is an inner-class method calling an outer
+    instance method *without a qualifier* -- exactly the delegation `SBOutputStream.write(int)` →
+    `writeSingleByte(b)` (and `writeFromArray`, `closeAll`, `readSingleByte`, `availableClamped`).
+    RAC checks the callee's receiver invariant on `this` (the inner object) instead of
+    `StreamBuffer.this`:
+    ```java
+    public class InvA {
+        private long x = 1;
+        //@ private invariant 0 <= x;
+        void inc() { x++; }
+        class Inner { void go() { inc(); } }
+        public static void main(String... a) { new InvA().new Inner().go(); }
+    }
+    ```
+    → `NoSuchMethodError: 'boolean InvA$Inner.JML$INV$$107()'`. Same with a `private` outer method.
+    Clean: `InvA.this.inc()`, `other.inc()` on another reference, outer → inner calls,
+    `synchronized (InvA.this) { x++; }` inside the inner class. To report on
+    [OpenJML/OpenJML#1012](https://github.com/OpenJML/OpenJML/issues/1012). Possible downstream
+    workaround to try: qualify the delegating calls as `StreamBuffer.this.writeSingleByte(b)`.
+    The 21.0.27/21.0.28 reproducer (fixed in 21.0.29):
     ```java
     public class Outer {
         private long x = 1;
