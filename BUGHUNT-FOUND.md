@@ -113,7 +113,7 @@ Repos plus eins. Geprüfte Klassen ohne Fund stehen in [`BUGHUNT-CHECKED.md`](BU
 - **Tests:** `StreamBufferTest$TrimTests#trim_allocationOfALaterChunkFails_bufferStaysConsistent` – drei 4-Byte-Einträge, `maxBufferElements` 2, `maxAllocationSize` 8, die zweite Allokation wirft; danach `getAvailableBytesExact()` 12, `getBufferElementCount()` 3, Trim-End-Signal 1 Permit, Error mit der Testmeldung; ein vierter Eintrag trimmt zu zwei 8-Byte-Blöcken (4 Allokationen), `read` liefert alle 16 Bytes in Reihenfolge.
 - **Rot-Grün-Nachweis:** Naht zuerst in die alte Schleife eingezogen, Test rot („Expected: is <3> but: was <1>“ – zwei Einträge schon gepollt, der Zähler stand noch auf 12); nach dem Umbau grün (`TrimTests` 3/3). Breit: ganze Suite grün (307/307: `StreamBufferTest`, jqwik, Lincheck, Architektur), Javadoc-Jar gebaut, SpotBugs ohne Befund, PIT 198/198 (vorher 197: der eine Mutant der neuen Naht, „return null“, stirbt am Kopierschritt).
 - **Status:** gefixt
-- **Commit:** (folgt)
+- **Commit:** 1b85963
 
 ## Offene Verdachte ohne Fund-ID
 
