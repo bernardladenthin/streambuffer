@@ -335,6 +335,8 @@ public class StreamBuffer implements Closeable {
     /**
      * Register an external {@link Semaphore} to be released when trim() starts.
      * The semaphore uses the same "max 1 permit" pattern as modification signals.
+     * It is released under the buffer lock: a {@code release()} override must return promptly and
+     * must not wait for a read, write or {@link #close()} of this buffer (see {@link #close()}).
      *
      * @param semaphore the semaphore to register for trim start events
      * @throws NullPointerException if semaphore is null
@@ -360,6 +362,8 @@ public class StreamBuffer implements Closeable {
     /**
      * Register an external {@link Semaphore} to be released when trim() completes.
      * The semaphore uses the same "max 1 permit" pattern as modification signals.
+     * It is released under the buffer lock: a {@code release()} override must return promptly and
+     * must not wait for a read, write or {@link #close()} of this buffer (see {@link #close()}).
      *
      * @param semaphore the semaphore to register for trim end events
      * @throws NullPointerException if semaphore is null
@@ -1115,6 +1119,10 @@ public class StreamBuffer implements Closeable {
      * <p>Waits for a write or trim in progress on another thread to finish (they hold the same
      * lock), so a write racing the close is either fully buffered or fails with "Stream closed".
      * A trim copies every buffered byte, so with a large buffer the wait can be noticeable.
+     *
+     * <p>A trim start or end signal ({@link #addTrimStartSignal(Semaphore)},
+     * {@link #addTrimEndSignal(Semaphore)}) is released under that lock, so its {@code release()}
+     * must not block on this buffer: a {@code close()} from another thread would wait behind it.
      */
     @Override
     public void close() throws IOException {
