@@ -41,8 +41,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pipelined) and RAC 285/285 unchanged. The `AtomicLong.jml` workaround is gone -- the upstream fix
   (OpenJML/Specs#29) shipped in 21.0.29 -- while `ArrayDeque.jml` was still deleted at install. Class
   invariants still break RAC (now `NoSuchMethodError` on the inner stream classes), so they stay out.
-- Build tooling: `anthropics/claude-code-action` v1.0.255 (from v1.0.252) and Gradle 9.8.2 in the shared
-  `verify-signing-key-gradle` job, in step with the sibling repositories.
+- Build tooling bumped in step with the sibling repositories: `anthropics/claude-code-action` v1.0.258 and
+  `github/codeql-action` v4.39.1. maven-clean-plugin 3.5.0, maven-resources-plugin 3.5.0,
+  maven-install-plugin 3.2.0, maven-deploy-plugin 3.2.0 and maven-dependency-plugin 3.11.0 are now declared:
+  no POM named them, so their versions came from whichever Maven ran the build. Maven 3.9 runs clean 3.2.0,
+  resources 3.3.1, install and deploy 3.1.x and dependency 3.7.0; the Ubuntu runners' Maven 3.10.0 already
+  matches, except that it leaves the dependency plugin to the newest release. Resource output is
+  byte-identical under resources 3.3.1 and 3.5.0.
+- Build tooling: Gradle 9.8.2 in the shared `verify-signing-key-gradle` job, in step with the sibling
+  repositories.
 - Formal verification: OpenJML 21.0.28 (from 21.0.27; default solver z3 5.1.0). ESC 14/14 and RAC
   285/285 unchanged; the bundled-spec workarounds stay (the upstream fixes are not in 21.0.28).
 - **CI: shared files and the release gate are checked.** The files kept byte-identical with the sibling
