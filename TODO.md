@@ -56,6 +56,28 @@ annotated, so everything below is genuinely still open.
       against the unmodified 21.0.29 distribution.
     - Missing `JAVA_VERSION` key in the bundled `jdk/release`: missing in 21.0.28 (reported in #1012),
       **present again in 21.0.29**; the guarded repair step is a no-op there and stays as a guard.
+  - **RAC evaluates a `signals (E e)` clause for an exception of another type — confirmed OpenJML
+    bug, reported in [OpenJML/OpenJML#1050](https://github.com/OpenJML/OpenJML/issues/1050)** (2026-10-19; reproduced on 21.0.28 and on `dev-21` `529ac454da`,
+    `BUGHUNT-MEASUREMENTS.md`, „OpenJML-Verdachtsfälle (RAC)“, in commit `0620aa7`, removed since). The spec
+    of `waitForAtLeast` allows `InterruptedException` (`signals_only IllegalArgumentException,
+    InterruptedException`) and constrains only the other one (`signals (IllegalArgumentException e)
+    bytes <= 0`). When a read is interrupted, RAC prints `JML undefined exceptional postcondition -
+    exception thrown` with `ClassCastException: InterruptedException cannot be cast to
+    IllegalArgumentException` (stack at `waitForAnyData`, which calls `waitForAtLeast`). By JML's
+    semantics the clause only applies when the exception is an instance of `E`, so nothing should be
+    reported. Confirmed: the call-site check casts without an `instanceof` guard when the predicate
+    folds to `false` for the actual argument (`waitForAtLeast(1L)`), `JmlAssertionAdder.applyHelper`.
+    Harmless here (reported, not thrown, under `rac=exception`; the test stays green). To do: re-run
+    once a release carries the fix.
+  - **RAC prints a full stack trace per call for an uncompiled model method — confirmed OpenJML
+    usability defect, reported in [OpenJML/OpenJML#1050](https://github.com/OpenJML/OpenJML/issues/1050)** (2026-10-19, same issue; 1000 `arraycopy` = 1000 traces, also
+    on `dev-21`; compiling with `-quiet` silences it). Every `System.arraycopy` and `clone` under RAC logs
+    `Skipping a specification clause because it contains an uncompiled model method: 'boolean
+    java.util.Arrays.equalArrays` plus a `NoSuchMethodError` stack trace (about 10 KB), once per
+    call rather than once per clause. That is what made the concurrent-trim test take 7,344 s and
+    21 GB of log; worked around by scaling the stress loops under `-Pjml-rac`
+    (`StreamBufferTest.iterations`) and running jqwik with 100 tries there. Once fixed upstream, the
+    scaling can go.
   - **Invariants + non-static inner classes break RAC — confirmed OpenJML bug, reported in
     [OpenJML/OpenJML#1012](https://github.com/OpenJML/OpenJML/issues/1012).** RAC checks the outer class's invariant inside the inner class's constructor and
     reads the field on the inner class → `NoSuchFieldError` at runtime (21.0.27 and 21.0.28).
@@ -104,9 +126,11 @@ annotated, so everything below is genuinely still open.
     ~7 person-months for 328 LoC). Not gold-plating in principle — just expensive today; worth a
     re-scoping spike to see whether a *partial* invariant (e.g. non-negativity + position bounds
     proven on a static extraction of the read/write inner loops) is reachable more cheaply.
-  - **On every OpenJML upgrade:** re-try dropping the two spec-file deletions in
-    `.github/actions/setup-openjml/action.yml` (bump the cache-key fixup suffix), and re-try the
-    four class invariants documented in the `.jml` header.
+  - **On every OpenJML upgrade:** re-try the four class invariants documented in the `.jml`
+    header (no bundled spec is deleted at install any more since fixups v3, so there is nothing
+    to re-try in `.github/actions/setup-openjml/action.yml`), and, once #1050 is fixed, drop the
+    RAC scaling (`streambuffer.test.rac` and `jqwik.tries.default` in the `jml-rac` profile,
+    `StreamBufferTest.iterations`).
   - **Evaluated and rejected 2026-09** (do not re-open without new facts) — deductive/model-checking
     alternatives beyond OpenJML: **KeY 3.0.0** — could
     re-prove the same static scope with archived `.proof` files, but proof replay is

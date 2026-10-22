@@ -7,6 +7,7 @@ import static org.awaitility.Awaitility.await;
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.not;
+import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.number.OrderingComparison.greaterThan;
 import static org.hamcrest.number.OrderingComparison.greaterThanOrEqualTo;
@@ -21,12 +22,14 @@ import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import java.io.*;
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
@@ -51,6 +54,31 @@ public class StreamBufferTest {
      * The answer to all questions.
      */
     static final byte anyValue = 42;
+
+    /**
+     * Whether the suite runs against the RAC-instrumented classes ({@code -Pjml-rac} sets the system
+     * property). There every {@code System.arraycopy} and {@code clone} prints a stack trace of about
+     * 10 KB, because the bundled JDK specification uses a model method that is not compiled
+     * ({@code Arrays.equalArrays}); a loop of millions of writes then spends hours writing log and runs
+     * into the job's timeout without any contract being violated (measured: 2 million single-byte
+     * writes through trim, 7,344 s and 21 GB of log). Reported as
+     * <a href="https://github.com/OpenJML/OpenJML/issues/1050">OpenJML/OpenJML#1050</a>; once a
+     * release carries the fix, the scaling can go.
+     */
+    static final boolean UNDER_RAC = Boolean.getBoolean("streambuffer.test.rac");
+
+    /**
+     * The iteration count of a stress loop: {@code normal} in the default build, {@code underRac}
+     * against the RAC-instrumented classes, where the contracts are what is checked and a few
+     * thousand iterations exercise every specified path.
+     *
+     * @param normal   the iterations in the default build
+     * @param underRac the iterations under RAC
+     * @return the iteration count for this run
+     */
+    static int iterations(int normal, int underRac) {
+        return UNDER_RAC ? underRac : normal;
+    }
 
     @Nested
     @DisplayName("roundtrip")
@@ -1299,6 +1327,66 @@ public class StreamBufferTest {
             // assert — empty write triggers trim path without throwing
             assertDoesNotThrow(() -> os.write(new byte[0]));
         }
+
+        /**
+         * Every chunk of the consolidation is allocated before the FIFO is touched, so an
+         * allocation that fails with an {@link OutOfMemoryError} leaves the buffer exactly as
+         * the write left it: the entries stay, the byte count stays, the trim-end signal fires
+         * and the next write trims again. The failure is provoked through
+         * {@link StreamBuffer#allocateTrimChunk(int)}, the one place {@code trim()} allocates.
+         *
+         * <p>Before this guard, the chunks were allocated one at a time while the entries each
+         * replaced were already polled: the error on a later chunk lost every byte copied so
+         * far, while {@code available()} still counted it.</p>
+         */
+        @DisplayName(
+                "trim(): the allocation of a later chunk fails — the FIFO is untouched and every byte stays readable")
+        @Test
+        public void trim_allocationOfALaterChunkFails_bufferStaysConsistent() throws IOException {
+            // arrange — three 4-byte entries consolidate into chunks of at most 8 bytes; the second allocation fails
+            final AtomicInteger allocations = new AtomicInteger();
+            final StreamBuffer sb = new StreamBuffer() {
+                @Override
+                byte[] allocateTrimChunk(final int size) {
+                    if (allocations.incrementAndGet() == 2) {
+                        throw new OutOfMemoryError("test: the second trim chunk");
+                    }
+                    return super.allocateTrimChunk(size);
+                }
+            };
+            sb.setMaxBufferElements(2);
+            sb.setMaxAllocationSize(8);
+            final Semaphore trimEnded = new Semaphore(0);
+            sb.addTrimEndSignal(trimEnded);
+            final OutputStream os = sb.getOutputStream();
+            os.write(new byte[] {1, 2, 3, 4});
+            os.write(new byte[] {5, 6, 7, 8});
+
+            // act — the third entry starts the trim whose second allocation fails
+            final OutOfMemoryError error =
+                    assertThrows(OutOfMemoryError.class, () -> os.write(new byte[] {9, 10, 11, 12}));
+
+            // assert — the write is in the buffer, the FIFO is as the write left it, the trim is over
+            assertAll(
+                    () -> assertThat(error.getMessage(), is("test: the second trim chunk")),
+                    () -> assertThat(allocations.get(), is(2)),
+                    () -> assertThat(sb.getAvailableBytesExact(), is(12L)),
+                    () -> assertThat(sb.getBufferElementCount(), is(3)),
+                    () -> assertThat(trimEnded.availablePermits(), is(1)));
+
+            // act — the fourth entry trims again, with every allocation succeeding this time
+            os.write(new byte[] {13, 14, 15, 16});
+            final int elementsAfterTrim = sb.getBufferElementCount();
+            final byte[] read = new byte[16];
+            final int count = sb.getInputStream().read(read);
+
+            // assert — two chunks of 8 bytes hold the four entries, and nothing was lost or reordered
+            assertAll(
+                    () -> assertThat(allocations.get(), is(4)),
+                    () -> assertThat(elementsAfterTrim, is(2)),
+                    () -> assertThat(count, is(16)),
+                    () -> assertArrayEquals(new byte[] {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}, read));
+        }
     }
 
     @Nested
@@ -1365,11 +1453,84 @@ public class StreamBufferTest {
             reader.start();
             writer.join();
             reader.join();
-            // Re-raises any waiter.fail(...) call on the test thread.
+            // resume() only releases the Waiter; await() is the call that rethrows a waiter.fail(...)
+            // of a background thread on the test thread.
             waiter.resume();
+            waiter.await(1, TimeUnit.SECONDS, 0);
 
             // assert
             assertArrayEquals(written, read, "Read data should match written data");
+        }
+
+        @DisplayName("write(byte[]) with safeWrite: a concurrent write(int) does not bypass the clone")
+        @Test
+        public void safeWrite_concurrentSingleByteWrite_arrayStillCloned() throws Exception {
+            // arrange — trim disabled so the deque keeps the caller's array reference if it is not cloned
+            final StreamBuffer sb = new StreamBuffer();
+            sb.setSafeWrite(true);
+            sb.setMaxBufferElements(0);
+            final OutputStream os = sb.getOutputStream();
+            final InputStream is = sb.getInputStream();
+            final byte original = 1;
+            final byte mutated = 2;
+            final AtomicBoolean stop = new AtomicBoolean();
+            final AtomicInteger mutatedBytesRead = new AtomicInteger();
+            // A background thread that dies passes the mutation check vacuously (it reads nothing),
+            // so every failure is recorded and every byte is counted, and both are asserted below.
+            final AtomicReference<Throwable> failure = new AtomicReference<>();
+            final AtomicLong singleBytesWritten = new AtomicLong();
+            final AtomicLong bytesRead = new AtomicLong();
+
+            Thread singleByteWriter = new Thread(() -> {
+                try {
+                    while (!stop.get()) {
+                        os.write(0);
+                        singleBytesWritten.incrementAndGet();
+                    }
+                } catch (Throwable e) {
+                    failure.compareAndSet(null, e);
+                }
+            });
+            Thread reader = new Thread(() -> {
+                try {
+                    final byte[] chunk = new byte[4096];
+                    int n;
+                    while ((n = is.read(chunk, 0, 1)) != -1) {
+                        bytesRead.addAndGet(n);
+                        for (int i = 0; i < n; i++) {
+                            if (chunk[i] == mutated) {
+                                mutatedBytesRead.incrementAndGet();
+                            }
+                        }
+                    }
+                } catch (Throwable e) {
+                    failure.compareAndSet(null, e);
+                }
+            });
+
+            // act — mutate each array right after write() returned; safeWrite promises a private copy
+            singleByteWriter.start();
+            reader.start();
+            final int arrayWrites = iterations(200_000, 2_000);
+            for (int i = 0; i < arrayWrites; i++) {
+                final byte[] data = new byte[8];
+                Arrays.fill(data, original);
+                os.write(data);
+                Arrays.fill(data, mutated);
+            }
+            stop.set(true);
+            singleByteWriter.join();
+            os.close();
+            reader.join();
+
+            // assert
+            assertAll(
+                    () -> assertThat("failure in a background thread", failure.get(), is(nullValue())),
+                    () -> assertThat(
+                            "bytes the reader consumed",
+                            bytesRead.get(),
+                            is(8L * arrayWrites + singleBytesWritten.get())),
+                    () -> assertThat("bytes changed after write() reached the reader", mutatedBytesRead.get(), is(0)));
         }
     }
 
@@ -1968,6 +2129,157 @@ public class StreamBufferTest {
     }
 
     @Nested
+    @DisplayName("concurrent write and close")
+    class ConcurrentWriteAndCloseTests {
+
+        /**
+         * A {@code write} that races a {@code close()} from another thread must either be ordered
+         * before the close, its bytes buffered before the close returns, or fail with
+         * "Stream closed". It must never append after the close has completed: a reader that saw
+         * the closed, empty buffer in between has already reported the end of the stream, and those
+         * bytes are lost to it although the write returned normally.
+         *
+         * <p>Deterministic: the trim-start signal runs on the trim thread while it holds the buffer
+         * lock, so a second writer started there parks on that lock; the close happens while it is
+         * parked.
+         */
+        @DisplayName("write racing close(): never appends after close() returned")
+        @Test
+        public void write_closedWhileTheWriterWaitsForTheLock_failsInsteadOfAppendingAfterTheClose() throws Exception {
+            // arrange
+            final StreamBuffer sb = new StreamBuffer();
+            final OutputStream os = sb.getOutputStream();
+            sb.setMaxBufferElements(1); // the second entry triggers a trim
+            final AtomicBoolean fired = new AtomicBoolean(false);
+            final AtomicReference<Thread> lateWriter = new AtomicReference<>();
+            final AtomicReference<IOException> lateWriteFailure = new AtomicReference<>();
+            final AtomicReference<Long> availableWhenClosed = new AtomicReference<>();
+            final Semaphore trimStart = new Semaphore(0) {
+                @Override
+                public void release() {
+                    super.release();
+                    if (!fired.compareAndSet(false, true)) {
+                        return;
+                    }
+                    final Thread writer = new Thread(
+                            () -> {
+                                try {
+                                    os.write(7);
+                                } catch (IOException e) {
+                                    lateWriteFailure.set(e);
+                                }
+                            },
+                            "late-writer");
+                    lateWriter.set(writer);
+                    writer.start();
+                    // this trim holds the buffer lock, so the late writer parks on it
+                    final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+                    while (writer.getState() != Thread.State.BLOCKED && System.nanoTime() < deadline) {
+                        Thread.yield();
+                    }
+                    try {
+                        sb.close();
+                    } catch (IOException e) {
+                        throw new UncheckedIOException(e);
+                    }
+                    availableWhenClosed.set(sb.getAvailableBytesExact());
+                }
+            };
+            sb.addTrimStartSignal(trimStart);
+
+            // act
+            os.write(1);
+            os.write(2);
+            final Thread writer = Objects.requireNonNull(lateWriter.get(), "the trim-start signal did not fire");
+            writer.join(TimeUnit.SECONDS.toMillis(10));
+
+            // assert
+            assertThat(writer.isAlive(), is(false));
+            assertThat(availableWhenClosed.get(), is(2L));
+            assertThat(sb.getAvailableBytesExact(), is(availableWhenClosed.get()));
+            assertThat("the late write must fail with 'Stream closed'", lateWriteFailure.get() != null, is(true));
+        }
+
+        /**
+         * {@code close()} from another thread while a write is in progress waits until that write
+         * is buffered: it takes the buffer lock the write holds, so it neither marks the stream
+         * closed in the middle of the write nor lets a reader see a closed buffer the write is
+         * still appending to.
+         *
+         * <p>Deterministic: the trim-start signal runs on the writing thread while it holds the
+         * buffer lock and starts the closer there. The state of the closer, {@code isClosed()} and
+         * the buffered count are recorded inside the signal and asserted after the write, so an
+         * assertion never unwinds through the write. A close that does not take the lock finishes
+         * inside the signal, which ends the wait at once.
+         */
+        @DisplayName("close() racing a write: waits until the write is buffered")
+        @Test
+        public void close_fromAnotherThreadDuringAWrite_waitsUntilTheWriteIsBuffered() throws Exception {
+            // arrange
+            final StreamBuffer sb = new StreamBuffer();
+            final OutputStream os = sb.getOutputStream();
+            sb.setMaxBufferElements(1); // the second entry triggers a trim
+            final AtomicBoolean fired = new AtomicBoolean(false);
+            final AtomicReference<Thread> closer = new AtomicReference<>();
+            final AtomicReference<IOException> closeFailure = new AtomicReference<>();
+            final AtomicReference<Thread.State> closerStateDuringTheWrite = new AtomicReference<>();
+            final AtomicReference<Boolean> closedDuringTheWrite = new AtomicReference<>();
+            final AtomicReference<Long> availableDuringTheWrite = new AtomicReference<>();
+            final Semaphore trimStart = new Semaphore(0) {
+                @Override
+                public void release() {
+                    super.release();
+                    if (!fired.compareAndSet(false, true)) {
+                        return;
+                    }
+                    final Thread thread = new Thread(
+                            () -> {
+                                try {
+                                    sb.close();
+                                } catch (IOException e) {
+                                    closeFailure.set(e);
+                                }
+                            },
+                            "closer");
+                    closer.set(thread);
+                    thread.start();
+                    // this trim holds the buffer lock, so a close that takes it parks on it
+                    final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+                    while (thread.getState() != Thread.State.BLOCKED
+                            && thread.getState() != Thread.State.TERMINATED
+                            && !sb.isClosed()
+                            && System.nanoTime() < deadline) {
+                        Thread.yield();
+                    }
+                    closerStateDuringTheWrite.set(thread.getState());
+                    closedDuringTheWrite.set(sb.isClosed());
+                    availableDuringTheWrite.set(sb.getAvailableBytesExact());
+                }
+            };
+            sb.addTrimStartSignal(trimStart);
+
+            // act
+            os.write(1);
+            os.write(2);
+            final Thread thread = Objects.requireNonNull(closer.get(), "the trim-start signal did not fire");
+            thread.join(TimeUnit.SECONDS.toMillis(10));
+
+            // assert
+            assertAll(
+                    () -> assertThat(
+                            "the closer must wait for the lock",
+                            closerStateDuringTheWrite.get(),
+                            is(Thread.State.BLOCKED)),
+                    () -> assertThat("closed in the middle of the write", closedDuringTheWrite.get(), is(false)),
+                    () -> assertThat(availableDuringTheWrite.get(), is(2L)),
+                    () -> assertThat(thread.isAlive(), is(false)),
+                    () -> assertThat(closeFailure.get(), is(nullValue())),
+                    () -> assertThat(sb.isClosed(), is(true)),
+                    () -> assertThat(sb.getAvailableBytesExact(), is(2L)));
+        }
+    }
+
+    @Nested
     @DisplayName("concurrent trim and write")
     class ConcurrentTrimAndWriteTests {
         @DisplayName("concurrentTrimAndWrite(): no crash or corruption")
@@ -2024,6 +2336,48 @@ public class StreamBufferTest {
             // assert — reader drained the full stream without crash or corruption
             assertThat(is.available(), is(0));
             assertThat(sb.isClosed(), is(true));
+        }
+
+        @DisplayName("waitForAtLeast(): a concurrent trim never makes it return fewer bytes than requested")
+        @Test
+        @Timeout(60)
+        public void waitForAtLeast_concurrentTrim_neverReturnsFewerBytesThanRequested() throws Exception {
+            // arrange — nobody reads, so the buffered byte count can only grow; a trim consolidates
+            // 1000 single-byte entries at a time while the waiter reads the count without the lock
+            final StreamBuffer sb = new StreamBuffer();
+            sb.setMaxBufferElements(1_000);
+            final OutputStream os = sb.getOutputStream();
+            final AtomicReference<String> violation = new AtomicReference<>();
+
+            Thread waiter = new Thread(() -> {
+                try {
+                    while (violation.get() == null && !sb.isClosed()) {
+                        final long seen = sb.getAvailableBytesExact();
+                        if (seen > 0) {
+                            final long returned = sb.waitForAtLeast(seen);
+                            if (returned < seen) {
+                                violation.compareAndSet(
+                                        null,
+                                        "waitForAtLeast(" + seen + ") returned " + returned + " on an open stream");
+                            }
+                        }
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+
+            // act
+            waiter.start();
+            // 2 million writes are about 2,000 trims of 1,000 entries; under RAC 5,000 writes, i.e. 5 trims
+            for (int i = 0, n = iterations(2_000_000, 5_000); i < n && violation.get() == null; i++) {
+                os.write(1);
+            }
+            os.close();
+            waiter.join();
+
+            // assert
+            assertThat(violation.get(), is((String) null));
         }
     }
 
@@ -3072,7 +3426,7 @@ public class StreamBufferTest {
             long maxAfterTrim = sb.getMaxObservedBytes();
 
             // assert — maxObservedBytes should still reflect user peaks, not trim's internal operations
-            // trim internally reads and writes, but isTrimRunning prevents those from being counted
+            // trim copies straight from the FIFO and does no stream I/O, so it counts nothing
             assertAll(
                     () -> assertThat(sb.getBufferElementCount(), is(1)), // trim consolidated
                     () -> assertThat(sb.isTrimRunning(), is(false)), // trim complete
@@ -3097,7 +3451,7 @@ public class StreamBufferTest {
             sb.setMaxBufferElements(1);
             os.write(new byte[50]);
 
-            // assert — trim's internal read/write should not affect user counters
+            // assert — trim does no stream I/O, so it does not affect the user counters
             // and buffer should be consolidated into one element
             assertAll(
                     () -> assertThat(sb.getTotalBytesWritten(), is(writtenBeforeTrim + 50)),
@@ -3105,6 +3459,98 @@ public class StreamBufferTest {
                     () -> assertThat(sb.getBufferElementCount(), is(1)),
                     () -> assertThat(sb.isTrimRunning(), is(false)) // trim should be complete
                     );
+        }
+
+        @DisplayName("statistics(): write from a trim start signal — is counted")
+        @Test
+        public void statistics_writeFromTrimStartHook_isCounted() throws IOException {
+            // arrange — a trim start signal whose release() writes once, on the trim thread
+            // while isTrimRunning is true (bufferLock is reentrant)
+            final StreamBuffer sb = new StreamBuffer();
+            final OutputStream os = sb.getOutputStream();
+            final InputStream is = sb.getInputStream();
+            sb.setMaxBufferElements(2);
+            final AtomicInteger hookCalls = new AtomicInteger();
+            final Semaphore hook = new Semaphore(0) {
+                @Override
+                public void release() {
+                    if (hookCalls.incrementAndGet() == 1) {
+                        try {
+                            os.write(new byte[] {10, 11, 12});
+                        } catch (IOException e) {
+                            throw new RuntimeException(e);
+                        }
+                    }
+                    super.release();
+                }
+            };
+            sb.addTrimStartSignal(hook);
+
+            // act — the third write triggers the trim that releases the hook
+            os.write(new byte[] {1, 2, 3});
+            os.write(new byte[] {4, 5, 6});
+            os.write(new byte[] {7, 8, 9});
+            final long writtenAfterWrites = sb.getTotalBytesWritten();
+            final long maxObservedAfterWrites = sb.getMaxObservedBytes();
+            final byte[] actual = new byte[12];
+            int total = 0;
+            int n;
+            while (total < actual.length && (n = is.read(actual, total, actual.length - total)) > 0) {
+                total += n;
+            }
+            final int bytesRead = total;
+            sb.removeTrimStartSignal(hook);
+
+            // assert — the hook's bytes are user I/O: counted when written, so the
+            // invariant totalBytesWritten == totalBytesRead + available holds
+            assertAll(
+                    () -> assertThat(hookCalls.get(), is(1)),
+                    () -> assertThat(writtenAfterWrites, is(12L)),
+                    () -> assertThat(maxObservedAfterWrites, is(12L)),
+                    () -> assertThat(bytesRead, is(12)),
+                    () -> assertThat(sb.getTotalBytesRead(), is(12L)),
+                    () -> assertThat(sb.getTotalBytesWritten(), is(sb.getTotalBytesRead())));
+        }
+
+        @DisplayName("statistics(): read from a trim start signal — is counted")
+        @Test
+        public void statistics_readFromTrimStartHook_isCounted() throws IOException {
+            // arrange — a trim start signal whose release() reads one byte, on the trim
+            // thread while isTrimRunning is true (bufferLock is reentrant)
+            final StreamBuffer sb = new StreamBuffer();
+            final OutputStream os = sb.getOutputStream();
+            final InputStream is = sb.getInputStream();
+            sb.setMaxBufferElements(2);
+            final AtomicInteger hookCalls = new AtomicInteger();
+            final AtomicInteger hookReadValue = new AtomicInteger(-2);
+            final Semaphore hook = new Semaphore(0) {
+                @Override
+                public void release() {
+                    if (hookCalls.incrementAndGet() == 1) {
+                        try {
+                            hookReadValue.set(is.read());
+                        } catch (IOException e) {
+                            throw new RuntimeException(e);
+                        }
+                    }
+                    super.release();
+                }
+            };
+            sb.addTrimStartSignal(hook);
+
+            // act — the third write triggers the trim that releases the hook
+            os.write(new byte[] {1, 2, 3});
+            os.write(new byte[] {4, 5, 6});
+            os.write(new byte[] {7, 8, 9});
+            sb.removeTrimStartSignal(hook);
+
+            // assert — the hook's read is user I/O and is counted
+            assertAll(
+                    () -> assertThat(hookCalls.get(), is(1)),
+                    () -> assertThat(hookReadValue.get(), is(1)),
+                    () -> assertThat(sb.getTotalBytesRead(), is(1L)),
+                    () -> assertThat(sb.getTotalBytesWritten(), is(9L)),
+                    () -> assertThat(sb.getAvailableBytesExact(), is(8L)));
         }
     }
 
@@ -4320,16 +4766,16 @@ public class StreamBufferTest {
         /**
          * CRITICAL TEST: Exception during trim start signal release doesn't deadlock stream
          *
-         * REQUIREMENT: If releaseTrimStartSignals() throws an exception (line 442),
+         * REQUIREMENT: If releaseTrimStartSignals() throws an exception,
          * the isTrimRunning flag MUST still be properly managed and the stream MUST recover.
          * Without this, the flag stays true forever, blocking all future trim operations.
          *
-         * IMPLEMENTATION RISK:
-         * releaseTrimStartSignals() is called OUTSIDE the try block:
+         * IMPLEMENTATION RISK (before the fix below):
+         * releaseTrimStartSignals() was called OUTSIDE the try block:
          * ```
          * if (shouldTrim()) {
          *     isTrimRunning = true;
-         *     releaseTrimStartSignals();  // ← OUTSIDE try-finally (line 442)
+         *     releaseTrimStartSignals();  // ← OUTSIDE try-finally
          *     try {
          *         // trim logic
          *     } finally {
@@ -4358,7 +4804,7 @@ public class StreamBufferTest {
          * Without this, the flag stays true forever, blocking all future trim operations.
          *
          * IMPLEMENTATION FIX (applied):
-         * Moved releaseTrimStartSignals() INSIDE the try-finally block (line 443):
+         * Moved releaseTrimStartSignals() INSIDE the try-finally block of trim():
          * ```
          * try {
          *     releaseTrimStartSignals();  // ← NOW INSIDE try-finally
@@ -4459,152 +4905,24 @@ public class StreamBufferTest {
         }
 
         /**
-         * CRITICAL TEST: Exception during trim write phase resets ignoreSafeWrite flag
-         *
-         * REQUIREMENT: If IOException occurs while trim is writing consolidated data back,
-         * the ignoreSafeWrite flag MUST be reset in the finally block (lines 476-478).
-         * Without this, external code could mutate the buffer while ignoreSafeWrite is true,
-         * causing data corruption or unsafe behavior.
-         *
-         * IMPLEMENTATION FIX (already in place):
-         * Nested try-finally protects the ignoreSafeWrite flag:
-         * ```
-         * try {
-         *     ignoreSafeWrite = true;
-         *     while (!tmpBuffer.isEmpty()) {
-         *         os.write(tmpBuffer.pollFirst());  // ← If IOException here
-         *     }
-         * } finally {
-         *     ignoreSafeWrite = false;              // ← Always executes
-         * }
-         * ```
-         *
-         * TEST APPROACH:
-         * 1. Create custom StreamBuffer that returns throwing OutputStream
-         * 2. Set up conditions to trigger trim
-         * 3. Add throwing semaphore to force trim execution
-         * 4. When trim runs and calls os.write() on consolidated data, throws
-         * 5. Verify ignoreSafeWrite is reset despite exception
-         * 6. Verify stream still usable (flag not stuck in true state)
-         */
-        @DisplayName("trim(): ignore safe write flag reset during write exception — stream recoverable")
-        @Test
-        public void trim_ignoreSafeWriteFlagResetDuringWriteException_streamRecoverable() throws IOException {
-            // arrange — Custom StreamBuffer with throwing output stream
-            class FailingWriteStreamBuffer extends StreamBuffer {
-                private boolean shouldThrowOnWrite = false;
-
-                @Override
-                public OutputStream getOutputStream() {
-                    final OutputStream wrapped = super.getOutputStream();
-                    return new OutputStream() {
-                        @Override
-                        public void write(int b) throws IOException {
-                            if (shouldThrowOnWrite) {
-                                throw new IOException("Simulated write failure during trim consolidation");
-                            }
-                            wrapped.write(b);
-                        }
-
-                        @Override
-                        public void write(byte[] b, int off, int len) throws IOException {
-                            if (shouldThrowOnWrite) {
-                                throw new IOException("Simulated write failure during trim consolidation");
-                            }
-                            wrapped.write(b, off, len);
-                        }
-
-                        @Override
-                        public void close() throws IOException {
-                            wrapped.close();
-                        }
-                    };
-                }
-            }
-
-            final FailingWriteStreamBuffer sb = new FailingWriteStreamBuffer();
-            final OutputStream os = sb.getOutputStream();
-            final InputStream is = sb.getInputStream();
-
-            // Set high threshold initially — no trim during setup
-            sb.setMaxBufferElements(1000);
-
-            // Write data to build up buffer (no trim yet)
-            byte[] testData = new byte[100];
-            Arrays.fill(testData, (byte) 42);
-            for (int i = 0; i < 50; i++) {
-                os.write(testData);
-            }
-
-            // Enable throwing behavior and lower threshold to trigger trim on next write
-            sb.shouldThrowOnWrite = true;
-            sb.setMaxBufferElements(5);
-
-            // act — Trigger trim write phase with exception
-            IOException caughtException = null;
-            try {
-                os.write(testData);
-            } catch (IOException e) {
-                caughtException = e;
-            }
-
-            // Disable throwing for recovery tests
-            sb.shouldThrowOnWrite = false;
-
-            // assert — Verify exception occurred and ignoreSafeWrite was reset
-            final IOException finalException = caughtException;
-            assertAll(
-                    () -> {
-                        // IOException was thrown from write phase
-                        assertThat("Write phase exception should be thrown", finalException, not((IOException) null));
-                        assertThat(
-                                "Exception message correct",
-                                finalException.getMessage(),
-                                is("Simulated write failure during trim consolidation"));
-                    },
-                    () -> {
-                        // CRITICAL: ignoreSafeWrite must be false (finally executed)
-                        // If the flag stayed true, external code could unsafely mutate buffer
-                        // Check by attempting a write with safeWrite enabled
-                        sb.setSafeWrite(true);
-                        byte[] safeData = new byte[50];
-                        Arrays.fill(safeData, (byte) 99);
-                        os.write(safeData); // Should use safe write (not throw)
-                        // If ignoreSafeWrite was stuck true, this would have different behavior
-                    },
-                    () -> {
-                        // Stream still usable - can write
-                        byte[] moreData = new byte[50];
-                        Arrays.fill(moreData, (byte) 88);
-                        os.write(moreData);
-                    },
-                    () -> {
-                        // Stream still usable - can read
-                        byte[] buffer = new byte[100];
-                        int bytesRead = is.read(buffer);
-                        assertThat("Should be able to read after write exception", bytesRead, greaterThan(0));
-                    });
-        }
-
-        /**
          * CRITICAL TEST: Exception during trim end signal release - flag already reset but exception propagates
          *
-         * REQUIREMENT: If exception occurs in releaseTrimEndSignals() (line 481 finally block),
-         * the isTrimRunning flag MUST already be false (line 480 executes first).
+         * REQUIREMENT: If exception occurs in releaseTrimEndSignals() (finally block of trim()),
+         * the isTrimRunning flag MUST already be false (the reset executes first).
          * However, the exception can suppress notification to signal observers.
          *
          * IMPLEMENTATION ANALYSIS:
          * Finally block order matters:
          * ```
          * } finally {
-         *     isTrimRunning = false;              // ← Line 480: executes FIRST
-         *     releaseTrimEndSignals();            // ← Line 481: executes SECOND
+         *     isTrimRunning = false;              // ← executes FIRST
+         *     releaseTrimEndSignals();            // ← executes SECOND
          * }
          * ```
          *
          * Key difference from trim start test:
-         * - Trim start exception (line 443): flag ALREADY true, exception before reset → DANGEROUS
-         * - Trim end exception (line 481): flag ALREADY reset, exception after → SAFE for flag
+         * - Trim start exception: flag ALREADY true, exception before reset → DANGEROUS
+         * - Trim end exception: flag ALREADY reset, exception after → SAFE for flag
          * - But: Signal observers may not be notified if exception occurs
          *
          * TEST APPROACH:
@@ -4681,7 +4999,7 @@ public class StreamBufferTest {
                     },
                     () -> {
                         // CRITICAL: isTrimRunning must be false (flag was reset BEFORE signal exception)
-                        // Line 480 executes before line 481, so flag is already false
+                        // The reset runs before releaseTrimEndSignals(), so flag is already false
                         // This is different from trim start where flag would be stuck true
                         assertThat(
                                 "isTrimRunning must be false (flag reset before signal release)",
@@ -4711,18 +5029,20 @@ public class StreamBufferTest {
          *
          * IMPLEMENTATION ANALYSIS:
          * Race condition scenario:
-         * - Thread 1: trim() acquired bufferLock, reading/writing internal streams
-         * - Thread 2: close() calls bufferLock, closes output/input streams
+         * - Thread 1: a write holds bufferLock and runs trim(), which copies the
+         *   buffered bytes straight from the FIFO (it never reads or writes through
+         *   the streams, see F73)
+         * - Thread 2: close() → closeAll() sets streamClosed under the same bufferLock
          *
-         * Both methods synchronize on bufferLock:
-         * - trim() (line 443-484): synchronized operations on is/os
-         * - close() (line 995-1010): closes streams, synchronizes access
+         * Both synchronize on bufferLock, so close() waits until the write and its
+         * trim() are done; a write that loses the race fails in requireNonClosed()
+         * before it buffers anything.
          *
-         * Potential issues:
-         * - close() could close streams while trim() is using them
-         * - Could cause IOException during trim read/write
-         * - Could cause NullPointerException if streams become null
-         * - Could lose signal notifications if close() interrupts trim
+         * Potential issues guarded here:
+         * - The write that triggered trim() failing although it was accepted
+         * - Bytes lost or reordered by the trim when close() follows it
+         * - A deadlock between the writer and close()
+         * - Lost signal notifications if close() interrupts trim
          *
          * TEST APPROACH:
          * 1. Use ExecutorService to run threads concurrently
@@ -4765,7 +5085,7 @@ public class StreamBufferTest {
             try {
                 // act — Thread 1: Write data to trigger trim.
                 // Once close() races in, writes correctly throw IOException("Stream closed.")
-                // from the public requireNonClosed() guard — that is expected behaviour and
+                // from the private requireNonClosed() check, under bufferLock — that is expected behaviour and
                 // must not be treated as a test failure.  Only unexpected exceptions are
                 // captured so the assertion below stays meaningful.
                 java.util.concurrent.Future<?> trimTask = executor.submit(() -> {
@@ -4849,33 +5169,34 @@ public class StreamBufferTest {
          *
          * <p>Strategy: hook {@code addTrimStartSignal} with a semaphore whose
          * {@code release()} synchronously calls {@code sb.close()}. The hook runs
-         * on the trim thread itself, BEFORE the read/write-back phases. By the
-         * time trim reaches its write-back phase, {@code streamClosed} is already
-         * {@code true}, so any internal {@code os.write()} call inside trim will
-         * fail at {@code requireNonClosed()}.
+         * on the writing thread inside trim(), which already holds {@code bufferLock};
+         * close() takes the same lock re-entrantly and sets {@code streamClosed}
+         * inside trim's own critical section. Since F73 trim copies straight from
+         * the FIFO, leaves {@code availableBytes} unchanged and never goes through
+         * the streams, so the close cannot reach anything trim still has to do.
          *
          * <p>This is single-threaded — no executor, no latches, no sleeps,
          * no thread-scheduling timing windows.
          *
-         * <p>Asserts the two real bugs:
+         * <p>Asserts:
          * <ol>
-         *   <li>The triggering write must not throw — trim's internal
-         *       reorganization should be insulated from a concurrent close.</li>
-         *   <li>No data loss — every byte written before the close must remain
+         *   <li>The triggering write must not throw — it already passed
+         *       {@code requireNonClosed()} before it buffered its bytes.</li>
+         *   <li>No data loss — all 9 bytes written before the close must remain
          *       readable from the input stream.</li>
          * </ol>
          */
-        @DisplayName("trim(): close during trim — write-back must not throw and must not lose data")
+        @DisplayName("trim(): close during trim — triggering write must not throw and must not lose data")
         @Test
-        public void trim_closeDuringTrim_writeBackDoesNotThrowAndPreservesData() throws IOException {
+        public void trim_closeDuringTrim_triggeringWriteDoesNotThrowAndPreservesData() throws IOException {
             // arrange
             final StreamBuffer sb = new StreamBuffer();
             final OutputStream os = sb.getOutputStream();
             final InputStream is = sb.getInputStream();
 
-            // Hook fires synchronously on the trim thread, BEFORE read/write-back.
-            // Calling close() here makes streamClosed=true deterministically before
-            // trim's internal os.write() runs requireNonClosed().
+            // Hook fires synchronously on the writing thread inside trim(), which holds
+            // bufferLock. Calling close() here sets streamClosed=true deterministically
+            // while trim is still reorganizing the FIFO.
             final Semaphore closeOnTrimStart = new Semaphore(0) {
                 private boolean fired = false;
 
@@ -4900,7 +5221,7 @@ public class StreamBufferTest {
             os.write(new byte[] {4, 5, 6});
 
             // act — this third write pushes element count over maxBufferElements,
-            //       trim() runs, hook closes the stream, write-back hits the bug.
+            //       trim() runs and the hook closes the stream inside it.
             IOException thrown = null;
             try {
                 os.write(new byte[] {7, 8, 9});
@@ -4908,17 +5229,13 @@ public class StreamBufferTest {
                 thrown = e;
             }
 
-            // assert — bug 1: trim's internal write-back must not surface as a
-            // user-visible IOException on a write that was issued while the stream
-            // was still open.
-            assertThat(
-                    "Triggering write must not throw — trim's write-back leaked "
-                            + "an IOException from its internal os.write() requireNonClosed() check",
-                    thrown,
-                    is((IOException) null));
+            // assert — a close from a trim hook must not surface as a user-visible
+            // IOException on a write that was accepted while the stream was still open.
+            assertThat("Triggering write must not throw when a trim hook closes the stream", thrown, is((IOException)
+                    null));
 
-            // assert — bug 2: every byte must still be readable. If trim's
-            // write-back aborted, tmpBuffer was discarded and all 9 bytes are lost.
+            // assert — every byte must still be readable: the close must neither
+            // discard the bytes trim is reorganizing nor change their order.
             final byte[] expected = {1, 2, 3, 4, 5, 6, 7, 8, 9};
             final byte[] actual = new byte[expected.length];
             int total = 0;
@@ -5442,23 +5759,24 @@ public class StreamBufferTest {
          *
          * Key Requirements (verified by tests in this section):
          * 1. isTrimRunning flag MUST reset via finally block (even if exceptions occur)
-         *    - Implementation: Lines 440-484 in StreamBuffer.java (try-finally)
-         * 2. ignoreSafeWrite flag MUST reset despite write exceptions
-         *    - Implementation: Lines 470-478 (nested try-finally)
-         * 3. Signal release exceptions must not deadlock stream
-         *    - Implementation: releaseTrimStartSignals() moved INSIDE try block (line 443)
-         * 4. Concurrent close() during trim must not cause race conditions
+         *    - Implementation: the try/finally in StreamBuffer.trim()
+         * 2. Signal release exceptions must not deadlock stream
+         *    - Implementation: releaseTrimStartSignals() is called INSIDE that try block
+         * 3. Concurrent close() during trim must not cause race conditions
          *    - Implementation: bufferLock synchronization prevents interleaving
-         * 5. Configuration changes must not affect running trim
+         * 4. Configuration changes must not affect running trim
          *    - Implementation: Configuration values cached before trim execution
+         *
+         * (Trim copies straight from the FIFO since F73; it no longer reads or writes through
+         * the streams, so there is no read or write phase inside it that could throw.)
          *
          * Each test includes detailed inline documentation explaining the specific
          * exception scenario and why the fix prevents problems.
          */
-        @DisplayName("trim(): exception during read — flag resets in finally")
+        @DisplayName("trim(): triggered by a write — flag is reset afterwards")
         @Test
-        public void trim_exceptionDuringRead_flagResetsInFinally() throws IOException {
-            // arrange — Verify that isTrimRunning is reset even if exception occurs during is.read()
+        public void trim_triggeredByWrite_flagIsResetAfterwards() throws IOException {
+            // arrange — Verify that isTrimRunning is reset once the trim a write triggered is over
             StreamBuffer sb = new StreamBuffer();
             OutputStream os = sb.getOutputStream();
 
@@ -5469,17 +5787,16 @@ public class StreamBufferTest {
             sb.setMaxBufferElements(10);
 
             // act — trigger trim by writing more data
-            // The trim operation should reset isTrimRunning even if exceptions occur
             os.write(new byte[100]);
 
-            // assert — isTrimRunning should be false after trim completes (or fails safely)
+            // assert — isTrimRunning should be false after trim completes
             assertThat(sb.isTrimRunning(), is(false));
         }
 
-        @DisplayName("trim(): exception during write — flag resets in finally")
+        @DisplayName("trim(): of several chunks — flag is reset and data intact")
         @Test
-        public void trim_exceptionDuringWrite_flagResetsInFinally() throws IOException {
-            // arrange — Similar to above but focused on write phase of trim
+        public void trim_ofSeveralChunks_flagIsResetAndDataIntact() throws IOException {
+            // arrange — Similar to above, with several chunks to consolidate and a read back
             StreamBuffer sb = new StreamBuffer();
             OutputStream os = sb.getOutputStream();
             InputStream is = sb.getInputStream();
@@ -5574,15 +5891,14 @@ public class StreamBufferTest {
             sb.removeTrimEndSignal(trimEnded);
         }
 
-        @DisplayName("ignoreSafeWrite(): reset after trim")
+        @DisplayName("trim(): with safe write — all data preserved")
         @Test
-        public void ignoreSafeWrite_resetAfterTrim() throws IOException {
-            // arrange — Verify that ignoreSafeWrite flag is properly reset after trim
+        public void trim_withSafeWrite_allDataPreserved() throws IOException {
+            // arrange — trims while safe write is on must not lose or alter data
             StreamBuffer sb = new StreamBuffer();
             OutputStream os = sb.getOutputStream();
             InputStream is = sb.getInputStream();
 
-            // Enable safe write to test the ignoreSafeWrite flag
             sb.setSafeWrite(true);
 
             // Write data to trigger trim
@@ -5845,8 +6161,7 @@ public class StreamBufferTest {
      * ROBUSTNESS TESTS: Edge cases and stress scenarios for trim operation
      *
      * Tests verify trim handles:
-     * - Exceptions during read phase (flag reset via finally)
-     * - Exceptions during write phase (flag reset via finally)
+     * - Exceptions from a trim start or trim end signal (flag reset via finally)
      * - Safe write mode enabled during trim
      * - Large buffers with small allocation size constraints
      * - Concurrent signal operations (add/remove signals during trim)

@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: 2014-2026 Bernard Ladenthin <bernard.ladenthin@gmail.com>
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+# JPF run configuration for the write/close harness (bug hunt F149): writer, closer and reader in
+# three threads. Same classpath layout as StreamBuffer.jpf; consumed by RunJPF.jar in the
+# jpf-interleavings CI job and by the local recipe in README.md.
+target = net.ladenthin.streambuffer.jpf.JpfWriteCloseHarness
+
+classpath = ${config_path}/out;${config_path}/streambuffer-classes;${config_path}/lib/checker-qual.jar;${config_path}/lib/jspecify.jar;${config_path}/lib/error-prone-annotations.jar
+
+vm.enable_assertions = true

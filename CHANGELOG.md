@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (fixups v3); RAC 285/285 against the unmodified 21.0.29 distribution. The class-invariant blocker is
   narrowed down: RAC miscompiles an unqualified call from an inner-class method to an outer instance
   method (`writeSingleByte(b)` in `SBOutputStream`), see TODO.md.
+- **Documented: `read(byte[], off, len)` waits for all `len` bytes** (or for `close()`), a deliberate
+  deviation from the `InputStream` contract that has been the design since the first version but was
+  stated nowhere. The Javadoc of `getInputStream()` and the README ("Full `InputStream`/`OutputStream`
+  Compatibility", "Deadlock Behavior → Read") now say so, with the `waitForAnyData()` + `available()`
+  pattern for request/response protocols; the README's `maxAllocationSize` default reads
+  `Integer.MAX_VALUE - 8`, as the code has it.
 - Build tooling: spotbugs-maven-plugin 4.10.4.1 -> 4.10.5.0 (SpotBugs 4.10.5, the first release that reads
   JSpecify; nothing to report here), in step with the sibling repositories.
 - Build and test tooling bumped in step with the sibling repositories: Spotless 3.10.4 and Checker
@@ -84,8 +90,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Release Process prompt template moved from `CHANGELOG.md` to `docs/RELEASE.md`.
 - `maxAllocationSize` defaults to `Integer.MAX_VALUE - 8` (was `Integer.MAX_VALUE`);
   `setMaxAllocationSize` clamps larger values to it.
+- **Tests that could pass without checking anything are tightened.** The jqwik properties
+  (`StreamBufferProperties`) now run in every build: their class name matched none of Surefire's
+  default include patterns, so they ran nowhere; under `-Pjml-rac` they use 100 tries instead of 1000.
+  The concurrent `safeWrite` test records every failure of its background threads and checks the byte
+  count, since `Waiter.resume()` never rethrows and a reader that died early left it green. A test
+  whose wrapping output stream threw before it reached the buffer is removed (its message was the
+  test's own). A new test pins that `close()` waits for a write on another thread, the half of the
+  write/close fix the existing single-threaded test does not see. The close-during-trim tests describe
+  the current `trim()`, which copies straight from the FIFO, instead of a read phase and a write-back
+  through the streams.
+- **Formal verification: a third JPF harness** (`WriteClose.jpf`) model-checks writer, closer and
+  reader in three threads, i.e. the order of write and close, which the existing harness cannot see.
+  Under RAC the two stress loops of `StreamBufferTest` are scaled down (`streambuffer.test.rac`):
+  RAC prints a stack trace for every `System.arraycopy`/`clone` (OpenJML/OpenJML#1050), and unscaled
+  the job ran into its timeout with every contract holding.
 
 ### Fixed
+- **`safeWrite` could be bypassed by a concurrent `write(int)`.** A single-byte write set an
+  instance-wide flag that told an array write running on another thread not to clone its array, so
+  with `setSafeWrite(true)` the caller's array could land in the buffer by reference and later changes
+  to it reached the reader. The flag is gone; whether to clone is a parameter of the private write path.
+- **A concurrent `trim()` no longer lets a reader see a half-emptied buffer.** `trim()` drained the
+  buffer through its own input stream and wrote the bytes back, so the buffered count fell to 0 and rose
+  again while `read()` and `waitForAtLeast` read it without the lock: a reader could get fewer bytes
+  than requested, or end of stream, on an open stream. `trim()` now copies the entries straight from the
+  FIFO into blocks of at most `maxAllocationSize` and leaves the count unchanged.
+- **A `trim()` whose allocation fails no longer loses buffered bytes.** The consolidation allocated its
+  blocks one at a time, each after the entries of the previous block had already been polled from the
+  FIFO, so an `OutOfMemoryError` on a later block left the buffer with those entries gone while the
+  byte count still included them: a reader then failed or read the wrong bytes. Every block is now
+  allocated before the FIFO is touched, so the error propagates out of the write with the buffer
+  exactly as that write left it, and the next write trims again. The allocation goes through one
+  package-private seam (`allocateTrimChunk`), which is how the test provokes the failure.
+- **A `write` racing `close()` from another thread can no longer land after the close.** The closed
+  check ran before the lock was taken and `close()` set the flag without it, so a writer that had passed
+  the check could append after a reader had seen "closed, 0 bytes" and reported end of stream. The check
+  now runs under `bufferLock` and `close()` sets the flag under the same lock: a write is either fully
+  buffered before the close or fails with "Stream closed"; `close()` waits for a write or `trim()` in
+  progress on another thread.
 - **CI: the GitHub `snapshot` pre-release holds exactly the current build, and the release assets
   include the pom.** `gh release upload --clobber` replaces same-named assets and never removes any
   other, so the `snapshot` release accumulated: the 1.2.0-SNAPSHOT jar and javadoc jar (unsigned, from before the
@@ -108,6 +151,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   passes `-Dmaven.repository.credentialScope=id`, Maven's own switch back to id-only matching, until a
   setup-java release can write `<repositoryOrigins>` (`mvn-server-repository-origins`, merged upstream
   but not yet released).
+- **Statistics count the I/O of a trim start signal.** A write or read made from a trim start
+  signal's `release()` on the trim thread changed the buffered count but was left out of
+  `getTotalBytesWritten()`, `getMaxObservedBytes()` and `getTotalBytesRead()`, contrary to their
+  Javadoc and to `written == read + available`. The guards dated from when `trim()` read and wrote
+  through the streams itself; it copies straight from the FIFO now, so every counted byte is user
+  I/O. `isTrimRunning` still prevents a nested trim.
 - `trim()` with more than 2 GB buffered no longer allocates `new byte[Integer.MAX_VALUE]`, which the
   JVM always rejects ("Requested array size exceeds VM limit"). Allocations are capped at
   `Integer.MAX_VALUE - 8`, the JDK's `SOFT_MAX_ARRAY_LENGTH`.

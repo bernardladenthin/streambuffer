@@ -44,7 +44,10 @@ mvn test-compile exec:java \
 `-prof gc` reports `gc.alloc.rate.norm` (bytes allocated per op) — useful for spotting hidden allocations on the read/write hot paths. `-prof async` produces flamegraphs and requires async-profiler installed locally; CI does not run it.
 
 `mvn test` also runs:
-- **jqwik properties** (`StreamBufferProperties`) — picked up by Surefire as a JUnit 6 engine.
+- **jqwik properties** (`StreamBufferProperties`) — a JUnit Platform engine; Surefire runs the class
+  only because `pom.xml` adds `**/*Properties.java` to its include patterns (until 2026-10-19 it ran
+  in no build, since the name matches none of Surefire's defaults). Under `-Pjml-rac` they run with
+  100 tries instead of 1000 (`jqwik.tries.default`).
 - **Lincheck** linearizability test (`StreamBufferLincheckTest`) over the non-blocking subset (`write`, `available`, `close`, `isClosed`).
 
 **Opt-in jcstress concurrency stress tests:**
@@ -69,9 +72,11 @@ deliberately not part of the synchronous Publish pipeline and never a required c
 2. **OpenJML RAC**: the existing JUnit suite runs against RAC-instrumented classes
    (violations throw), checking the static contracts plus the instance/stream-adapter contracts.
 3. **JPF interleavings** (`src/test/jpf/`, scheduled/dispatch CI job `jpf-interleavings`): Java
-   PathFinder exhaustively model-checks the concurrent read/write/close protocol. Requires JDK 11;
-   builds jpf-core from a pinned commit with a one-file `AtomicLong` model patch; the harness is
-   compiled at `--release 8` and run under JPF. Local recipe (Docker+JDK 11) in
+   PathFinder exhaustively model-checks the concurrent read/write/close protocol with two harnesses:
+   `StreamBuffer.jpf` (a writer that closes after its writes, a reader) and `WriteClose.jpf` (writer,
+   closer and reader in three threads -- the order of write and close, which the first cannot see;
+   red before bug-hunt fix F149). Requires JDK 11; builds jpf-core from a pinned commit with a
+   one-file `AtomicLong` model patch; the harnesses are compiled at `--release 8` and run under JPF. Local recipe (Docker+JDK 11) in
    `src/test/jpf/README.md`. Never touches the shipped jar.
 
 The `@GuardedBy("bufferLock")` lock discipline is gated separately by Error Prone in the default
@@ -149,6 +154,11 @@ mvn -P jml-rac -Dopenjml.home=<openjml> -Dopenjml.jdk.java=<openjml>/jdk/bin/jav
   [OpenJML/Specs#29](https://github.com/OpenJML/Specs/pull/29) +
   [OpenJML/OpenJML#982](https://github.com/OpenJML/OpenJML/pull/982)). Both fixes are in 21.0.29;
   the suite passes against the unmodified distribution (285/285).
+- Under `-Pjml-rac` the stress loops of `StreamBufferTest` and the jqwik tries are scaled down
+  (`streambuffer.test.rac`, `jqwik.tries.default` 100): RAC prints a ~10 KB stack trace for every
+  `System.arraycopy`/`clone` (an uncompiled model method of the bundled JDK spec,
+  [OpenJML/OpenJML#1050](https://github.com/OpenJML/OpenJML/issues/1050)), and unscaled the job ran
+  into its timeout with every contract holding. Do not remove the scaling before a release fixes it.
 - RAC classes are class-file 65 and live only under `target/rac-classes` — they never enter the
   shipped jar, so the Java 8 bytecode floor is unaffected.
 

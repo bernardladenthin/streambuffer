@@ -129,7 +129,7 @@ Instead of a fixed circular buffer, `StreamBuffer` uses a `Deque<byte[]>` that g
 
 ### Full `InputStream`/`OutputStream` Compatibility
 
-`StreamBuffer` exposes a standard `InputStream` (via `getInputStream()`) and a standard `OutputStream` (via `getOutputStream()`). Both are full subclass implementations and can be used anywhere those types are accepted.
+`StreamBuffer` exposes a standard `InputStream` (via `getInputStream()`) and a standard `OutputStream` (via `getOutputStream()`). Both are full subclass implementations and can be used anywhere those types are accepted. One deliberate difference: `read(byte[], off, len)` waits for **all** `len` bytes (or `close()`), see [Read](#read).
 
 ### Thread Safety
 
@@ -137,6 +137,7 @@ The `InputStream` and `OutputStream` can be used concurrently from different thr
 
 - All `Deque` accesses are guarded by a `bufferLock` object.
 - State fields (`streamClosed`, `safeWrite`, `availableBytes`, `positionAtCurrentBufferEntry`, `maxBufferElements`, `maxAllocationSize`, `isTrimRunning`, `maxObservedBytes`) are `volatile`; the cumulative counters `totalBytesWritten` and `totalBytesRead` are `final AtomicLong` (atomic read-modify-write under concurrent I/O).
+- `close()` takes the same lock, so it waits for a write or trim in progress on another thread: a write racing the close is either fully buffered or fails with "Stream closed", never appended after a reader saw the end of the stream. A trim copies every buffered byte, so with a large buffer that wait can be noticeable.
 - A `Semaphore signalModification` blocks reading threads until data is written or the stream is closed, avoiding busy-waiting. External semaphores can be registered via `addSignal` for thread-decoupled notification.
 
 ### No Write Deadlock
@@ -168,7 +169,7 @@ sb.setMaxBufferElements(50);  // trim when more than 50 elements are queued
 sb.setMaxBufferElements(0);   // disable trimming entirely
 ```
 
-Trimming is triggered by writes, not by `setMaxBufferElements`. The trim internally bypasses `safeWrite` (via an `ignoreSafeWrite` flag) because the byte arrays it produces are not reachable from outside the buffer.
+Trimming is triggered by writes, not by `setMaxBufferElements`. The trim copies the buffered arrays directly into the consolidated ones, without going through the streams, so `safeWrite` does not apply (the arrays it produces are not reachable from outside the buffer) and the buffered byte count stays constant while it runs: a concurrent `waitForAtLeast` or `available()` never sees a partly drained buffer.
 
 If `maxAllocationSize` is set (see below), trim may produce multiple smaller chunks instead of one. Trim is also skipped automatically when consolidation would not reduce the chunk count below `maxBufferElements` — for example, when `maxAllocationSize` is small enough that the resulting chunk count would still exceed the threshold. This prevents repeated no-op trims on every write.
 
@@ -209,7 +210,7 @@ Signals are stored in a `CopyOnWriteArrayList` for thread-safe iteration. The "m
 
 ### Statistics Tracking
 
-`StreamBuffer` tracks cumulative I/O statistics for the bytes flowing through the user-facing API. Internal reads and writes performed by the trim operation are excluded — `isTrimRunning` is checked before updating the counters so the statistics always reflect user I/O only.
+`StreamBuffer` tracks cumulative I/O statistics for the bytes flowing through the user-facing API. The trim operation is excluded: it consolidates the buffered arrays directly, without reading or writing through the streams, so the statistics always reflect user I/O only.
 
 ```java
 StreamBuffer sb = new StreamBuffer();
@@ -243,9 +244,10 @@ sb.setMaxAllocationSize(1024 * 1024);  // cap each consolidated chunk at 1 MiB
 long current = sb.getMaxAllocationSize();
 ```
 
-- Default: `Integer.MAX_VALUE` (effectively one chunk per trim pass).
+- Default: `Integer.MAX_VALUE - 8`, the largest array the JVM reliably allocates (effectively one chunk per trim pass); larger values passed to `setMaxAllocationSize` are capped to it.
 - Throws `IllegalArgumentException` if the value is ≤ 0.
 - Trim is skipped automatically when the resulting chunk count would not be smaller than the current `Deque` size — this prevents repeated no-op trims when `maxAllocationSize` is very small.
+- Every chunk of a trim pass is allocated before any buffered entry is consolidated. If an allocation fails with `OutOfMemoryError`, the write that triggered the trim throws it and the buffer is left exactly as that write left it (entries, order and byte count), so every byte stays readable and the next write trims again.
 
 ### Trim Observer Signals
 
@@ -325,7 +327,16 @@ External observers register `java.util.concurrent.Semaphore` objects via `addSig
 
 ### Read
 
-If no data is available and the stream is not closed, `read()` blocks the calling thread. To avoid blocking, only read as many bytes as `available()` reports. The `waitForAnyData()` and `waitForAtLeast(long)` methods can be used to wait for data before reading.
+If no data is available and the stream is not closed, `read()` blocks the calling thread. `read(byte[], off, len)` goes further: after the first byte it keeps waiting until **all** `len` bytes are buffered, and returns fewer only when the stream is closed. That is stricter than the `InputStream` contract (block until at least one byte) and unlike `PipedInputStream`; it has been the design since the first version.
+
+To avoid blocking, only read as many bytes as `available()` reports. The `waitForAnyData()` and `waitForAtLeast(long)` methods can be used to wait for data before reading:
+
+```java
+sb.waitForAnyData();                               // returns once at least one byte is buffered (or closed)
+int n = is.read(buf, 0, Math.min(buf.length, Math.max(1, is.available())));
+```
+
+This matters for wrappers that read in blocks, such as `InputStreamReader`/`BufferedReader` (8 KiB): over an open buffer in a request/response protocol they wait until a whole block has arrived.
 
 ### Write
 

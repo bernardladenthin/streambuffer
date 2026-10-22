@@ -34,7 +34,7 @@ hs_err_pid*
 src/test/jpf/out/
 src/test/jpf/streambuffer-classes/
 src/test/jpf/lib/
-src/test/jpf/jpf-output.log
+src/test/jpf/jpf-output*.log
 
 /target/
 /bin/

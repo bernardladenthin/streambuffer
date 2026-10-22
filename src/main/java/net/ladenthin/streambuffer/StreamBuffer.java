@@ -99,18 +99,10 @@ public class StreamBuffer implements Closeable {
      * A flag to enable a safe write. If safe write is enabled, modifiable byte
      * arrays are cloned before they are written (put) into the FIFO. Benefit:
      * It cost more performance to clone a byte array, but the content is
-     * immutable. This may be revoked by {@link #ignoreSafeWrite}, for example a
-     * byte array was created internally.
+     * immutable. Internally created arrays that never escape (see
+     * {@link #writeSingleByte(int)}) are not cloned.
      */
     private volatile boolean safeWrite = false;
-
-    /**
-     * A flag to disable the {@link StreamBuffer#safeWrite}. I. e. to write a byte array from
-     * the trim method.
-     * It should be used if the reference to the buffer deque is not reachable out of the scope.
-     * It is possible to ignore the safeWrite flag to prevent not necessary clone operations.
-     */
-    private volatile boolean ignoreSafeWrite = false;
 
     /**
      * The maximum buffer elements. A number of maximum elements to invoke the
@@ -148,9 +140,13 @@ public class StreamBuffer implements Closeable {
 
     /**
      * Flag set to true while trim is rearranging internal buffers.
-     * Volatile so it's visible to all threads — used to skip statistics updates during trim.
+     * Volatile so it's visible to all threads; {@link #isTrimRunning()} exposes it.
      * Set to true at start of trim body, set to false in finally block.
-     * This ensures totalBytesRead and totalBytesWritten always represent user I/O only.
+     * Trim itself copies straight from the FIFO and never reads or writes through the
+     * streams. The flag matters for code that runs on the trim thread while trim is in
+     * progress: a trim signal whose {@code release()} writes reaches the write path again
+     * (bufferLock is reentrant), and must not start a nested trim (see
+     * {@link #shouldTrim()}). Such I/O is user I/O and is counted in the statistics.
      */
     private volatile boolean isTrimRunning = false;
 
@@ -339,6 +335,8 @@ public class StreamBuffer implements Closeable {
     /**
      * Register an external {@link Semaphore} to be released when trim() starts.
      * The semaphore uses the same "max 1 permit" pattern as modification signals.
+     * It is released under the buffer lock: a {@code release()} override must return promptly and
+     * must not wait for a read, write or {@link #close()} of this buffer (see {@link #close()}).
      *
      * @param semaphore the semaphore to register for trim start events
      * @throws NullPointerException if semaphore is null
@@ -364,6 +362,8 @@ public class StreamBuffer implements Closeable {
     /**
      * Register an external {@link Semaphore} to be released when trim() completes.
      * The semaphore uses the same "max 1 permit" pattern as modification signals.
+     * It is released under the buffer lock: a {@code release()} override must return promptly and
+     * must not wait for a read, write or {@link #close()} of this buffer (see {@link #close()}).
      *
      * @param semaphore the semaphore to register for trim end events
      * @throws NullPointerException if semaphore is null
@@ -475,72 +475,77 @@ public class StreamBuffer implements Closeable {
      * write operation. The method checks itself if the buffer should be trimmed
      * or not.
      * <strong>MUST be called inside {@code synchronized(bufferLock)}.</strong>
-     * Sets {@link #isTrimRunning} volatile flag to prevent statistics updates during internal I/O.
-     * Respects {@link #maxAllocationSize} limit when allocating byte arrays.
+     * Sets the {@link #isTrimRunning} volatile flag while it runs. The buffered byte count
+     * ({@link #availableBytes}) stays constant throughout.
+     * Respects {@link #maxAllocationSize} limit when allocating byte arrays, and allocates
+     * every chunk (through {@link #allocateTrimChunk(int)}) before it touches the FIFO: an
+     * {@link OutOfMemoryError} propagates out of the write with the buffer unchanged.
      */
-    // Non-atomic update on the volatile availableBytes field at the
-    // "availableBytes += chunk.length" line is safe because the entire method
-    // body runs under bufferLock (see @GuardedBy and the synchronized block
-    // in the caller). volatile guarantees visibility to readers outside the
-    // lock; bufferLock guarantees atomicity of the read-modify-write.
+    // Non-atomic update on the volatile positionAtCurrentBufferEntry field is
+    // safe because the entire method body runs under bufferLock (see @GuardedBy
+    // and the synchronized block in the caller). volatile guarantees visibility
+    // to readers outside the lock; bufferLock guarantees atomicity of the
+    // read-modify-write.
     @SuppressWarnings("NonAtomicVolatileUpdate")
     @GuardedBy("bufferLock")
-    private void trim() throws IOException {
+    private void trim() {
         if (shouldTrim()) {
             isTrimRunning = true;
             try {
                 releaseTrimStartSignals();
 
                 /*
-                 * Need to store more bufs, may it is not possible to read out all
-                 * data at once. The available method only returns an int value
-                 * instead a long value. Store all read parts of the full buffer in
-                 * a deque.
+                 * Consolidate the buffered bytes into chunks of at most maxAllocationSize,
+                 * copied directly from the FIFO. Every chunk is allocated before the FIFO is
+                 * touched: an allocation that fails (OutOfMemoryError) then leaves the write
+                 * with the FIFO exactly as it was, instead of with the entries of the chunks
+                 * copied so far already polled, which lost their bytes while availableBytes
+                 * still counted them. availableBytes is deliberately left untouched:
+                 * waitForAtLeast(long) and available() read it without bufferLock, and
+                 * draining it to zero and filling it up again (as reading through the
+                 * input stream did) let a waiter observe the intermediate count, e.g.
+                 * a read() reporting the end of an open stream that still held data.
                  */
-                final Deque<byte[]> tmpBuffer = new ArrayDeque<>();
-
-                int available;
-                // empty the current buffer, read out all bytes
-                while ((available = is.available()) > 0) {
-                    // Limit each allocation to maxAllocationSize
-                    final int toAllocate = (int) Math.min(available, maxAllocationSize);
-                    final byte[] buf = new byte[toAllocate];
-                    // read out of the buffer
-                    // and store the result to the tmpBuffer
-                    int read = is.read(buf);
-                    // should never happen
-                    assert read == toAllocate : "Read not enough bytes from buffer.";
-                    tmpBuffer.add(buf);
+                final Deque<byte[]> chunks = new ArrayDeque<>();
+                long remaining = availableBytes;
+                while (remaining > 0) {
+                    final int size = (int) Math.min(remaining, maxAllocationSize);
+                    chunks.add(allocateTrimChunk(size));
+                    remaining -= size;
                 }
-                /*
-                 * Write all previously read parts back to the buffer directly.
-                 * We are already holding bufferLock and the chunks were
-                 * just produced internally, so going through SBOutputStream#write
-                 * is unnecessary and would fail at requireNonClosed() if close()
-                 * is invoked concurrently — discarding tmpBuffer and losing
-                 * every byte that trim already drained.
-                 */
-                while (!tmpBuffer.isEmpty()) {
-                    // Deque.pollFirst() may return null per the JDK contract; the
-                    // !isEmpty guard above makes it non-null here in practice, but
-                    // neither NullAway's flow analyzer nor the Checker Framework
-                    // Nullness Checker bridge that loop-guard reasoning, so we make
-                    // the non-null contract explicit.
-                    final byte[] chunk = tmpBuffer.pollFirst();
-                    if (chunk == null) {
-                        throw new java.util.NoSuchElementException(
-                                "tmpBuffer.pollFirst() returned null despite a successful isEmpty() check"
-                                        + " (remaining=" + tmpBuffer.size()
-                                        + ", indicates a concurrent modification of tmpBuffer).");
+                for (final byte[] chunk : chunks) {
+                    int filled = 0;
+                    while (filled < chunk.length) {
+                        final byte[] first = buffer.getFirst();
+                        final int toCopy = Math.min(first.length - positionAtCurrentBufferEntry, chunk.length - filled);
+                        System.arraycopy(first, positionAtCurrentBufferEntry, chunk, filled, toCopy);
+                        filled += toCopy;
+                        positionAtCurrentBufferEntry += toCopy;
+                        if (positionAtCurrentBufferEntry == first.length) {
+                            buffer.pollFirst();
+                            positionAtCurrentBufferEntry = 0;
+                        }
                     }
-                    buffer.add(chunk);
-                    availableBytes += chunk.length;
                 }
+                buffer.addAll(chunks);
             } finally {
                 isTrimRunning = false;
                 releaseTrimEndSignals();
             }
         }
+    }
+
+    /**
+     * Allocates one chunk of {@link #trim()}'s consolidation. It is the one place
+     * {@code trim()} allocates, so a test in this package can override it and let an
+     * allocation fail with an {@link OutOfMemoryError} at exactly that point, without a
+     * heap small enough to fail it for real.
+     *
+     * @param size the chunk's length, at most {@link #maxAllocationSize}
+     * @return a new array of that length
+     */
+    byte[] allocateTrimChunk(final int size) {
+        return new byte[size];
     }
 
     /**
@@ -631,8 +636,10 @@ public class StreamBuffer implements Closeable {
     @GuardedBy("bufferLock")
     boolean shouldTrim() {
         /*
-         * Prevent recursive trim: if trim is already running, its internal
-         * writes must never trigger another trim (infinite recursion / stack overflow).
+         * Prevent recursive trim: a write that reaches this point while trim is
+         * running (only possible on the trim thread itself, from a trim signal's
+         * release(), since bufferLock is reentrant) must not start another trim
+         * over the deque the running one is rearranging.
          */
         if (isTrimRunning) {
             return false;
@@ -654,28 +661,10 @@ public class StreamBuffer implements Closeable {
      * from {@code value > MAX_VALUE} vs {@code value >= MAX_VALUE} (both return
      * the same result when {@code value == MAX_VALUE}).
      *
-     * SAFETY GUARANTEE FOR LARGE BUFFERS:
-     *
-     * This method handles the type mismatch between:
-     * - {@link #availableBytes}: volatile long (0 to 2^63-1, supports future-proof large buffers)
-     * - InputStream.available(): int contract (0 to 2^31-1, ~2.1 billion)
-     *
-     * If availableBytes ever exceeds Integer.MAX_VALUE (e.g., 5GB+ of buffered data):
-     * 1. This method returns Integer.MAX_VALUE (~2.1GB)
-     * 2. The trim() loop reads at most maxAllocationSize (&#x2264; MAX_ARRAY_LENGTH) bytes per iteration
-     * 3. Loop condition (available > 0) allows continuation
-     * 4. Next iteration calls available() again, reads remaining bytes
-     * 5. Process repeats until all availableBytes are consolidated
-     *
-     * Result: NO DATA LOSS, NO OVERFLOW - all data is processed correctly.
-     *
-     * EXAMPLE FLOW (5GB data):
-     *   Iteration 1: available() &#x2192; clamped to 2,147,483,647 bytes &#x2192; read and consolidate
-     *   Iteration 2: available() &#x2192; clamped to remaining bytes &#x2192; read and consolidate
-     *   ... continues until availableBytes == 0
-     *
-     * This design allows StreamBuffer to theoretically support buffers larger than 2GB
-     * while maintaining compatibility with the InputStream API contract that uses int.
+     * <p>Used by {@code available()}: {@link #availableBytes} is a {@code long} and can exceed
+     * {@link Integer#MAX_VALUE} when more than 2&nbsp;GiB are buffered, while
+     * {@link java.io.InputStream#available()} returns an {@code int}. Such a value is reported as
+     * {@link Integer#MAX_VALUE}; the buffered data itself is unaffected.
      *
      * Package-private for direct unit testing.
      */
@@ -765,13 +754,12 @@ public class StreamBuffer implements Closeable {
     }
 
     /**
-     * Record bytes read to statistics if trim is not running.
+     * Record bytes read to statistics. Trim itself never reads through the stream, so
+     * every read reaching this method is user I/O, including one made by a trim signal.
      * Package-private for direct unit testing.
      */
     void recordReadStatistics(long bytesRead) {
-        if (!isTrimRunning) {
-            totalBytesRead.addAndGet(bytesRead);
-        }
+        totalBytesRead.addAndGet(bytesRead);
     }
 
     /**
@@ -793,9 +781,11 @@ public class StreamBuffer implements Closeable {
     }
 
     /**
-     * This method mustn't be called in a synchronized context, the variable is
-     * volatile.
+     * Fails if the stream is closed. Called under {@link #bufferLock}, the lock
+     * {@link #closeAll()} sets {@link #streamClosed} under, so a write that passes this check
+     * is buffered before a concurrent close completes.
      */
+    @GuardedBy("bufferLock")
     private void requireNonClosed() throws IOException {
         if (streamClosed) {
             throw new IOException("Stream closed (availableBytes=" + availableBytes + ").");
@@ -910,6 +900,11 @@ public class StreamBuffer implements Closeable {
      * Implementation of {@link SBInputStream#read(byte[], int, int)}. See
      * {@link #availableClamped()} for why this lives in the outer class.
      *
+     * <p>Waits for the first byte, then for all remaining {@code len - 1} bytes
+     * ({@code waitForAtLeast}) unless the stream is closed first. Designed that
+     * way since the first version; {@link #getInputStream()} documents it for
+     * callers.
+     *
      * @param b the destination array
      * @param off the offset in the destination array
      * @param len the maximum number of bytes to read
@@ -1021,13 +1016,8 @@ public class StreamBuffer implements Closeable {
      * @throws IOException if the stream is closed
      */
     private void writeSingleByte(final int b) throws IOException {
-        try {
-            ignoreSafeWrite = true;
-            final byte[] single = new byte[] {(byte) b};
-            writeFromArray(single, 0, single.length);
-        } finally {
-            ignoreSafeWrite = false;
-        }
+        final byte[] single = new byte[] {(byte) b};
+        writeFromArray(single, 0, single.length, false);
     }
 
     /**
@@ -1040,17 +1030,35 @@ public class StreamBuffer implements Closeable {
      * @throws IOException if the stream is closed
      */
     private void writeFromArray(final byte[] b, final int off, final int len) throws IOException {
+        writeFromArray(b, off, len, true);
+    }
+
+    /**
+     * Shared write path of {@link #writeFromArray(byte[], int, int)} and {@link #writeSingleByte(int)}.
+     * Whether the {@link #safeWrite} clone may be skipped is a parameter rather than a field: a field
+     * shared between threads let a concurrent {@code write(int)} switch the clone off for another
+     * thread's {@code write(byte[])}, which then stored the caller's array by reference.
+     *
+     * @param b the source array
+     * @param off the offset in the source array
+     * @param len the number of bytes to write
+     * @param cloneOnSafeWrite {@code false} if {@code b} was created internally and never escapes
+     * @throws IOException if the stream is closed
+     */
+    private void writeFromArray(final byte[] b, final int off, final int len, final boolean cloneOnSafeWrite)
+            throws IOException {
         if (!validateOffsetAndLengthToWrite(b, off, len)) {
             return;
         }
-        requireNonClosed();
         // To be thread safe cache the safeWrite value.
         boolean tmpSafeWrite = isSafeWrite();
 
         synchronized (bufferLock) {
+            // Checked under the lock closeAll() sets the flag under; see closeAll().
+            requireNonClosed();
             if (off == 0 && b.length == len) {
                 // add the full byte[] to the buffer
-                if (tmpSafeWrite && !ignoreSafeWrite) {
+                if (tmpSafeWrite && cloneOnSafeWrite) {
                     buffer.add(b.clone());
                 } else {
                     buffer.add(b);
@@ -1064,10 +1072,8 @@ public class StreamBuffer implements Closeable {
             availableBytes += len;
             // the count must be positive after any write operation
             assert availableBytes > 0 : "More memory used as a long can count";
-            if (!isTrimRunning) {
-                totalBytesWritten.addAndGet(len);
-                updateMaxObservedBytesIfNeeded(availableBytes);
-            }
+            totalBytesWritten.addAndGet(len);
+            updateMaxObservedBytesIfNeeded(availableBytes);
             trim();
         }
         // always at least, signal bytes are written to the buffer
@@ -1127,6 +1133,17 @@ public class StreamBuffer implements Closeable {
         }
     }
 
+    /**
+     * Closes the buffer; both streams then report it as closed.
+     *
+     * <p>Waits for a write or trim in progress on another thread to finish (they hold the same
+     * lock), so a write racing the close is either fully buffered or fails with "Stream closed".
+     * A trim copies every buffered byte, so with a large buffer the wait can be noticeable.
+     *
+     * <p>A trim start or end signal ({@link #addTrimStartSignal(Semaphore)},
+     * {@link #addTrimEndSignal(Semaphore)}) is released under that lock, so its {@code release()}
+     * must not block on this buffer: a {@code close()} from another thread would wait behind it.
+     */
     @Override
     public void close() throws IOException {
         closeAll();
@@ -1134,9 +1151,16 @@ public class StreamBuffer implements Closeable {
 
     /**
      * Invoke a close.
+     *
+     * <p>The flag is set under {@link #bufferLock}, the lock a write checks it under, so a write
+     * racing the close is either fully buffered before the close or fails with "Stream closed";
+     * it never appends after the close has returned, when a reader may already have reported the
+     * end of the stream.
      */
     private void closeAll() {
-        streamClosed = true;
+        synchronized (bufferLock) {
+            streamClosed = true;
+        }
         signalModification();
     }
 
@@ -1171,6 +1195,16 @@ public class StreamBuffer implements Closeable {
      * <p>
      * Closing the returned {@link java.io.InputStream InputStream} will close
      * the complete buffer.
+     *
+     * <p>
+     * {@link java.io.InputStream#read(byte[], int, int) read(b, off, len)}
+     * blocks until <b>all</b> {@code len} bytes are available or the buffer is
+     * closed; only then does it return fewer. This is stricter than the
+     * {@code InputStream} contract, which only waits for one byte, and differs
+     * from {@link java.io.PipedInputStream}. A reader that must not wait for a
+     * full block, such as an {@code InputStreamReader} over a request/response
+     * protocol, waits with {@link #waitForAnyData()} and then reads at most
+     * {@link java.io.InputStream#available() available()} bytes.
      *
      * @return an input stream for reading bytes from this buffer.
      */
