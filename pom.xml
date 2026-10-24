@@ -226,6 +226,19 @@ SPDX-License-Identifier: Apache-2.0
         </dependency>
     </dependencies>
     <build>
+        <resources>
+            <resource>
+                <directory>${project.basedir}/src/main/resources</directory>
+            </resource>
+            <resource>
+                <directory>${project.basedir}</directory>
+                <targetPath>META-INF/third-party/net.ladenthin/${project.artifactId}</targetPath>
+                <includes>
+                    <include>LICENSE</include>
+                    <include>THIRD_PARTY.md</include>
+                </includes>
+            </resource>
+        </resources>
         <pluginManagement>
             <plugins>
                 <plugin>
