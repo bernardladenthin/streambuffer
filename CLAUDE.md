@@ -263,16 +263,15 @@ enforcer default gotcha are in
 
 The thin jar, its sources and javadoc jars and the pom are attached to the GitHub `snapshot`
 pre-release and to every versioned release with the `.asc` maven-gpg wrote at deploy; no fat jar
-exists here. The attach jobs are shared text with the two sibling Maven-only repositories
-(`publish.yml#github-snapshot` / `#github-release` in `shared-files.sha256`): the collect steps copy
-`<artifactId>-<version>.pom` + `.pom.asc` with the jars (maven-gpg writes both into `target/`), the
-signature check counts every attachable type (`*.jar`, `*.aar`, `*.pom`), and `github-snapshot` ends
-by deleting every asset of the `snapshot` pre-release that the run did not upload, each printed by
-name -- `gh release upload --clobber` never removed anything, so the release accumulated every past
-version. The prune refuses an empty upload, treats an asset that is already gone as removed and
-fails only after trying every deletion; versioned releases are never pruned. See the policy's
-"Attach first, then go red" and "The `snapshot` pre-release holds exactly the current upload", which
-also records the delete-and-recreate form of this job (May 2026) and why it is gone.
+exists here. Release collection, signature reporting and rolling-snapshot updates use the byte-identical
+`collect-release-assets.py`, `report-asset-signatures.py`, `update-snapshot.py` and their buildcheck
+library/tests, all listed in `.github/shared-files.sha256`. Repository-specific extras live in
+`.github/release-assets.json`; Maven modules are discovered from POMs. Missing artifacts/signatures
+fail collection while preserving available files for upload. The whole `github-snapshot` job is
+shared across all four Java repos and serializes upload, source-tag/notes updates and pruning;
+only complete signed uploads advance/prune the snapshot. Versioned releases are never pruned.
+The `github-release` job remains shared across the three Maven-only repos. Interface, staging
+options and synchronization rules: [`../workspace/policies/release-asset-scripts.md`](../workspace/policies/release-asset-scripts.md).
 
 ## Shared files and the release gate (`shared-files` job)
 
