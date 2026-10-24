@@ -232,17 +232,17 @@ jobs:
         run: bash .github/print-host-info.sh
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
         with:
-          # 21 builds the repo's Java-8 production classes (matching the shipped bytecode);
+          # 25 builds the repo's Java-8 production classes (matching the shipped bytecode);
           # 11 builds and runs jpf-core.
           java-version: |
             11
-            21
+            25
           distribution: temurin
           cache: maven
-      - name: Build Java-8 production classes + collect annotation jars (JDK 21)
+      - name: Build Java-8 production classes + collect annotation jars (JDK 25)
         run: |
           set -euo pipefail
-          export JAVA_HOME="$JAVA_HOME_21_X64"
+          export JAVA_HOME="$JAVA_HOME_25_X64"
           mvn -B --no-transfer-progress -DskipTests -Denforcer.skip=true compile
           # Copy the compile-scope dependencies (incl. the optional checker-qual/jspecify/
           # error-prone annotation jars the production bytecode references) into one directory,
