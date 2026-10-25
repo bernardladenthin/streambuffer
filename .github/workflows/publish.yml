@@ -446,7 +446,7 @@ jobs:
       - name: Show effective POM (debug)
         run: mvn --batch-mode --no-transfer-progress -P release -DskipUpload=true help:effective-pom
       - name: Stage snapshot
-        run: mvn --batch-mode --no-transfer-progress -Dmaven.repository.credentialScope=id -P release -DskipUpload=true deploy -DskipTests
+        run: mvn --batch-mode --no-transfer-progress -P release -DskipUpload=true deploy -DskipTests
         env:
           MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
       - name: Finalize and secure the signed publication
@@ -513,7 +513,7 @@ jobs:
       - name: Show effective POM (debug)
         run: mvn --batch-mode --no-transfer-progress -P release -DskipUpload=true help:effective-pom
       - name: Stage release
-        run: mvn --batch-mode --no-transfer-progress -Dmaven.repository.credentialScope=id -P release -DskipUpload=true deploy -DskipTests
+        run: mvn --batch-mode --no-transfer-progress -P release -DskipUpload=true deploy -DskipTests
         env:
           MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
       - name: Finalize and secure the signed publication
