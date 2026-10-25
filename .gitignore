@@ -56,5 +56,5 @@ src/test/jpf/jpf-output*.log
 # Netbeans files
 nbactions.xml
 
-# Python bytecode of the .github/buildcheck checks
+# Python bytecode
 __pycache__/
