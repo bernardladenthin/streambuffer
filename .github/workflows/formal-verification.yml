@@ -89,8 +89,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Display CPU Info
-        shell: bash
-        run: bash .github/print-host-info.sh
+        uses: bernardladenthin/actions/common/print-host-info@7646ab0603d75ee130463eceaa8988f7352e2d6a # v1.0.0
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
         with:
           java-version-file: .java-version
@@ -145,8 +144,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Display CPU Info
-        shell: bash
-        run: bash .github/print-host-info.sh
+        uses: bernardladenthin/actions/common/print-host-info@7646ab0603d75ee130463eceaa8988f7352e2d6a # v1.0.0
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
         with:
           java-version-file: .java-version
@@ -228,8 +226,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Display CPU Info
-        shell: bash
-        run: bash .github/print-host-info.sh
+        uses: bernardladenthin/actions/common/print-host-info@7646ab0603d75ee130463eceaa8988f7352e2d6a # v1.0.0
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
         with:
           # 25 builds the repo's Java-8 production classes (matching the shipped bytecode);

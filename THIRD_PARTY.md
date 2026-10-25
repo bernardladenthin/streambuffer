@@ -16,7 +16,7 @@ A FOSSA scan of the old master revision does not cover this current build.
 
 ## Review evidence
 
-See [the dependency license review](docs/dependency-license-review.md) in the source repository
+See [the dependency license review](https://github.com/bernardladenthin/actions/blob/main/docs/dependency-license-review.md) of bernardladenthin/actions
 for exact-version evidence and remaining decisions. This inventory is not an approval of all
 licenses found by a scanner. Test-tool redistribution requires a separate review.
 
@@ -25,7 +25,7 @@ For unchanged Maven components, source is available from
 as `<artifactId>-<version>-sources.jar`; POMs and upstream source repositories provide provenance.
 Preserve copyright, license and NOTICE files when redistributing dependencies.
 
-streambuffer ships no fat JAR, so `.github/collect-third-party-licenses.py`, which collects
-dependency legal files into the runnable fat JARs of BitcoinAddressFinder and srcmorph, is kept
-here byte-identical with them but not run.
+streambuffer ships no fat JAR, so the license collector of bernardladenthin/actions
+(`actionlib.java.thirdpartylicenses`), which puts dependency legal files into the runnable fat JARs
+of BitcoinAddressFinder and srcmorph, does not run here.
 This source-location statement does not clear unknown proprietary or historical Git findings.
