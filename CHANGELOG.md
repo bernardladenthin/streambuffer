@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Releases and snapshots are published through one local gate.** The publish jobs stage and sign
+  everything, `publication.py prepare` checks the exact file set, every signature and the version
+  against the tag (`v<version>`, no `-SNAPSHOT`; `check-tag` / `check-snapshot` check it first), and
+  freezes the result; the GitHub release, the Maven Central transfer and the provenance attestation
+  are independent jobs on that frozen package, so a Central outage no longer hides the GitHub files and
+  nothing is attached before the gate has passed. Builds run on JDK 25 (`.java-version`); the
+  published bytecode target is unchanged. Every published jar carries `LICENSE` and `THIRD_PARTY.md`
+  under `META-INF/third-party/`.
+
 ### Added
 - OpenSSF Best Practices badge added to README (project 12861).
 - `CONTRIBUTING.md` with build instructions, test policy, and PR workflow.
