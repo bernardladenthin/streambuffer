@@ -18,6 +18,6 @@ permissions:
 
 jobs:
   build:
-    uses: bernardladenthin/actions/.github/workflows/java-sonarqube.yml@23543c8554ca9de6792a1b8d8aae0bcd001d8508 # v1.0.3
+    uses: bernardladenthin/actions/.github/workflows/java-sonarqube.yml@44390bd464395f560f4170d2c4bfb7a6348541b3 # v1.1.0
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
