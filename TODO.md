@@ -23,39 +23,11 @@ annotated, so everything below is genuinely still open.
     satisfies one stub violates another — plus `toString()`'s `synchronized` block trips
     `synchronized.block.in.lockingfree.method`. Revisit if CF ships consistent stubs, or gate it
     with a curated `-AskipDefs`/stub override.
-  - ~~JPF interleaving harness~~ **DONE (2026-09).** Java PathFinder now exhaustively model-checks
-    the concurrent read/write/close protocol over all enumerated interleavings — the erschöpfende
-    counterpart to the jcstress stress tests. Lives in `src/test/jpf/` (harness, `.jpf` config, and
-    a completed jpf-core `AtomicLong` model patch); wired as the scheduled/dispatch
-    `jpf-interleavings` job in `formal-verification.yml`; locally reproducible via the Docker+JDK 11
-    recipe in `src/test/jpf/README.md`. Confirmed: `no errors detected`, ~14k states, with a
-    negative-control proving the byte-fidelity oracle is non-vacuous. jpf-core is pinned to commit
-    `e61e396`. Open sub-item: the AtomicLong model completion is a genuine jpf-core deficiency worth
-    reporting upstream (its native peer already implements the methods the stub model never
-    declared). Possible extension: a second harness for the array-read / `waitForAtLeast` blocking
-    paths (jcstress already covers those; JPF would make them exhaustive too).
-  - **OpenJML bundled-spec defects — all fixed in 21.0.29, no workaround left (fixups v3)**
-    (21.0.28 shipped all of them, built from Specs `1a91cb6`). All three share one cause: a model field declared
-    only behind `-RAC` in `java/lang/Iterable.jml` (`values`, `containsNull`) or a private
-    `java.base` field (`value`) used in a clause RAC compiles.
-    - `atomic/Atomic{Long,Integer,Boolean}.jml` (`value` → `IllegalAccessError` at runtime):
-      **fixed upstream, released in 21.0.29** (its contracts are `//-RAC@` there). [OpenJML/Specs#29](https://github.com/OpenJML/Specs/pull/29)
-      (`4ebda9c`) + maintainer extension `c365293` on Specs `dev-21`; testspecs
-      [OpenJML/OpenJML#982](https://github.com/OpenJML/OpenJML/pull/982) merged into `dev-21`
-      (2026-10-05). Verified: streambuffer RAC 285/285 with the fixed spec, 258/285 without.
-      **Done 2026-10-20:** the `AtomicLong.jml` `rm` is gone from `.github/actions/setup-openjml`
-      (fixups v2); RAC 285/285 against the bundled 21.0.29 file.
-    - `java/util/ArrayDeque.jml:30` (`containsNull` → RAC compile error) and
-      `java/util/Collections.jml:116-117` (`singletonList`, `values` → RAC compile error):
-      **fixed upstream, released in 21.0.29** (`//-RAC@`, Specs `43ab561`). Both are the original errors of the closed
-      [OpenJML/OpenJML#806](https://github.com/OpenJML/OpenJML/issues/806) ("repaired" there in
-      2024 — true for ESC/check, never for RAC; neither file changed in that window).
-      **Reported** with a sweep over all bundled specs (9 files fail `--rac`) and a proposed fix in
-      [OpenJML/OpenJML#1012](https://github.com/OpenJML/OpenJML/issues/1012) (2026-10-07).
-      **Done 2026-10-21:** the `ArrayDeque.jml` `rm` is gone (fixups v3); RAC compile and 285/285
-      against the unmodified 21.0.29 distribution.
-    - Missing `JAVA_VERSION` key in the bundled `jdk/release`: missing in 21.0.28 (reported in #1012),
-      **present again in 21.0.29**; the guarded repair step is a no-op there and stays as a guard.
+  - **JPF interleaving harness — follow-ups.** The harness (`src/test/jpf/`, the scheduled
+    `jpf-interleavings` job in `formal-verification.yml`) runs. Still open: report the AtomicLong
+    model completion upstream as a jpf-core deficiency (its native peer already implements the
+    methods the stub model never declared), and possibly a second harness for the array-read /
+    `waitForAtLeast` blocking paths (jcstress covers those today; JPF would make them exhaustive).
   - **RAC evaluates a `signals (E e)` clause for an exception of another type — confirmed OpenJML
     bug, reported in [OpenJML/OpenJML#1050](https://github.com/OpenJML/OpenJML/issues/1050)** (2026-10-19; reproduced on 21.0.28 and on `dev-21` `529ac454da`,
     `BUGHUNT-MEASUREMENTS.md`, „OpenJML-Verdachtsfälle (RAC)“, in commit `0620aa7`, removed since). The spec
