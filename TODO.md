@@ -11,14 +11,6 @@ annotated, so everything below is genuinely still open.
 
 ## Open
 
-- **The first snapshot on bernardladenthin/actions v1.1.0.** No snapshot has been published since
-  the pin bumps: the push run on `main`
-  ([40311613851](https://github.com/bernardladenthin/streambuffer/actions/runs/40311613851),
-  `3133ac5d`) skipped every snapshot job. Dispatch Publish on `main` with `publish_to_central`
-  (the owner approves `maven-central`) and read `central-snapshot` and `github-snapshot`: does the
-  `snapshot` tag move to the commit (actions v1.0.3+ re-creates it on a 403), and does
-  `superseded()` pass without a 502 (java-llama.cpp's TODO has the background).
-
 - **Formal verification — follow-ups.** The two-layer setup (OpenJML ESC proof of the static
   sequential core + OpenJML RAC under the full test suite) landed 2026-09 — see CLAUDE.md
   "Formal Verification" and `.github/workflows/formal-verification.yml`. Still open, in priority
