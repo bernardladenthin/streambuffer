@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Build plugins:** jacoco-maven-plugin 0.8.16, palantir-java-format 2.103.0 (no formatting change)
+  and `anthropics/claude-code-action` v1.0.264, the same pins as the three sibling repositories.
 - **The GPG signing-key preflight runs only when something is published.** The two jobs
   `verify-signing-key` and `verify-signing-key-gradle` ran on every trigger: red on every pull request,
   because the `maven-central` environment admits only `main` and `v*` tags, and on a push to `main`
