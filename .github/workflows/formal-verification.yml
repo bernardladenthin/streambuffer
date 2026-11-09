@@ -89,8 +89,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Display CPU Info
-        uses: bernardladenthin/actions/common/print-host-info@44390bd464395f560f4170d2c4bfb7a6348541b3 # v1.1.0
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        uses: bernardladenthin/actions/common/print-host-info@a9386a26fe6706204cb4d975e6958d29bc783624 # v1.1.1
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           java-version-file: .java-version
           distribution: temurin
@@ -144,8 +144,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Display CPU Info
-        uses: bernardladenthin/actions/common/print-host-info@44390bd464395f560f4170d2c4bfb7a6348541b3 # v1.1.0
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        uses: bernardladenthin/actions/common/print-host-info@a9386a26fe6706204cb4d975e6958d29bc783624 # v1.1.1
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           java-version-file: .java-version
           distribution: temurin
@@ -226,8 +226,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Display CPU Info
-        uses: bernardladenthin/actions/common/print-host-info@44390bd464395f560f4170d2c4bfb7a6348541b3 # v1.1.0
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        uses: bernardladenthin/actions/common/print-host-info@a9386a26fe6706204cb4d975e6958d29bc783624 # v1.1.1
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           # 25 builds the repo's Java-8 production classes (matching the shipped bytecode);
           # 11 builds and runs jpf-core.
