@@ -78,6 +78,9 @@ env:
   # concatenation is beyond the SMT encoding) and is exercised by RAC and the unit tests.
   ESC_METHODS: "validateOffsetAndLengthToRead;validateOffsetAndLengthToWrite;decideTrimExecution;clampToMaxInt;decrementAvailableBytesBudget;calculateResultingChunks;shouldSkipTrimDueToEdgeCase;shouldSkipTrimDueToInvalidMaxBufferElements;shouldSkipTrimDueToSmallBuffer;shouldSkipTrimDueToSufficientBuffer;isAvailableBytesPositive;isMaxAllocSizeLessThanAvailable;shouldCheckEdgeCase;shouldUpdateMaxObservedBytes"
   ESC_EXPECTED_PROOFS: "14"
+  # The minutes an artifact upload or download may take (see bernardladenthin/actions,
+  # common/check-artifact-timeouts): the repository variable, else 20.
+  ARTIFACT_TIMEOUT_MINUTES: ${{ vars.ARTIFACT_TIMEOUT_MINUTES || '20' }}
 
 jobs:
   openjml-esc:
@@ -89,7 +92,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Display CPU Info
-        uses: bernardladenthin/actions/common/print-host-info@a9386a26fe6706204cb4d975e6958d29bc783624 # v1.1.1
+        uses: bernardladenthin/actions/common/print-host-info@68dde11a60623d76c22a3f1975355a236a6ccd39 # v1.2.0
       - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           java-version-file: .java-version
@@ -144,7 +147,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Display CPU Info
-        uses: bernardladenthin/actions/common/print-host-info@a9386a26fe6706204cb4d975e6958d29bc783624 # v1.1.1
+        uses: bernardladenthin/actions/common/print-host-info@68dde11a60623d76c22a3f1975355a236a6ccd39 # v1.2.0
       - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           java-version-file: .java-version
@@ -226,7 +229,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Display CPU Info
-        uses: bernardladenthin/actions/common/print-host-info@a9386a26fe6706204cb4d975e6958d29bc783624 # v1.1.1
+        uses: bernardladenthin/actions/common/print-host-info@68dde11a60623d76c22a3f1975355a236a6ccd39 # v1.2.0
       - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           # 25 builds the repo's Java-8 production classes (matching the shipped bytecode);
@@ -306,6 +309,7 @@ jobs:
             echo "$(basename "$log"): no errors detected over all enumerated schedules ($states states) — no deadlock, no uncaught exception, byte fidelity held." >> "$GITHUB_STEP_SUMMARY"
           done
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        timeout-minutes: ${{ fromJSON(env.ARTIFACT_TIMEOUT_MINUTES) }}
         if: always()
         with:
           name: jpf-output

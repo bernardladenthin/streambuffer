@@ -306,11 +306,19 @@ in **`.github/actions-config.json`**:
   names it with a reason;
 - **run scripts**: `bash -n` over every bash `run:` script of the workflows and local actions, so a
   broken script (a lost line continuation, say) fails here instead of in the job running it;
+- **artifact timeouts**: every `upload-artifact` / `download-artifact` step times out after the
+  repository variable `ARTIFACT_TIMEOUT_MINUTES`, else 20 minutes (the workflow's top-level `env`
+  reads it; [`../workspace/policies/ci-artifact-timeouts.md`](../workspace/policies/ci-artifact-timeouts.md)),
+  instead of GitHub's 360;
 - **Maven versions** (warnings only): a dependency or plugin (incl. the Spotless formatter version)
   used here in another version than in a sibling of the `java-maven` family (each sibling's POMs come
   from its own configuration), and Kotlin Gradle plugins behind the POMs' Kotlin;
 - **publication**: the publication jobs are wired as the actions expect, and a dry run of
   `.github/release-assets.json` against the real POMs collects exactly what it promises.
+
+**Dependabot pull requests do not run `publish.yml`**: its `startgate` job, which every other
+job needs, is skipped for a pull request Dependabot opens or rebases (`github.actor`). The merge
+to `main` runs the pipeline; a push of a person to the branch, or a dispatch on it, runs it too.
 
 The JDK every workflow uses is `.java-version` (setup-java's `java-version-file`), a template of
 the `java` set. Why a repository instead of copies:
