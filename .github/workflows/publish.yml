@@ -48,6 +48,11 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  # The minutes an artifact upload or download may take (see bernardladenthin/actions,
+  # common/check-artifact-timeouts): the repository variable, else 20.
+  ARTIFACT_TIMEOUT_MINUTES: ${{ vars.ARTIFACT_TIMEOUT_MINUTES || '20' }}
+
 jobs:
   # ---------------------------------------------------------------------------
   # Start gate — single cancellable abort window before the pipeline starts.
@@ -157,6 +162,7 @@ jobs:
       - name: Build
         run: mvn --batch-mode --no-transfer-progress -DskipTests package
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        timeout-minutes: ${{ fromJSON(env.ARTIFACT_TIMEOUT_MINUTES) }}
         with: { name: jars, path: target/*.jar }
 
   # ---------------------------------------------------------------------------
@@ -181,6 +187,7 @@ jobs:
           java-version-file: .java-version
           distribution: temurin
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        timeout-minutes: ${{ fromJSON(env.ARTIFACT_TIMEOUT_MINUTES) }}
         with: { name: jars, path: jars/ }
       # Cross-repo shared gate (workspace/crossrepostatus.md checksum table). maven.compiler.release
       # governs only the code we compile; a dependency built for a newer Java lands in the jar
@@ -216,6 +223,7 @@ jobs:
       - name: Test
         run: mvn -e --batch-mode --no-transfer-progress -P jcstress verify
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        timeout-minutes: ${{ fromJSON(env.ARTIFACT_TIMEOUT_MINUTES) }}
         with:
           name: jacoco-report
           path: target/site/jacoco/jacoco.xml
@@ -232,6 +240,7 @@ jobs:
       - name: Upload crash & surefire dumps
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        timeout-minutes: ${{ fromJSON(env.ARTIFACT_TIMEOUT_MINUTES) }}
         with:
           name: crash-dumps
           path: |
@@ -256,6 +265,7 @@ jobs:
       - name: Test under vmlens
         run: mvn --batch-mode --no-transfer-progress -Pvmlens test
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        timeout-minutes: ${{ fromJSON(env.ARTIFACT_TIMEOUT_MINUTES) }}
         if: always()
         with:
           name: vmlens-report
@@ -275,6 +285,7 @@ jobs:
       - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with: { java-version-file: .java-version, distribution: temurin, cache: maven }
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        timeout-minutes: ${{ fromJSON(env.ARTIFACT_TIMEOUT_MINUTES) }}
         with: { name: jacoco-report, path: target/site/jacoco/ }
         continue-on-error: true
       # The dependency graph is submitted by dependency-submission.yml (on pushes to main, with the
@@ -306,6 +317,7 @@ jobs:
             fi
           done
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        timeout-minutes: ${{ fromJSON(env.ARTIFACT_TIMEOUT_MINUTES) }}
         if: always()
         with: { name: pit-reports, path: target/pit-reports/ }
       - name: Run JMH benchmarks
@@ -316,6 +328,7 @@ jobs:
           -Dexec.args="StreamBufferThroughputBenchmark -wi 2 -i 3 -f 0 -rf json -rff target/jmh-results.json"
         continue-on-error: true
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        timeout-minutes: ${{ fromJSON(env.ARTIFACT_TIMEOUT_MINUTES) }}
         if: always()
         with: { name: jmh-results, path: target/jmh-results.json }
 

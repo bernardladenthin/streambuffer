@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **CI: every artifact upload and download step times out**, after the minutes of the repository
+  variable `ARTIFACT_TIMEOUT_MINUTES`, else 20 (9 steps in `publish.yml` and
+  `formal-verification.yml`). In a Publish run of java-llama.cpp an `upload-artifact` step hung
+  for hours after a build of a minute and a half, with GitHub's 360-minute default the only limit;
+  the longest transfer measured over two complete runs of that pipeline took 18 s. The workflow's
+  top-level `env` reads the variable with the default, each step says `timeout-minutes: ${{
+  fromJSON(env.ARTIFACT_TIMEOUT_MINUTES) }}`, the layout `common/check-artifact-timeouts` of
+  bernardladenthin/actions checks.
 - **Build plugins and Actions, in step with the sibling repositories:** Error Prone 2.52.0, Checker
   Framework 4.4.0, spotless-maven-plugin 3.11.0, pitest-maven 1.30.2, `actions/setup-java` 6.2.0,
   `github/codeql-action/upload-sarif` 4.39.3 and `anthropics/claude-code-action` v1.0.269.

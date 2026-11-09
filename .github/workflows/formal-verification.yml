@@ -78,6 +78,9 @@ env:
   # concatenation is beyond the SMT encoding) and is exercised by RAC and the unit tests.
   ESC_METHODS: "validateOffsetAndLengthToRead;validateOffsetAndLengthToWrite;decideTrimExecution;clampToMaxInt;decrementAvailableBytesBudget;calculateResultingChunks;shouldSkipTrimDueToEdgeCase;shouldSkipTrimDueToInvalidMaxBufferElements;shouldSkipTrimDueToSmallBuffer;shouldSkipTrimDueToSufficientBuffer;isAvailableBytesPositive;isMaxAllocSizeLessThanAvailable;shouldCheckEdgeCase;shouldUpdateMaxObservedBytes"
   ESC_EXPECTED_PROOFS: "14"
+  # The minutes an artifact upload or download may take (see bernardladenthin/actions,
+  # common/check-artifact-timeouts): the repository variable, else 20.
+  ARTIFACT_TIMEOUT_MINUTES: ${{ vars.ARTIFACT_TIMEOUT_MINUTES || '20' }}
 
 jobs:
   openjml-esc:
@@ -306,6 +309,7 @@ jobs:
             echo "$(basename "$log"): no errors detected over all enumerated schedules ($states states) — no deadlock, no uncaught exception, byte fidelity held." >> "$GITHUB_STEP_SUMMARY"
           done
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        timeout-minutes: ${{ fromJSON(env.ARTIFACT_TIMEOUT_MINUTES) }}
         if: always()
         with:
           name: jpf-output
