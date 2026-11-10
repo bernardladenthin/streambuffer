@@ -379,7 +379,7 @@ explicitly — it is not provided transitively.
 
 ## Build
 
-Requires Java 8 and Maven 3.6.3+.
+Requires Java 8 and Maven 3.9.0+.
 
 ```bash
 mvn compile          # Compile
