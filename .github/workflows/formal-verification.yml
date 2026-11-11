@@ -263,8 +263,14 @@ jobs:
         id: jpf-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
-          path: jpf-core/build
-          key: jpf-core-${{ env.JPF_SHA }}-atomiclong-${{ hashFiles('src/test/jpf/jpf-model/java/util/concurrent/atomic/AtomicLong.java') }}
+          # The whole checkout, not only build/: RunJPF.jar locates jpf-core through the
+          # jpf.properties at its root, and on a cache hit the clone below is skipped. With only
+          # build/ cached every run after the first failed with "cannot find gov.nasa.jpf.JPF"
+          # (weekly runs since 2026-10 at least); the "-dir" in the key retires that cache.
+          path: |
+            jpf-core
+            !jpf-core/.git
+          key: jpf-core-dir-${{ env.JPF_SHA }}-atomiclong-${{ hashFiles('src/test/jpf/jpf-model/java/util/concurrent/atomic/AtomicLong.java') }}
       - name: Build jpf-core with the AtomicLong model patch (JDK 11)
         if: steps.jpf-cache.outputs.cache-hit != 'true'
         run: |

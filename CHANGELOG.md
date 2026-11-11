@@ -193,6 +193,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the job ran into its timeout with every contract holding.
 
 ### Fixed
+- **CI: the JPF job failed on every run after the first** with "cannot find gov.nasa.jpf.JPF": its
+  cache held only `jpf-core/build`, and on a cache hit the clone with `jpf.properties` was skipped. It
+  now caches the whole jpf-core checkout (without `.git`) under a new key.
 - **Several readers on one stream (bug-hunt finding F278).** The buffer was correct for one reader
   only. A write or `close()` woke at most one waiting reader (the internal semaphore held at most one
   permit), so with two readers parked in `read()`, two writes left one of them blocked while a byte
