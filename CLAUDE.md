@@ -53,7 +53,8 @@ mvn test-compile exec:java \
 reports on 21-23, see the `virtual-threads-jdk21` job) and the Lincheck tests (`StreamBufferLincheckTest`,
 `StreamBufferTrimLincheckTest` with `maxBufferElements` 2; reads in one `nonParallelGroup`).
 The contended JMH benchmark `StreamBufferContendedBenchmark` (platform vs virtual threads, 1/4 writers
-and readers) is a report, the baseline for roadmap A8.
+and readers, trim threshold `maxBufferElements` 100/0/1000) is a report, the baseline for roadmap A8;
+the 2026-11-11 measurement (TODO.md, A8) shows the default trim, not the lock, dominates its time.
 
 `mvn test` also runs:
 - **jqwik properties** (`StreamBufferProperties`) — a JUnit Platform engine; Surefire runs the class
