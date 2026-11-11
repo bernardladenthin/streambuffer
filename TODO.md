@@ -14,7 +14,7 @@ annotated, so everything below is genuinely still open.
 - **Verification roadmap 2026-11 — packages A3–A13.** Each package is closed on its own, ends in a
   machine-checked result and is listed with its acceptance criterion. The contract every package
   checks: several readers and writers are supported, without fairness (decided with bug-hunt finding
-  F278). Order: A3 + A4, A5, A6 + A7; A10–A12 at any time; A8 only with the A7 numbers; A13 and A9
+  F278). Order: A3 + A4, A5, A6 + A7; A12 at any time; A8 only with the A7 numbers; A13 and A9
   are long-term. A3, A5, A6 and A7 also build infrastructure that a later memory-model project can
   reuse (jcstress on several architectures, formal tools pinned in CI, checking real executions
   against a formal model) — so pinned tool setups belong in a composite action of
@@ -73,15 +73,6 @@ annotated, so everything below is genuinely still open.
     fields; A3–A7 are the safety net; the A7 JMH comparison is mandatory.
   - **A9 — Functional proof of the sequential instance core (long-term, months).** The parked
     "Deeper ESC" item below; OpenJML first, KeY only for goals where Z3 answers "unknown".
-  - **A10 — Class invariants under RAC via qualified delegation (hours).** The downstream
-    workaround named in the RAC invariants item below: qualify the delegating calls of
-    `SBInputStream`/`SBOutputStream` as `StreamBuffer.this.writeSingleByte(b)` etc., then enable
-    the four candidate invariants from the `.jml` header under OpenJML 21.0.29. Done when:
-    `-Pjml-rac` with invariants passes 285/285, or the negative result is reported on
-    OpenJML/OpenJML#1012.
-  - **A11 — API compatibility gate (hours).** japicmp or revapi against the last release on Maven
-    Central, failing on a binary-incompatible change without a matching version step. Missing
-    today.
   - **A12 — Waiting with a timeout (1–2 days).** `waitForAtLeast(long bytes, long timeout,
     TimeUnit unit)` via `Condition.awaitNanos` on the F278 condition (Java 8): cancellation by
     deadline instead of only by interrupt. New API: JML spec, tests, README.
@@ -134,18 +125,11 @@ annotated, so everything below is genuinely still open.
     21 GB of log; worked around by scaling the stress loops under `-Pjml-rac`
     (`StreamBufferTest.iterations`) and running jqwik with 100 tries there. Once fixed upstream, the
     scaling can go.
-  - **Invariants + non-static inner classes break RAC — confirmed OpenJML bug, reported in
-    [OpenJML/OpenJML#1012](https://github.com/OpenJML/OpenJML/issues/1012).** RAC checks the outer class's invariant inside the inner class's constructor and
-    reads the field on the inner class → `NoSuchFieldError` at runtime (21.0.27 and 21.0.28).
-    **21.0.29: the minimal reproducer below runs clean, the defect on this class does not go away** --
-    with the four candidate invariants RAC throws `NoSuchMethodError` on
-    `StreamBuffer$SBOutputStream.JML$INV$$<n>()` (the outer invariant check called on the inner
-    class), 106 errors (measured 2026-10-20).
-    **Narrowed down 2026-10-21 (21.0.29):** the trigger is an inner-class method calling an outer
-    instance method *without a qualifier* -- exactly the delegation `SBOutputStream.write(int)` →
-    `writeSingleByte(b)` (and `writeFromArray`, `closeAll`, `readSingleByte`, `availableClamped`).
-    RAC checks the callee's receiver invariant on `this` (the inner object) instead of
-    `StreamBuffer.this`:
+  - **Report the unqualified-call trigger on [OpenJML/OpenJML#1012](https://github.com/OpenJML/OpenJML/issues/1012)
+    (owner action: a comment on an external repository).** RAC (21.0.29) checks the receiver
+    invariant of an outer instance method called *without a qualifier* from an inner class on the
+    inner object; this class works around it with qualified calls (`StreamBuffer.this.x()`, CLAUDE.md
+    "Formal Verification"), and the four class invariants run. Minimal reproducer:
     ```java
     public class InvA {
         private long x = 1;
@@ -155,24 +139,8 @@ annotated, so everything below is genuinely still open.
         public static void main(String... a) { new InvA().new Inner().go(); }
     }
     ```
-    → `NoSuchMethodError: 'boolean InvA$Inner.JML$INV$$107()'`. Same with a `private` outer method.
-    Clean: `InvA.this.inc()`, `other.inc()` on another reference, outer → inner calls,
-    `synchronized (InvA.this) { x++; }` inside the inner class. To report on
-    [OpenJML/OpenJML#1012](https://github.com/OpenJML/OpenJML/issues/1012). Possible downstream
-    workaround to try: qualify the delegating calls as `StreamBuffer.this.writeSingleByte(b)`
-    (package A10 of the roadmap above).
-    The 21.0.27/21.0.28 reproducer (fixed in 21.0.29):
-    ```java
-    public class Outer {
-        private long x = 1;
-        //@ private invariant 0 <= x;
-        class Inner { Inner() {} }
-        public static void main(String... a) { new Outer().new Inner(); }
-    }
-    ```
-    `openjml --rac` compiles; running it throws `NoSuchFieldError: Class Outer$Inner does not
-    have member field 'long x'`. With the four candidate invariants StreamBuffer fails 258/285
-    tests. An earlier 21.0.27 compile crash ("no enclosing instance") was not reproduced.
+    → `NoSuchMethodError: 'boolean InvA$Inner.JML$INV$$107()'`. Same with a `private` outer method;
+    clean with `InvA.this.inc()`.
   - **Deeper ESC — instance-method / trim() functional correctness (parked, revisit; package A9
     of the roadmap above).** Today
     ESC proves the 14 static helpers; the instance methods and trim() are RAC-only. A full
@@ -184,10 +152,8 @@ annotated, so everything below is genuinely still open.
     ~7 person-months for 328 LoC). Not gold-plating in principle — just expensive today; worth a
     re-scoping spike to see whether a *partial* invariant (e.g. non-negativity + position bounds
     proven on a static extraction of the read/write inner loops) is reachable more cheaply.
-  - **On every OpenJML upgrade:** re-try the four class invariants documented in the `.jml`
-    header (no bundled spec is deleted at install any more since fixups v3, so there is nothing
-    to re-try in `.github/actions/setup-openjml/action.yml`), and, once #1050 is fixed, drop the
-    RAC scaling (`streambuffer.test.rac` and `jqwik.tries.default` in the `jml-rac` profile,
+  - **On every OpenJML upgrade:** once #1050 is fixed, drop the RAC scaling
+    (`streambuffer.test.rac` and `jqwik.tries.default` in the `jml-rac` profile,
     `StreamBufferTest.iterations`).
   - **Evaluated and rejected 2026-09** (do not re-open without new facts) — deductive/model-checking
     alternatives beyond OpenJML: **KeY 3.0.0** — could

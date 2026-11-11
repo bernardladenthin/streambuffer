@@ -26,9 +26,14 @@
 //  * RAC (runtime assertion checking, openjml --rac): ALL contracts in this file, checked
 //    dynamically while the existing JUnit suite runs against RAC-instrumented classes
 //    (mvn -P jml-rac ...). Contracts on concurrently-visible state are deliberately
-//    written to reference only \result and method parameters, so a concurrent mutation
-//    between the method body and the RAC postcondition check cannot produce a spurious
-//    failure. (Class invariants are deliberately absent — see the note below.)
+//    written to reference only \result, method parameters and MONOTONE state, so a
+//    concurrent mutation between the method body and the RAC postcondition check cannot
+//    produce a spurious failure. Monotone state: once isClosed() is true it stays true, and
+//    from then on no write is accepted, so getAvailableBytesExact() can only fall. A
+//    postcondition "short result ==> isClosed()" or "end of stream ==> nothing buffered" is
+//    therefore true at every later instant once it was true at the decision. The class
+//    invariants (see the note below) are bounds that hold at every instant, also in the middle
+//    of an update under the lock.
 //
 //  * Concurrency is OUT OF SCOPE for the deductive layer, by JML doctrine: "the current
 //    version of JML focuses on the sequential behavior of Java code" (JML Reference Manual,
@@ -85,24 +90,25 @@ import java.util.concurrent.Semaphore;
 public class StreamBuffer implements Closeable {
 
     // ---------------------------------------------------------------------------------------
-    // NO class invariants — deliberate, and load-bearing for the RAC layer:
-    // `openjml --rac` (21.0.27, 21.0.28) checks the outer class's invariant inside the
-    // constructor of a non-static inner class and reads the field on the inner class →
-    // NoSuchFieldError ("SBInputStream does not have member field 'long availableBytes'");
-    // 258/285 tests fail. Minimal reproducer: private field + invariant + inner class (see
-    // TODO.md). An earlier 21.0.27 compile crash ("no enclosing instance") was not reproduced.
-    // 21.0.29: the minimal reproducer passes, but these four invariants on this class still break
-    // RAC with NoSuchMethodError on SBOutputStream.JML$INV$$<n>() (106 errors): the inner streams
-    // call outer instance methods without a qualifier (writeSingleByte(b)), and RAC checks the
-    // callee's invariant on the inner object instead of StreamBuffer.this (see TODO.md).
-    // The candidate invariants
-    // (0 <= availableBytes, 0 <= positionAtCurrentBufferEntry, 1 <= maxAllocationSize,
-    // 0 <= maxObservedBytes) would have been RAC-only value anyway — the ESC layer proves
-    // static methods, which never see instance state. Their content is still enforced
-    // dynamically: the postconditions on the getters below check the same bounds at every
-    // observation point, and the write path asserts availableBytes > 0 after every write.
-    // Re-test invariants here after the next OpenJML upgrade.
+    // Class invariants (RAC-checked at the entry and exit of every method; the ESC layer proves
+    // only static methods, which never see instance state). Each is a bound that holds at every
+    // instant, also while another thread updates the field under the lock, so a concurrent
+    // update between a method's end and the check cannot fail it.
+    //
+    // History: up to OpenJML 21.0.28, RAC checked the outer class's invariant inside the
+    // constructor of a non-static inner class and read the field on the inner class
+    // (NoSuchFieldError; 258/285 tests failed). 21.0.29 fixed that, but the inner streams called
+    // outer instance methods without a qualifier (writeSingleByte(b)), and RAC then checked the
+    // callee's invariant on the inner object (NoSuchMethodError on SBOutputStream.JML$INV$$<n>(),
+    // 106 errors; OpenJML/OpenJML#1012). The delegating calls are qualified since 2026-11
+    // (StreamBuffer.this.writeSingleByte(b)), which RAC compiles correctly; do not drop the
+    // qualifier while these invariants are here.
     // ---------------------------------------------------------------------------------------
+
+    //@ private invariant 0 <= availableBytes;
+    //@ private invariant 0 <= positionAtCurrentBufferEntry;
+    //@ private invariant 1 <= maxAllocationSize;
+    //@ private invariant 0 <= maxObservedBytes;
 
     // ---------------------------------------------------------------------------------------
     // Static validators (ESC-proven, public API)
@@ -291,9 +297,12 @@ public class StreamBuffer implements Closeable {
     // must be an allowed outcome under ANY argument, while IllegalArgumentException is allowed only
     // for bytes <= 0. A normal_behavior with 'ensures' cannot also whitelist a non-argument-driven
     // checked exception, so the two outcomes are expressed with signals/signals_only here.
+    // Fewer bytes than asked for only once the buffer is closed, and then nothing more can come:
+    // the buffered count can only fall after the close (monotone state, see the file header).
     /*@ public behavior
       @   requires true;
       @   ensures 1 <= bytes && 0 <= \result;
+      @   ensures \result < bytes ==> isClosed() && getAvailableBytesExact() <= \result;
       @   signals_only IllegalArgumentException, InterruptedException;
       @   signals (IllegalArgumentException e) bytes <= 0;
       @*/
@@ -302,9 +311,34 @@ public class StreamBuffer implements Closeable {
     /*@ public behavior
       @   requires true;
       @   ensures 0 <= \result;
+      @   ensures \result == 0 ==> isClosed() && getAvailableBytesExact() == 0;
       @   signals_only InterruptedException;
       @*/
     public long waitForAnyData() throws InterruptedException;
+
+    /*@ public normal_behavior
+      @   ensures true;
+      @*/
+    //@ pure
+    public boolean isClosed();
+
+    // Monotone counters: other threads only add to them, so the lower bounds below hold.
+    /*@ public normal_behavior
+      @   ensures 0 <= \result;
+      @*/
+    //@ pure
+    public long getTotalBytesWritten();
+
+    /*@ public normal_behavior
+      @   ensures 0 <= \result;
+      @*/
+    //@ pure
+    public long getTotalBytesRead();
+
+    /*@ also public normal_behavior
+      @   ensures isClosed();
+      @*/
+    public void close() throws IOException;
 
     /*@ public normal_behavior
       @   requires semaphore != null;
@@ -336,6 +370,7 @@ public class StreamBuffer implements Closeable {
     /*@ public normal_behavior
       @   ensures 0 <= \result;
       @*/
+    //@ pure
     public long getAvailableBytesExact();
 
     /*@ public normal_behavior
@@ -352,6 +387,45 @@ public class StreamBuffer implements Closeable {
       @   ensures 0 <= \result;
       @*/
     public int getBufferElementCount();
+
+    // ---------------------------------------------------------------------------------------
+    // Private read/write paths behind the stream adapters (RAC-checked). The adapters delegate
+    // every call here, so these contracts hold for every stream call; they are written on the
+    // outer methods rather than on the inner classes because RAC's handling of outer members
+    // from inner classes is fragile (see the invariant note above). All of them rest on monotone
+    // state only (see the file header).
+    // ---------------------------------------------------------------------------------------
+
+    // End of stream only on a closed and empty buffer, which then stays empty.
+    /*@ private behavior
+      @   ensures -1 <= \result && \result <= 255;
+      @   ensures \result == -1 ==> isClosed() && getAvailableBytesExact() == 0;
+      @   ensures \result != -1 ==> getTotalBytesRead() >= \old(getTotalBytesRead()) + 1;
+      @   signals_only InterruptedIOException;
+      @*/
+    private int readSingleByte() throws IOException;
+
+    // All len bytes, or fewer only on a closed buffer that the read emptied; 0 only for len 0.
+    /*@ private behavior
+      @   ensures -1 <= \result && \result <= len;
+      @   ensures \result == 0 <==> len == 0;
+      @   ensures 0 < len && \result < len ==> isClosed() && getAvailableBytesExact() == 0;
+      @   ensures 0 < \result ==> getTotalBytesRead() >= \old(getTotalBytesRead()) + \result;
+      @   signals_only NullPointerException, IndexOutOfBoundsException, InterruptedIOException;
+      @*/
+    private int readIntoArray(final byte b[], final int off, final int len) throws IOException;
+
+    // A write fails with an IOException only on a closed buffer, and a write that returns has
+    // counted its bytes. The exception clause names Exception, not IOException: a clause for a
+    // narrower type is evaluated with an unguarded cast for every exception (OpenJML/OpenJML#1050),
+    // and an observer's RuntimeException is a legitimate outcome here.
+    /*@ private behavior
+      @   ensures getTotalBytesWritten() >= \old(getTotalBytesWritten()) + len;
+      @   signals_only RuntimeException, IOException;
+      @   signals (Exception e) e instanceof IOException ==> isClosed();
+      @*/
+    private void writeFromArray(final byte[] b, final int off, final int len, final boolean cloneOnSafeWrite)
+            throws IOException;
 
     // ---------------------------------------------------------------------------------------
     // Inner stream classes (RAC-checked result-range contracts on the java.io API)

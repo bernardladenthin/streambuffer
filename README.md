@@ -138,7 +138,7 @@ The `InputStream` and `OutputStream` can be used concurrently from different thr
 
 - Each `write` is atomic: its bytes enter the buffer together and in order.
 - Each `read(b, off, len)` is atomic too: it takes its `len` bytes in one step once all of them are buffered, so they are contiguous in the stream (see [Fixed-Size Records with Several Readers](#fixed-size-records-with-several-readers-work-queue)).
-- Each buffered byte is delivered to exactly one reader, in the order it was written. No reader blocks while bytes are buffered, and after `close()` every waiting reader returns. `read()` throws no unchecked exception when another reader took the bytes first (bug-hunt finding F278; before 1.3.0 the buffer was correct for one reader only).
+- Each buffered byte is delivered to exactly one reader, in the order it was written. No reader blocks while bytes are buffered, and after `close()` every waiting reader returns. `read()` throws no unchecked exception when another reader took the bytes first (bug-hunt finding F278; before 2.0.0 the buffer was correct for one reader only).
 - There is no fairness between readers: which reader gets the next bytes is up to the scheduler.
 - All `Deque` accesses are guarded by a `bufferLock` object.
 - State fields (`streamClosed`, `safeWrite`, `availableBytes`, `positionAtCurrentBufferEntry`, `maxBufferElements`, `maxAllocationSize`, `isTrimRunning`, `maxObservedBytes`) are `volatile`; the cumulative counters `totalBytesWritten` and `totalBytesRead` are `final AtomicLong` (atomic read-modify-write under concurrent I/O).
@@ -358,7 +358,7 @@ External observers register `java.util.concurrent.Semaphore` objects via `addSig
 
 ### Read
 
-If no data is available and the stream is not closed, `read()` blocks the calling thread. `read(byte[], off, len)` goes further: it waits until **all** `len` bytes are buffered, then takes them in one step, and returns fewer only when the stream is closed. It takes no byte while it waits. That is stricter than the `InputStream` contract (block until at least one byte) and unlike `PipedInputStream`; waiting for the full length has been the design since the first version, taking the bytes in one step since 1.3.0 (before, the first byte was taken before the wait for the rest).
+If no data is available and the stream is not closed, `read()` blocks the calling thread. `read(byte[], off, len)` goes further: it waits until **all** `len` bytes are buffered, then takes them in one step, and returns fewer only when the stream is closed. It takes no byte while it waits. That is stricter than the `InputStream` contract (block until at least one byte) and unlike `PipedInputStream`; waiting for the full length has been the design since the first version, taking the bytes in one step since 2.0.0 (before, the first byte was taken before the wait for the rest).
 
 To avoid blocking, only read as many bytes as `available()` reports. The `waitForAnyData()` and `waitForAtLeast(long)` methods can be used to wait for data before reading:
 
@@ -423,6 +423,11 @@ Run a single test:
 ```bash
 mvn test -Dtest=StreamBufferTest#testSimpleRoundTrip
 ```
+
+`mvn verify` also runs an API compatibility gate (japicmp): it compares the jar with the last release
+on Maven Central (`japicmp.baseline.version` in `pom.xml`) and fails when the version step does not
+match the change under semantic versioning: a binary-incompatible change needs a new major version, a
+new feature a new minor one. The report lands in `target/japicmp/`.
 
 Run mutation tests (the `test-compile` prefix is required so PIT inherits JaCoCo's agent):
 
@@ -495,7 +500,13 @@ verified in a separate CI pipeline
 - **Runtime assertion checking — OpenJML RAC.** The entire JUnit suite additionally runs
   against RAC-instrumented classes (`mvn -P jml-rac`); every JML contract — the proven static
   ones plus runtime contracts on the instance API and the two stream adapters — is then
-  checked at runtime and a violation throws instead of scrolling by.
+  checked at runtime and a violation throws instead of scrolling by. That includes four class
+  invariants (`0 <= availableBytes`, `0 <= positionAtCurrentBufferEntry`,
+  `1 <= maxAllocationSize`, `0 <= maxObservedBytes`) and the read/write guarantees: a read
+  returns fewer bytes than asked for, or the end of the stream, only on a closed buffer that is
+  then empty; a write fails only on a closed buffer; every read and write is counted in the
+  statistics. Under concurrency these contracts stay sound because they only use monotone state
+  (closed stays closed, a closed buffer only drains, the counters only grow).
 
 Concurrency itself is outside the deductive scope by JML doctrine (JML specifies sequential
 behavior; OpenJML does not model `volatile` or monitors) and is covered empirically by the

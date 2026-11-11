@@ -1166,29 +1166,33 @@ public class StreamBuffer implements Closeable {
      * The {@link InputStream} adapter. A pure delegating shell: every method forwards to a
      * {@code private} method of the enclosing {@link StreamBuffer} and the class body
      * contains no direct access to outer fields — see {@link #availableClamped()} for the
-     * formal-verification constraint behind this shape.
+     * formal-verification constraint behind this shape. The calls are qualified
+     * ({@code StreamBuffer.this.}) on purpose: OpenJML RAC checks the class invariants of the
+     * callee's receiver, and for an unqualified call from an inner class it took the inner
+     * object as that receiver ({@code NoSuchMethodError} on {@code SBOutputStream.JML$INV$$<n>()},
+     * OpenJML/OpenJML#1012).
      */
     private class SBInputStream extends InputStream {
         @Override
         public int available() throws IOException {
-            return availableClamped();
+            return StreamBuffer.this.availableClamped();
         }
 
         @Override
         public void close() throws IOException {
-            closeAll();
+            StreamBuffer.this.closeAll();
         }
 
         @Override
         public int read() throws IOException {
-            return readSingleByte();
+            return StreamBuffer.this.readSingleByte();
         }
 
         // please do not override the method "int read(byte b[])"
         // the method calls internal "read(b, 0, b.length)"
         @Override
         public int read(final byte b[], final int off, final int len) throws IOException {
-            return readIntoArray(b, off, len);
+            return StreamBuffer.this.readIntoArray(b, off, len);
         }
     }
 
@@ -1199,19 +1203,19 @@ public class StreamBuffer implements Closeable {
     private class SBOutputStream extends OutputStream {
         @Override
         public void close() throws IOException {
-            closeAll();
+            StreamBuffer.this.closeAll();
         }
 
         @Override
         public void write(final int b) throws IOException {
-            writeSingleByte(b);
+            StreamBuffer.this.writeSingleByte(b);
         }
 
         // please do not override the method "void write(final byte[] b)"
         // the method calls internal "write(b, 0, b.length);"
         @Override
         public void write(final byte[] b, final int off, final int len) throws IOException {
-            writeFromArray(b, off, len);
+            StreamBuffer.this.writeFromArray(b, off, len);
         }
     }
 
@@ -1298,7 +1302,7 @@ public class StreamBuffer implements Closeable {
      * {@link java.io.InterruptedIOException} with the {@link InterruptedException} as its
      * cause and the thread's interrupt flag set again. It has taken no byte
      * ({@link java.io.InterruptedIOException#bytesTransferred bytesTransferred} 0): a read takes
-     * its bytes only once its wait is over. Before 1.3.0 it threw a plain {@link IOException}
+     * its bytes only once its wait is over. Before 2.0.0 it threw a plain {@link IOException}
      * wrapping the {@link InterruptedException}, and {@code read(b, off, len)} had already taken
      * the first byte by then.
      *
