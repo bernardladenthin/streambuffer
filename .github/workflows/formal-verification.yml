@@ -221,8 +221,8 @@ jobs:
     name: JPF exhaustive interleavings (blocking read/write/close)
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    # TwoReaders.jpf alone explores about 3.5 million states (18 minutes locally, 2026-11-11), the
-    # other two harnesses about 2 minutes together.
+    # TwoReaders.jpf explores about 3.5 million states (18 minutes locally, 2026-11-11),
+    # RecordReaders.jpf about 2.4 million (12 minutes), the other two about 2 minutes together.
     timeout-minutes: 90
     env:
       # Pinned jpf-core commit (no upstream releases exist). Bump deliberately; re-validate the
@@ -284,10 +284,11 @@ jobs:
           (cd jpf-core && ./gradlew --no-daemon buildJars -x test)
       - name: Model-check the harnesses (JDK 11)
         # RunJPF exits 0 even when it reports "error #N", so the result is gated on the logs below,
-        # never on the exit code. Three harnesses: StreamBuffer.jpf (writer that also closes, reader),
+        # never on the exit code. Four harnesses: StreamBuffer.jpf (writer that also closes, reader),
         # WriteClose.jpf (writer, closer and reader in three threads -- the order of write and close,
-        # bug hunt F149, which the first one cannot see) and TwoReaders.jpf (writer that also closes,
-        # two readers on one stream -- bug hunt F278).
+        # bug hunt F149, which the first one cannot see), TwoReaders.jpf (writer that also closes,
+        # two readers on one stream -- bug hunt F278) and RecordReaders.jpf (two readers of 2-byte
+        # records, written fragmented across the record boundary -- each read takes a whole record).
         run: |
           set -euo pipefail
           export JAVA_HOME="$JAVA_HOME_11_X64"
@@ -297,19 +298,22 @@ jobs:
           "$JAVA_HOME/bin/javac" --release 8 -cp streambuffer-classes -d out \
             net/ladenthin/streambuffer/jpf/JpfStreamBufferHarness.java \
             net/ladenthin/streambuffer/jpf/JpfWriteCloseHarness.java \
-            net/ladenthin/streambuffer/jpf/JpfTwoReadersHarness.java
+            net/ladenthin/streambuffer/jpf/JpfTwoReadersHarness.java \
+            net/ladenthin/streambuffer/jpf/JpfRecordReadersHarness.java
           "$JAVA_HOME/bin/java" -jar "$GITHUB_WORKSPACE/jpf-core/build/RunJPF.jar" StreamBuffer.jpf \
             | tee jpf-output.log
           "$JAVA_HOME/bin/java" -jar "$GITHUB_WORKSPACE/jpf-core/build/RunJPF.jar" WriteClose.jpf \
             | tee jpf-output-write-close.log
           "$JAVA_HOME/bin/java" -jar "$GITHUB_WORKSPACE/jpf-core/build/RunJPF.jar" TwoReaders.jpf \
             | tee jpf-output-two-readers.log
+          "$JAVA_HOME/bin/java" -jar "$GITHUB_WORKSPACE/jpf-core/build/RunJPF.jar" RecordReaders.jpf \
+            | tee jpf-output-record-readers.log
       - name: Gate on the JPF results
         run: |
           set -euo pipefail
           echo "### JPF exhaustive interleavings" >> "$GITHUB_STEP_SUMMARY"
           for log in src/test/jpf/jpf-output.log src/test/jpf/jpf-output-write-close.log \
-                     src/test/jpf/jpf-output-two-readers.log; do
+                     src/test/jpf/jpf-output-two-readers.log src/test/jpf/jpf-output-record-readers.log; do
             if grep -qE '^error #' "$log"; then
               echo "::error::JPF reported an interleaving defect (see $log)."
               exit 1

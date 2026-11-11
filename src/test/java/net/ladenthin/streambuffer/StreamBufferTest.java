@@ -2905,8 +2905,7 @@ public class StreamBufferTest {
             final Throwable[] caught = new Throwable[1];
             final AtomicBoolean interruptFlagAfterCatch = new AtomicBoolean(false);
 
-            // write exactly 1 byte so the internal read() at the start of read(b,off,len)
-            // succeeds immediately, then waitForAtLeast blocks waiting for the second byte
+            // write exactly 1 byte, so read(b, off, 2) waits for the second one
             os.write(42);
 
             Thread reader = new Thread(() -> {
@@ -2926,8 +2925,9 @@ public class StreamBufferTest {
             reader.interrupt();
             reader.join();
 
-            // assert: the first byte was already copied to the array
-            assertInterruptedIOException(caught[0], 1);
+            // assert: a read takes its bytes only together, so the one byte is still buffered
+            assertInterruptedIOException(caught[0], 0);
+            assertThat("the byte stays buffered", sb.getAvailableBytesExact(), is(1L));
             assertThat(
                     "Thread interrupt flag must be preserved after wrapping InterruptedException",
                     interruptFlagAfterCatch.get(),

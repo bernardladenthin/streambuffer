@@ -72,11 +72,13 @@ deliberately not part of the synchronous Publish pipeline and never a required c
 2. **OpenJML RAC**: the existing JUnit suite runs against RAC-instrumented classes
    (violations throw), checking the static contracts plus the instance/stream-adapter contracts.
 3. **JPF interleavings** (`src/test/jpf/`, scheduled/dispatch CI job `jpf-interleavings`): Java
-   PathFinder exhaustively model-checks the concurrent read/write/close protocol with three harnesses:
+   PathFinder exhaustively model-checks the concurrent read/write/close protocol with four harnesses:
    `StreamBuffer.jpf` (a writer that closes after its writes, a reader), `WriteClose.jpf` (writer,
    closer and reader in three threads -- the order of write and close, which the first cannot see;
-   red before bug-hunt fix F149) and `TwoReaders.jpf` (a writer that closes, two readers on one
-   stream; red before bug-hunt fix F278). Requires JDK 11; builds jpf-core from a pinned commit with a
+   red before bug-hunt fix F149), `TwoReaders.jpf` (a writer that closes, two readers on one
+   stream; red before bug-hunt fix F278) and `RecordReaders.jpf` (two readers of 2-byte records written
+   fragmented across the record boundary; red before `read(b, off, len)` took its bytes in one step).
+   Requires JDK 11; builds jpf-core from a pinned commit with a
    one-file `AtomicLong` model patch; the harnesses are compiled at `--release 8` and run under JPF. Local recipe (Docker+JDK 11) in
    `src/test/jpf/README.md`. Never touches the shipped jar.
 
@@ -189,7 +191,10 @@ mvn -P jml-rac -Dopenjml.home=<openjml> -Dopenjml.jdk.java=<openjml>/jdk/bin/jav
   it reads the count, a waiter increments it before it reads `availableBytes`); `waitForAtLeast` returns
   without the lock when enough bytes are buffered or the stream is closed.
 - Several writers and several readers are supported: each write is atomic, each byte reaches exactly one
-  reader in FIFO order, no fairness. `StreamBufferConcurrentReadersTest` holds that.
+  reader in FIFO order, no fairness. `read(b, off, len)` is atomic too: it waits until `len` bytes are
+  buffered (or closed) and takes them in one `bufferLock` hold, so readers of a fixed record size get
+  whole records (work queue / competing consumers, README). `StreamBufferConcurrentReadersTest` holds
+  all of that, including 1429-byte records with CRC32.
 
 ### Key Behaviors
 
