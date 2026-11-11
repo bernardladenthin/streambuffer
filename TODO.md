@@ -11,11 +11,11 @@ annotated, so everything below is genuinely still open.
 
 ## Open
 
-- **Verification roadmap 2026-11 — packages A6–A13.** Each package is closed on its own, ends in a
+- **Verification roadmap 2026-11 — packages A6–A14.** Each package is closed on its own, ends in a
   machine-checked result and is listed with its acceptance criterion. The contract every package
   checks: several readers and writers are supported, without fairness (decided with bug-hunt finding
-  F278). Order: A13 (Apalache) and A6 on the A5 spec; A8 with the benchmark numbers; A9 is
-  long-term. A6 also builds infrastructure that a later memory-model project can reuse (jcstress on
+  F278). Order: A13 (Apalache) and A6 on the A5 spec; A14 (trim policy) before A8, which the
+  measurement showed is not where the time goes; A9 is long-term. A6 also builds infrastructure that a later memory-model project can reuse (jcstress on
   several architectures, formal tools pinned in CI, checking real executions against a formal model)
   — so pinned tool setups belong in a composite action of bernardladenthin/actions rather than in
   this workflow.
@@ -59,14 +59,30 @@ annotated, so everything below is genuinely still open.
     in `trim()`, 44-48 % in its `System.arraycopy`; with trim off, 0 %. A writer faster than its
     readers keeps the FIFO above 100 entries, and each trim copies everything buffered again, so the
     cost grows with the backlog. A lock change (A8) cannot win much here; the lever is the trim
-    policy (e.g. merge only the entries behind the head, or raise the threshold with the backlog).
-    That is a design decision with a memory trade-off, not an A8 sub-step. On arm64 (cfarm424, Neoverse-N1,
-    JDK 21, shared load ~33 of 64 cores, 2026-11-11): platform 1/1 68.0 ± 44.0, 4/1 92.1 ± 36.6, 1/4
-    91.1 ± 28.5, 4/4 69.0 ± 26.0; virtual 1/1 84.5 ± 45.8, 4/1 86.3 ± 31.0, 1/4 72.6 ± 88.8, 4/4
-    75.4 ± 49.7 -- too noisy to compare; the `arm64-jcstress-benchmark` job gives a quieter machine.
+    policy, a design decision with a memory trade-off and not an A8 sub-step (see the next item).
+
+    On arm64 (cfarm424, Neoverse-N1, JDK 21, shared load ~33 of 64 cores, 2026-11-11): platform 1/1
+    68.0 ± 44.0, 4/1 92.1 ± 36.6, 1/4 91.1 ± 28.5, 4/4 69.0 ± 26.0; virtual 1/1 84.5 ± 45.8, 4/1
+    86.3 ± 31.0, 1/4 72.6 ± 88.8, 4/4 75.4 ± 49.7 -- too noisy to compare; the
+    `arm64-jcstress-benchmark` job gives a quieter machine.
     Also for A8: on JDK 21 a virtual thread blocked entering the contended `bufferLock` monitor
     holds its carrier, which `jdk.VirtualThreadPinned` does not show (it covers parking while
     pinned); one `ReentrantLock` removes the monitor.
+  - **A14 — Trim policy: stop recopying the backlog (design decision, ~2-3 days).** Today a trim
+    merges every buffered byte into one array, and 100 writes later it copies that array again with
+    the new entries, so a backlog costs quadratic copying (measurement under A8). A prototype
+    (local branch `exp/trim-geometric`, 2026-11-11, not pushed) merges only the newest entries:
+    walking from the tail, an older entry joins while it is not longer than what is collected so
+    far, so each byte is copied O(log n) times and the entry lengths grow towards the head; if that
+    would leave more than half of `maxBufferElements` entries, it merges everything as before. Same
+    Vultr machine, trim threshold 100, ms per 11 MiB transfer, current → prototype: platform 1/1
+    43.6 → 3.6, 4/1 45.7 → 4.4, 1/4 34.0 → 4.9, 4/4 46.6 → 5.3; virtual 1/1 42.2 → 3.1, 4/1 42.2 →
+    3.3, 1/4 37.8 → 3.5, 4/4 30.4 → 3.4 (7-14x); threshold 1000: 3.5-7.1 → 1.6-3.9. Trim off stays
+    2-4x faster still (0.8-2.0 ms), the price of the entry bound. The full suite passed with the
+    prototype (338 tests). Behaviour change to decide: after a trim the FIFO holds O(log n) entries
+    instead of one array (README, CLAUDE.md "Buffer trimming"). To ship it: the docs, tests that keep
+    PIT at 100 % (the fallback branch at least), the JPF `TrimReentrancy` and vmlens trim scenarios
+    re-run, a CHANGELOG entry. The TLA+ model does not model trim and stays valid.
   - **A9 — Functional proof of the sequential instance core (long-term, months).** The parked
     "Deeper ESC" item below; OpenJML first, KeY only for goals where Z3 answers "unknown".
   - **A13 — Unbounded safety of the A5 model (weeks).** TLC checks fixed constants only (up to 3
