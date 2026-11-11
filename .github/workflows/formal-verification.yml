@@ -31,6 +31,13 @@
 #   virtual-threads-jdk21  (scheduled/dispatch only) StreamBufferVirtualThreadsTest on JDK 21:
 #                 reports jdk.VirtualThreadPinned events inside StreamBuffer (a report, not a gate).
 #
+#   jcstress-default  (scheduled/dispatch only) jcstress in its default mode on x86; every pull
+#                 request runs the quick mode (jcstress.mode in pom.xml) to keep the Test job short.
+#
+#   arm64-jcstress-benchmark  (dispatch only) jcstress and StreamBufferContendedBenchmark on the
+#                 GitHub arm64 runner: ARM's weaker memory model makes jcstress more telling than on
+#                 x86; the benchmark is a report (roadmap A7/A8).
+#
 # What is deliberately NOT here (evaluated 2026-09, see TODO.md "Formal verification"):
 # the @GuardedBy("bufferLock") lock discipline is already gated in the DEFAULT pipeline by
 # Error Prone's GuardedBy check; the Checker Framework Lock Checker would add soundness but
@@ -142,6 +149,21 @@ jobs:
             echo "### OpenJML ESC"
             echo "$completed/$ESC_EXPECTED_PROOFS methods of the static sequential core proved (OpenJML $OPENJML_VERSION, Z3)."
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: ESC — the same proofs with a second, independent solver (cvc5)
+        # Proof diversity: the same obligations discharged by cvc5 (bundled with OpenJML), so no
+        # proof rests on a single solver's correctness. Locally 2026-11-11: 15/15 with cvc5 1.3.2,
+        # the ceiling division included; a falsified contract is rejected by both solvers. Yices2,
+        # also bundled, fails every obligation with ERROR here and is not used.
+        run: |
+          set -euo pipefail
+          "$OPENJML_HOME/openjml" --esc --progress --prover=cvc5             --timeout 300 --esc-max-warnings 100             --spec-math=bigint             --class-path "$(cat target/compile-classpath.txt)"             --specs-path src/main/jml             --method "$ESC_METHODS"             src/main/java/net/ladenthin/streambuffer/StreamBuffer.java             | tee esc-output-cvc5.log
+          completed="$(grep -c '^Completed proof of .* with prover cvc5 - no warnings' esc-output-cvc5.log || true)"
+          echo "Completed clean cvc5 proofs: $completed (expected: $ESC_EXPECTED_PROOFS)"
+          if [ "$completed" != "$ESC_EXPECTED_PROOFS" ]; then
+            echo "::error::cvc5 proof count mismatch: $completed != $ESC_EXPECTED_PROOFS."
+            exit 1
+          fi
+          echo "$completed/$ESC_EXPECTED_PROOFS proved again with cvc5." >> "$GITHUB_STEP_SUMMARY"
 
   openjml-rac:
     name: OpenJML RAC (contracts under the full test suite)
@@ -394,4 +416,97 @@ jobs:
         with:
           name: virtual-threads-jdk21
           path: pinned.txt
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------------------------
+  # jcstress in its default mode on x86 -- scheduled/dispatch only. Pull requests run the quick
+  # mode (jcstress.mode in pom.xml): with the several-reader races the default mode planned 864
+  # runs and doubled the Publish pipeline's Test job to 80-90 minutes.
+  # ---------------------------------------------------------------------------------------------
+  jcstress-default:
+    name: jcstress default mode (x86)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Display CPU Info
+        uses: bernardladenthin/actions/common/print-host-info@379fb9448915b8ce7153f6ec5fa65544205196db # v1.2.2
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          java-version-file: .java-version
+          distribution: temurin
+          cache: maven
+      - name: jcstress (default mode)
+        run: |
+          set -euo pipefail
+          mvn -B --no-transfer-progress -Djacoco.skip=true -DskipTests test-compile             dependency:build-classpath -Dmdep.includeScope=test -Dmdep.outputFile=test-classpath.txt
+          cp="$PWD/target/test-classes:$PWD/target/classes:$(cat test-classpath.txt)"
+          mkdir -p jcstress-default && cd jcstress-default
+          java -cp "$cp" org.openjdk.jcstress.Main -m default | tee ../jcstress-default.log
+          result="$(grep -E 'Results: [0-9]+ planned' ../jcstress-default.log | tail -1)"
+          echo "### jcstress default mode (x86)" >> "$GITHUB_STEP_SUMMARY"
+          echo "$result" >> "$GITHUB_STEP_SUMMARY"
+          case "$result" in
+            *", 0 failed, 0 soft errs, 0 hard errs"*) ;;
+            *) echo "::error::jcstress default mode: $result"; exit 1 ;;
+          esac
+
+  # ---------------------------------------------------------------------------------------------
+  # jcstress and the contended benchmark on arm64 (TODO roadmap A7) -- dispatch only. x86 is TSO
+  # (stores are not reordered with other stores, loads not with other loads); ARM reorders far more,
+  # so a missing happens-before shows up there first. The publish pipeline runs jcstress on x86
+  # only (quick mode). Measured once on the GCC Compile Farm (cfarm424, Neoverse-N1, JDK 21, 2026-11-11), see
+  # the CHANGELOG; this job repeats it on GitHub's runner on demand.
+  # ---------------------------------------------------------------------------------------------
+  arm64-jcstress-benchmark:
+    name: jcstress + contended benchmark on arm64 (report)
+    runs-on: ubuntu-24.04-arm
+    if: github.event_name == 'workflow_dispatch'
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Display CPU Info
+        uses: bernardladenthin/actions/common/print-host-info@379fb9448915b8ce7153f6ec5fa65544205196db # v1.2.2
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          java-version-file: .java-version
+          distribution: temurin
+          cache: maven
+      - name: Compile the tests and resolve the test classpath
+        run: |
+          set -euo pipefail
+          mvn -B --no-transfer-progress -Djacoco.skip=true -DskipTests test-compile             dependency:build-classpath -Dmdep.includeScope=test -Dmdep.outputFile=test-classpath.txt
+      - name: jcstress (default mode)
+        run: |
+          set -euo pipefail
+          cp="$PWD/target/test-classes:$PWD/target/classes:$(cat test-classpath.txt)"
+          mkdir -p jcstress-arm64 && cd jcstress-arm64
+          java -cp "$cp" org.openjdk.jcstress.Main -m default | tee ../jcstress-arm64.log
+          result="$(grep -E 'Results: [0-9]+ planned' ../jcstress-arm64.log | tail -1)"
+          echo "### jcstress on arm64" >> "$GITHUB_STEP_SUMMARY"
+          echo "$result" >> "$GITHUB_STEP_SUMMARY"
+          case "$result" in
+            *", 0 failed, 0 soft errs, 0 hard errs"*) ;;
+            *) echo "::error::jcstress on arm64: $result"; exit 1 ;;
+          esac
+      - name: StreamBufferContendedBenchmark (report)
+        run: |
+          set -euo pipefail
+          cp="$PWD/target/test-classes:$PWD/target/classes:$(cat test-classpath.txt)"
+          java -Duser.language=en -cp "$cp" org.openjdk.jmh.Main StreamBufferContended             -jvmArgsAppend -Duser.language=en -rf csv -rff jmh-arm64.csv
+          {
+            echo "### StreamBufferContendedBenchmark on arm64 (ms per 11 MiB transfer)"
+            echo '```'
+            cat jmh-arm64.csv
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        timeout-minutes: ${{ fromJSON(env.ARTIFACT_TIMEOUT_MINUTES) }}
+        if: always()
+        with:
+          name: arm64-jcstress-benchmark
+          path: |
+            jcstress-arm64.log
+            jmh-arm64.csv
           if-no-files-found: ignore
