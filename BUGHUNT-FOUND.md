@@ -16,6 +16,7 @@ Repos plus eins. Geprüfte Klassen ohne Fund stehen in [`BUGHUNT-CHECKED.md`](BU
 - [F212](#f212) — niedrig — *gefixt*
 - [F268](#f268) — mittel — *gefixt*
 - [F278](#f278) — hoch — *gefixt*
+- [F279](#f279) — niedrig — *gefixt*
 
 ## Funde
 
@@ -130,6 +131,17 @@ Repos plus eins. Geprüfte Klassen ohne Fund stehen in [`BUGHUNT-CHECKED.md`](BU
 - **Breit:** ganze Suite grün (`mvn clean verify`, 317/317: `StreamBufferTest` 295, `StreamBufferConcurrentReadersTest` 6, jqwik, Lincheck, Architektur), Javadoc gebaut, SpotBugs 0 (zwei neue begründete Ausschlüsse in `spotbugs-exclude.xml`: `MDM_WAIT_WITHOUT_TIMEOUT` für das gewollte Warten ohne Frist in `awaitAtLeast`/`signalModification`, `CWO_CLOSED_WITHOUT_OPENED` als Fehlalarm bei `await()` in der Schleife), PIT 207/207.
 - **Status:** gefixt
 - **Commit:** d07d91d
+
+<a id="f279"></a>
+### F279 – streambuffer: `available()` sieht während eines `read(b, off, len)` über mehrere FIFO-Einträge einen Zwischenstand
+- **Zeit:** 2026-11-11 UTC (gefunden von der um Lese-Operationen erweiterten Lincheck-Prüfung, TODO-Paket A3)
+- **Datei:** `src/main/java/net/ladenthin/streambuffer/StreamBuffer.java` (`readIntoArray`: Kopierschleife)
+- **Schwere:** niedrig (falscher Zwischenwert in lock-freien Lesern des Zählers; kein Datenverlust, kein Byte doppelt)
+- **Beschreibung:** `readIntoArray` kopiert alle Bytes eines Aufrufs unter `bufferLock`, zog `availableBytes` aber je kopiertem FIFO-Eintrag ab (und zählte `totalBytesRead` je Eintrag). `available()`, `getAvailableBytesExact()`, `getTotalBytesRead()` und der schnelle Weg von `waitForAtLeast` lesen diese Felder ohne Lock und konnten so einen Stand zwischen zwei Einträgen sehen, den keine sequentielle Ausführung hat: Lincheck fand `writePair(0); readIfAvailable(); writeByte(0)` (Einträge `[1]`, `[0]`), danach parallel `readPairIfAvailable(): 256` und `available(): 1` – sequentiell wären nur 2 (davor) oder 0 (danach) möglich. Bestand vor F278 und #212 genauso.
+- **Fix:** Die Schleife kopiert nur noch; `availableBytes -= copiedBytes` und `recordReadStatistics(copiedBytes)` laufen einmal nach der Schleife, noch unter dem Lock. Damit ist jede Änderung der lock-frei gelesenen Zähler genau eine Operation (Linearisierungspunkt).
+- **Tests:** `StreamBufferLincheckTest` (Lese-Operationen in einer `nonParallelGroup`, nur was gepuffert ist) – vor dem Fix in zwei Läufen rot mit der obigen Ausführung, danach grün; `StreamBufferTrimLincheckTest` ebenso grün. JPF `RecordReaders.jpf` mit Fix fehlerfrei (2.352.249 Zustände).
+- **Status:** gefixt
+- **Commit:** (folgt)
 
 ## Offene Verdachte ohne Fund-ID
 

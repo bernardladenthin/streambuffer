@@ -11,37 +11,15 @@ annotated, so everything below is genuinely still open.
 
 ## Open
 
-- **Verification roadmap 2026-11 — packages A3–A13.** Each package is closed on its own, ends in a
+- **Verification roadmap 2026-11 — packages A5–A13.** Each package is closed on its own, ends in a
   machine-checked result and is listed with its acceptance criterion. The contract every package
   checks: several readers and writers are supported, without fairness (decided with bug-hunt finding
-  F278). Order: A3 + A4, A5, A6 + A7; A12 at any time; A8 only with the A7 numbers; A13 and A9
-  are long-term. A3, A5, A6 and A7 also build infrastructure that a later memory-model project can
+  F278). Order: A5, A6 + A7; A8 only with the A7 numbers; A13 and A9
+  are long-term. A5, A6 and A7 also build infrastructure that a later memory-model project can
   reuse (jcstress on several architectures, formal tools pinned in CI, checking real executions
   against a formal model) — so pinned tool setups belong in a composite action of
   bernardladenthin/actions rather than in this workflow.
 
-  - **A3 — Several readers in every existing tool (2–3 days).** A JPF harness for a
-    `waitForAtLeast` caller next to a reader and one for trim re-entrancy through a trim signal (both
-    formerly "JPF follow-ups" below); jcstress `Mode.Termination` tests with two readers; vmlens scenarios for two
-    readers, close, trim with signal and `safeWrite`; Lincheck with the blocking reads included
-    (several readers are now part of the contract, so no `nonParallelGroup` for the readers is
-    needed) reading only when `available() > 0`, plus a setup with a small `maxBufferElements` so
-    trim runs. Done when: every new check is red on the commit before F278 (`b3c309e`) and green
-    on the fix (the F149 practice).
-  - **A4 — Data-race freedom as a stated argument (2–3 days).** JLS §17.4.5: if a program is
-    correctly synchronized, all its executions appear sequentially consistent; "correctly
-    synchronized" means no *sequentially consistent* execution has a data race. So checking SC
-    executions for races is enough, and then every SC-based result (JPF, vmlens, Lincheck, the A5
-    model) holds under the JMM; the JMM's known flaws (out-of-thin-air, causality) only concern
-    racy programs. The theorem is machine-checked (Aspinall & Ševčík, TPHOLs 2007; Lochbihler,
-    JinjaThreads, TOPLAS 2014). vmlens already traces every interleaving and reports races by the
-    JMM's happens-before, so no new tool is needed: (a) write the chain down in README/CLAUDE.md,
-    (b) a table of every shared field (guarded / volatile / final / atomic) plus why the `byte[]`
-    contents are safe (published through `bufferLock`; with `safeWrite=false` a later change of the
-    array by the caller is the caller's own race), (c) CI fails when vmlens reports a race, over the
-    A3 scenarios. State the limits: it covers the executed scenarios; the JDK classes
-    (`ReentrantLock`/`Condition`/AQS, `Semaphore`, `ArrayDeque`, `CopyOnWriteArrayList`) and the
-    JVM including its JIT are the trusted base.
   - **A5 — TLA+/PlusCal model of the protocol (~1 week).** Writer, N readers (constant), closer,
     the wait (pre-F278: the max-1 semaphore and the `availableBytes` check outside the lock; since
     F278: the condition with `signalAll` and the re-check under the lock), trim as one atomic step
@@ -55,14 +33,13 @@ annotated, so everything below is genuinely still open.
     test-side wrappers / an agent — no change to production code) and check the traces against the
     A5 spec with TLC (the approach of Cirstea, Kuppe, Merz et al., 2024). Closes the gap between
     model and code. Done when: a deliberately wrong spec rejects recorded traces.
-  - **A7 — Virtual threads and a contended benchmark (2–3 days).** Tests already compile at
-    `testRelease` 21, so the reader/writer/close tests can run on virtual threads too. Pinning
-    check with the JFR event `jdk.VirtualThreadPinned` needs a JDK 21 leg: since JDK 24 (JEP 491)
-    `synchronized` no longer pins, and CI builds with 25. Known candidate: `trim()` copies the whole
-    buffer under `synchronized`, so virtual readers waiting for the monitor block their carrier on
-    JDK 21–23. A JMH producer/consumer benchmark (`@Group`, one `@GroupThreads` each), platform vs
-    virtual threads, on x86 and on the GitHub ARM runner — the baseline for A8. Report only, not a
-    gate (shared runners are too noisy).
+  - **A7 — The contended benchmark on the GitHub ARM and x86 runners (hours).** The virtual-thread
+    tests, the JDK 21 pinning report (`virtual-threads-jdk21`) and `StreamBufferContendedBenchmark`
+    exist; the benchmark has only been run on a local x86 machine (numbers under A8). Run it on the
+    GitHub ARM runner and on x86, report only (shared runners are too noisy for a gate). Also open:
+    on JDK 21 a virtual thread blocked entering the contended `bufferLock` monitor holds its
+    carrier, which `jdk.VirtualThreadPinned` does not show (it covers parking while pinned); A8
+    removes the monitor.
   - **A8 — `ReentrantLock` instead of `synchronized (bufferLock)` (optional, ~1 week).** The
     waiting part landed with F278: a separate `waitLock` with a `Condition`, `signalAll` on write and
     close, the re-check under `bufferLock`, so a waiting reader no longer pins a carrier. Still on
@@ -70,12 +47,15 @@ annotated, so everything below is genuinely still open.
     virtual reader or writer blocked at the monitor pins its carrier on JDK 21–23. One lock for both
     would also save the second lock per write. The lock-free `available()` path stays `volatile`,
     the external semaphore signal API stays. Check Error Prone's `@GuardedBy` support for `Lock`
-    fields; A3–A7 are the safety net; the A7 JMH comparison is mandatory.
+    fields; the A3/A4 checks (vmlens, jcstress, Lincheck, JPF) and A7 are the safety net; the
+    `StreamBufferContendedBenchmark` comparison is mandatory. Baseline (local x86, 16 cores, JDK
+    25.0.4, 2026-11-11; ms per 11 MiB transfer in 1429-byte records, writers/readers):
+    platform 1/1 65.4 ± 5.9, 4/1 66.2 ± 5.2, 1/4 49.6 ± 10.5, 4/4 65.2 ± 7.8; virtual 1/1
+    66.9 ± 7.0, 4/1 61.6 ± 5.4, 1/4 57.1 ± 8.3, 4/4 52.5 ± 9.6 (about 170–225 MiB/s). Likely
+    dominated by `trim()` copying the whole buffer under the lock once more than 100 entries queue
+    up; measure that before attributing a gain to the lock.
   - **A9 — Functional proof of the sequential instance core (long-term, months).** The parked
     "Deeper ESC" item below; OpenJML first, KeY only for goals where Z3 answers "unknown".
-  - **A12 — Waiting with a timeout (1–2 days).** `waitForAtLeast(long bytes, long timeout,
-    TimeUnit unit)` via `Condition.awaitNanos` on the F278 condition (Java 8): cancellation by
-    deadline instead of only by interrupt. New API: JML spec, tests, README.
   - **A13 — Unbounded safety of the A5 model (weeks).** TLC checks fixed constants only: check
     the inductive invariant with Apalache, or prove it with TLAPS.
   - **Considered 2026-11 and not planned:** `StructuredTaskScope` inside the library (Java 8
@@ -101,8 +81,9 @@ annotated, so everything below is genuinely still open.
   - **JPF interleaving harness — follow-ups.** The harness (`src/test/jpf/`, the scheduled
     `jpf-interleavings` job in `formal-verification.yml`) runs. Still open: report the AtomicLong
     model completion upstream as a jpf-core deficiency (its native peer already implements the
-    methods the stub model never declared). Further harnesses (a `waitForAtLeast` caller next to
-    a reader, trim re-entrancy) are package A3 of the roadmap above.
+    methods the stub model never declared). Also worth reporting: jpf-core's `Thread.start` peer
+    throws a `NullPointerException` (no `run()` found) for a harness with an anonymous
+    `Semaphore` subclass next to lambdas; `JpfTrimReentrancyHarness` uses named classes instead.
   - **RAC evaluates a `signals (E e)` clause for an exception of another type — confirmed OpenJML
     bug, reported in [OpenJML/OpenJML#1050](https://github.com/OpenJML/OpenJML/issues/1050)** (2026-10-19; reproduced on 21.0.28 and on `dev-21` `529ac454da`,
     `BUGHUNT-MEASUREMENTS.md`, „OpenJML-Verdachtsfälle (RAC)“, in commit `0620aa7`, removed since). The spec

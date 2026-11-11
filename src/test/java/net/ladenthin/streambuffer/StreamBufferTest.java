@@ -3200,6 +3200,199 @@ public class StreamBufferTest {
     }
 
     @Nested
+    @DisplayName("waitForAtLeast(bytes, timeout, unit) — the timed wait")
+    class TimedWaitForAtLeastTests {
+
+        @DisplayName("enough bytes buffered — returns them at once")
+        @Test
+        public void timedWait_enoughBytes_returnsAtOnce() throws Exception {
+            final StreamBuffer sb = new StreamBuffer();
+            sb.getOutputStream().write(new byte[] {1, 2, 3});
+            assertThat(sb.waitForAtLeast(2, 1, TimeUnit.HOURS), is(3L));
+        }
+
+        @DisplayName("open and too few bytes — returns what is there once the time is up")
+        @Test
+        public void timedWait_tooFewBytes_returnsAfterTheTimeout() throws Exception {
+            final StreamBuffer sb = new StreamBuffer();
+            sb.getOutputStream().write(1);
+            final long start = System.nanoTime();
+            final long available = sb.waitForAtLeast(2, 100, TimeUnit.MILLISECONDS);
+            final long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+            assertAll(
+                    () -> assertThat(available, is(1L)),
+                    () -> assertThat(sb.isClosed(), is(false)),
+                    () -> assertThat("waited for the timeout", elapsedMillis, greaterThanOrEqualTo(90L)));
+        }
+
+        @DisplayName("bytes arrive while it waits — returns early with exactly the bytes asked for")
+        @Test
+        public void timedWait_bytesArrive_returnsEarly() throws Exception {
+            final StreamBuffer sb = new StreamBuffer();
+            final Thread writer = new Thread(() -> {
+                try {
+                    Thread.sleep(50);
+                    sb.getOutputStream().write(new byte[] {1, 2});
+                } catch (Exception e) {
+                    throw new AssertionError(e);
+                }
+            });
+            writer.start();
+            final long start = System.nanoTime();
+            final long available = sb.waitForAtLeast(2, 1, TimeUnit.HOURS);
+            final long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+            writer.join();
+            assertAll(
+                    () -> assertThat(available, is(2L)),
+                    () -> assertThat("returned long before the timeout", elapsedMillis < 30_000L, is(true)));
+        }
+
+        @DisplayName("closed while it waits — returns the bytes left, the buffer reports closed")
+        @Test
+        public void timedWait_closedWhileWaiting_returnsWhatIsLeft() throws Exception {
+            final StreamBuffer sb = new StreamBuffer();
+            sb.getOutputStream().write(1);
+            final Thread closer = new Thread(() -> {
+                try {
+                    Thread.sleep(50);
+                    sb.close();
+                } catch (Exception e) {
+                    throw new AssertionError(e);
+                }
+            });
+            closer.start();
+            final long available = sb.waitForAtLeast(5, 1, TimeUnit.HOURS);
+            closer.join();
+            assertAll(() -> assertThat(available, is(1L)), () -> assertThat(sb.isClosed(), is(true)));
+        }
+
+        @DisplayName("closed with fewer bytes than asked for — returns them at once")
+        @Test
+        public void timedWait_closedWithFewerBytes_returnsThemAtOnce() throws Exception {
+            final StreamBuffer sb = new StreamBuffer();
+            sb.getOutputStream().write(1);
+            sb.close();
+            assertThat(sb.waitForAtLeast(2, 1, TimeUnit.HOURS), is(1L));
+        }
+
+        @DisplayName("timeout of zero or less — does not wait")
+        @Test
+        public void timedWait_noTime_returnsAtOnce() throws Exception {
+            final StreamBuffer sb = new StreamBuffer();
+            sb.getOutputStream().write(1);
+            assertAll(
+                    () -> assertThat(sb.waitForAtLeast(2, 0, TimeUnit.SECONDS), is(1L)),
+                    () -> assertThat(sb.waitForAtLeast(2, -5, TimeUnit.SECONDS), is(1L)));
+        }
+
+        @DisplayName("an already interrupted thread that would have to wait — throws at once")
+        @Test
+        public void timedWait_interruptedAndWouldWait_throws() throws Exception {
+            final StreamBuffer sb = new StreamBuffer();
+            Thread.currentThread().interrupt();
+            try {
+                assertThrows(InterruptedException.class, () -> sb.waitForAtLeast(1, 1, TimeUnit.HOURS));
+            } finally {
+                Thread.interrupted();
+            }
+        }
+
+        static Stream<Arguments> noWaitCases() {
+            return Stream.of(
+                    // exactly enough bytes, a timeout: no wait, so no exception
+                    Arguments.of(1, false, 1L, TimeUnit.HOURS, 1L),
+                    // closed and too few bytes, a timeout: no wait
+                    Arguments.of(1, true, 1L, TimeUnit.HOURS, 0L),
+                    // too few bytes, no time: no wait
+                    Arguments.of(0, false, 0L, TimeUnit.SECONDS, 0L));
+        }
+
+        @DisplayName("an already interrupted thread that need not wait — returns without an exception")
+        @ParameterizedTest
+        @MethodSource("noWaitCases")
+        public void timedWait_interruptedButNoWait_returns(
+                int buffered, boolean closed, long timeout, TimeUnit unit, long expected) throws Exception {
+            final StreamBuffer sb = new StreamBuffer();
+            if (buffered > 0) {
+                sb.getOutputStream().write(new byte[buffered]);
+            }
+            if (closed) {
+                sb.getInputStream().read();
+                sb.close();
+            }
+            Thread.currentThread().interrupt();
+            final long available;
+            final boolean flag;
+            try {
+                available = sb.waitForAtLeast(1, timeout, unit);
+            } finally {
+                flag = Thread.interrupted();
+            }
+            assertAll(() -> assertThat(available, is(expected)), () -> assertThat(flag, is(true)));
+        }
+
+        @DisplayName("bytes not positive — throws IllegalArgumentException")
+        @Test
+        public void timedWait_bytesNotPositive_throws() {
+            final StreamBuffer sb = new StreamBuffer();
+            assertAll(
+                    () -> assertThrows(IllegalArgumentException.class, () -> sb.waitForAtLeast(0, 1, TimeUnit.SECONDS)),
+                    () -> assertThrows(
+                            IllegalArgumentException.class, () -> sb.waitForAtLeast(-1, 1, TimeUnit.SECONDS)));
+        }
+
+        @DisplayName("unit null — throws NullPointerException naming the parameter")
+        @Test
+        public void timedWait_unitNull_throws() {
+            final StreamBuffer sb = new StreamBuffer();
+            final NullPointerException e =
+                    assertThrows(NullPointerException.class, () -> sb.waitForAtLeast(1, 1, null));
+            assertThat(e.getMessage(), containsString("unit"));
+        }
+
+        @DisplayName("two readers waiting with a timeout — one write wakes both")
+        @Test
+        public void timedWait_twoWaiters_oneWriteWakesBoth() throws Exception {
+            final StreamBuffer sb = new StreamBuffer();
+            final AtomicLong first = new AtomicLong(-1);
+            final AtomicLong second = new AtomicLong(-1);
+            final Thread a = new Thread(() -> {
+                try {
+                    first.set(sb.waitForAtLeast(1, 1, TimeUnit.HOURS));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+            final Thread b = new Thread(() -> {
+                try {
+                    second.set(sb.waitForAtLeast(1, 1, TimeUnit.HOURS));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+            a.start();
+            b.start();
+            await().atMost(Duration.ofSeconds(10))
+                    .until(() ->
+                            a.getState() == Thread.State.TIMED_WAITING && b.getState() == Thread.State.TIMED_WAITING);
+            sb.getOutputStream().write(7);
+            a.join(10_000);
+            b.join(10_000);
+            assertAll(() -> assertThat(first.get(), is(1L)), () -> assertThat(second.get(), is(1L)));
+        }
+
+        @DisplayName("hasTimeLeft(): positive nanoseconds only")
+        @Test
+        public void hasTimeLeft_boundary() {
+            assertAll(
+                    () -> assertThat(StreamBuffer.hasTimeLeft(1L), is(true)),
+                    () -> assertThat(StreamBuffer.hasTimeLeft(Long.MAX_VALUE), is(true)),
+                    () -> assertThat(StreamBuffer.hasTimeLeft(0L), is(false)),
+                    () -> assertThat(StreamBuffer.hasTimeLeft(-1L), is(false)));
+        }
+    }
+
+    @Nested
     @DisplayName("waitForAtLeast() — argument validation")
     class WaitForAtLeastArgumentValidationTests {
         @DisplayName("waitForAtLeast(0) throws IllegalArgumentException")

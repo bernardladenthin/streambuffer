@@ -57,9 +57,25 @@ A fourth harness (`JpfRecordReadersHarness.java`, run configuration `RecordReade
 fixed-size records with two competing readers: the writer writes the 2-byte records `{1, 2}` and
 `{3, 4}` fragmented across the record boundary (`[1]`, then `[2, 3, 4]`) and closes; both readers
 call `read(b, 0, 2)` until the end. Every read must return a whole record, and both records must
-arrive exactly once. Last confirmed run (2026-11-11): **no errors detected**, 2,404,487 states,
-maxDepth 210, about 12 minutes. Against the read path before `read(b, off, len)` took its bytes in
+arrive exactly once. Last confirmed run (2026-11-11, after bug-hunt fix F279): **no errors
+detected**, 2,352,249 states, about 12 minutes. Against the read path before `read(b, off, len)` took its bytes in
 one step (`a53305b`), it reports "reader 0 got a torn record" after 392 states.
+
+A fifth harness (`JpfWaitAndReadHarness.java`, `WaitAndRead.jpf`) puts a `waitForAtLeast(2)` caller
+next to a reader of one byte; the writer writes one byte and closes. The reader must get the byte,
+and the waiter may return fewer than two bytes only on a closed buffer (checked right after its
+return; closed stays closed). Last confirmed run (2026-11-11): **no errors detected**, 286,494
+states, maxDepth 107, about 1.5 minutes. Before F278 (`b3c309e`) it reports a deadlock after 9,009
+states: the one permit went to the waiter, which waits for more and went back to waiting.
+
+A sixth harness (`JpfTrimReentrancyHarness.java`, `TrimReentrancy.jpf`) covers trim re-entrancy:
+with `maxBufferElements` 1 the second write trims, and the trim start signal writes a byte from
+inside the trim, on the writer thread that holds the lock; a reader reads concurrently. The reader
+gets `1, 2, 9` when the trim ran and `1, 2` when it took the first byte before the second write
+(then there is no trim); the 9 arrives exactly when the signal fired. Last confirmed run: **no
+errors detected**, 24,880 states (8 s); also green before F278 (the defect concerned several
+readers). It uses named static classes: with an anonymous `Semaphore` subclass next to lambdas,
+jpf-core's `Thread.start` peer failed with a `NullPointerException`.
 
 ## Files
 
@@ -73,6 +89,10 @@ one step (`a53305b`), it reports "reader 0 got a torn record" after 392 states.
 | `TwoReaders.jpf` | its JPF run configuration (same classpath) |
 | `net/ladenthin/streambuffer/jpf/JpfRecordReadersHarness.java` | the record-readers harness (fragmented 2-byte records, two readers) |
 | `RecordReaders.jpf` | its JPF run configuration (same classpath) |
+| `net/ladenthin/streambuffer/jpf/JpfWaitAndReadHarness.java` | a `waitForAtLeast(2)` caller next to a reader |
+| `WaitAndRead.jpf` | its JPF run configuration (same classpath) |
+| `net/ladenthin/streambuffer/jpf/JpfTrimReentrancyHarness.java` | a trim start signal writing from inside the trim |
+| `TrimReentrancy.jpf` | its JPF run configuration (same classpath) |
 | `jpf-model/java/util/concurrent/atomic/AtomicLong.java` | a completed `AtomicLong` model that patches a jpf-core stub (see below) |
 
 ## Why the AtomicLong patch
@@ -116,6 +136,8 @@ docker run --rm -v "$WORK/jpf-core:/jpf" -v "$SB:/sb" -w /jpf eclipse-temurin:11
   java -jar /jpf/build/RunJPF.jar WriteClose.jpf
   java -jar /jpf/build/RunJPF.jar TwoReaders.jpf   # about 18 minutes
   java -jar /jpf/build/RunJPF.jar RecordReaders.jpf   # about 12 minutes
+  java -jar /jpf/build/RunJPF.jar WaitAndRead.jpf
+  java -jar /jpf/build/RunJPF.jar TrimReentrancy.jpf
 '
 ```
 

@@ -13,6 +13,7 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Condition;
@@ -903,6 +904,88 @@ public class StreamBuffer implements Closeable {
     }
 
     /**
+     * Like {@link #waitForAtLeast(long)}, but waits at most {@code timeout}: blocks until at least
+     * {@code bytes} bytes are available, the stream is closed, or the time is up, whichever comes
+     * first. Cancellation by deadline instead of only by interrupt.
+     *
+     * <p>Returns the number of bytes available then, which is fewer than {@code bytes} when the
+     * stream was closed or the time ran out; {@link #isClosed()} tells the two apart. A
+     * {@code timeout} of zero or less does not wait (like {@code BlockingQueue.poll}). As with
+     * {@link #waitForAtLeast(long)}, several threads may wait at the same time, and the result is a
+     * snapshot that another reader may take bytes from.</p>
+     *
+     * @param bytes minimum number of bytes to wait for (must be &#x2265; 1)
+     * @param timeout the longest time to wait, in {@code unit}
+     * @param unit the unit of {@code timeout}
+     * @return the number of bytes available now
+     * @throws IllegalArgumentException if {@code bytes} is not positive
+     * @throws NullPointerException if {@code unit} is {@code null}
+     * @throws InterruptedException if the current thread is interrupted while waiting, or is
+     *         interrupted already and would have to wait
+     */
+    public long waitForAtLeast(final long bytes, final long timeout, final TimeUnit unit) throws InterruptedException {
+        if (bytes <= 0) {
+            throw new IllegalArgumentException("Number of bytes are negative or zero : " + bytes);
+        }
+        if (unit == null) {
+            throw new NullPointerException("unit must not be null (waitForAtLeast; bytes=" + bytes + ")");
+        }
+
+        // enough bytes buffered, or closed: return without a lock, as the untimed variant does
+        final long available = availableBytes;
+        if (bytes <= available) {
+            return available;
+        }
+        if (streamClosed) {
+            return availableBytes;
+        }
+        final long nanos = unit.toNanos(timeout);
+        if (!hasTimeLeft(nanos)) {
+            // no time to wait at all
+            return availableBytes;
+        }
+        return awaitAtLeast(bytes, nanos);
+    }
+
+    /**
+     * The waiting part of {@link #waitForAtLeast(long, long, TimeUnit)}: {@link #awaitAtLeast(long)}
+     * with a deadline, waiting with {@link Condition#awaitNanos(long)}, which returns the time left.
+     *
+     * @param bytes minimum number of bytes to wait for (&#x2265; 1)
+     * @param nanos the time to wait, in nanoseconds (&gt; 0)
+     * @return the number of bytes available now
+     * @throws InterruptedException if the current thread is interrupted, also before it waits
+     */
+    private long awaitAtLeast(final long bytes, final long nanos) throws InterruptedException {
+        waitLock.lockInterruptibly();
+        waitingReaders.incrementAndGet();
+        try {
+            long remaining = nanos;
+            // wait until enough bytes are buffered, the stream is closed or the time is up,
+            // checking again after every signal
+            while (bytes > availableBytes && !streamClosed && hasTimeLeft(remaining)) {
+                remaining = modified.awaitNanos(remaining);
+            }
+            return availableBytes;
+        } finally {
+            waitingReaders.decrementAndGet();
+            waitLock.unlock();
+        }
+    }
+
+    /**
+     * Whether a wait with this many nanoseconds left still has time (boundary: &gt; 0, the
+     * contract of {@link Condition#awaitNanos(long)}'s result). Package-private for direct unit
+     * testing of the boundary; proven by OpenJML ESC.
+     *
+     * @param remainingNanos the time left, in nanoseconds
+     * @return {@code true} if it is positive
+     */
+    static boolean hasTimeLeft(final long remainingNanos) {
+        return remainingNanos > 0L;
+    }
+
+    /**
      * {@link #waitForAtLeast(long)} for the read paths: an interrupt becomes the
      * {@link InterruptedIOException} the {@link InputStream} contract uses for it, with the
      * {@link InterruptedException} as its cause and the thread's interrupt flag set again. A read
@@ -1051,8 +1134,6 @@ public class StreamBuffer implements Closeable {
                             copiedBytes += maximumBytesToCopy;
                             maximumAvailableBytes =
                                     decrementAvailableBytesBudget(maximumAvailableBytes, maximumBytesToCopy);
-                            availableBytes -= maximumBytesToCopy;
-                            recordReadStatistics(maximumBytesToCopy);
                             bytesToCopy -= maximumBytesToCopy;
                             // remove the first element from the buffer
                             buffer.pollFirst();
@@ -1065,12 +1146,16 @@ public class StreamBuffer implements Closeable {
                             positionAtCurrentBufferEntry += bytesToCopy;
                             copiedBytes += bytesToCopy;
                             maximumAvailableBytes = decrementAvailableBytesBudget(maximumAvailableBytes, bytesToCopy);
-                            availableBytes -= bytesToCopy;
-                            recordReadStatistics(bytesToCopy);
                             // done; the head entry still has bytes left
                             bytesToCopy = 0;
                         }
                     }
+                    // Counted once for the whole read, not per FIFO entry (bug-hunt finding F279):
+                    // available() and the statistics read these lock-free, and a per-entry update
+                    // let them see a count between two entries that no sequential execution has
+                    // (Lincheck: available() returned 1 during a 2-byte read of two 1-byte entries).
+                    availableBytes -= copiedBytes;
+                    recordReadStatistics(copiedBytes);
                     return copiedBytes;
                 }
             }
