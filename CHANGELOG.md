@@ -8,6 +8,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Several readers in every concurrency tool (roadmap A3).** vmlens:
+  `StreamBufferSeveralReadersInterleavingTest` (two readers and a close, two record readers, a trim
+  with a trim start signal, `safeWrite` with a concurrent single-byte write). jcstress:
+  `TwoReadersCloseRace`, `TwoReadersTwoWritesRace` (`Mode.Termination`, the one actor starts the
+  second reader) and `RecordReadersRace` (torn records forbidden). Lincheck: reads included, one at a
+  time and only what is buffered (`nonParallelGroup`), and `StreamBufferTrimLincheckTest` with
+  `maxBufferElements` 2. JPF: `WaitAndRead.jpf` (a `waitForAtLeast(2)` caller next to a reader) and
+  `TrimReentrancy.jpf` (a trim start signal writing from inside the trim). Against the code before
+  F278 (`b3c309e`) the several-reader checks are red: jcstress STALE for both two-reader races and an
+  exception in `RecordReadersRace`, JPF a deadlock in `WaitAndRead.jpf` after 9,009 states.
+- **Data-race freedom as a stated argument (roadmap A4).** README "Data-Race Freedom": JLS §17.4.5,
+  a table of every shared field (final, volatile, atomic or lock-guarded) and why the `byte[]`
+  contents are safe; the vmlens job, which fails the build on any data race, is the gate. The limits
+  are stated: the executed scenarios; the JDK classes and the JVM are trusted.
+- **Virtual threads (roadmap A7).** `StreamBufferVirtualThreadsTest` (64 virtual readers, 4 virtual
+  writers of 1429-byte records, also with trim and a slow trim signal) runs in the default build.
+  The scheduled job `virtual-threads-jdk21` runs it on JDK 21 under JFR and reports
+  `jdk.VirtualThreadPinned` events inside `StreamBuffer` (locally 2026-11-11: none; a probe with a
+  sleep inside `synchronized` produced two, so the recording works). `StreamBufferContendedBenchmark`
+  (JMH): platform vs virtual threads, 1 or 4 writers and readers, a report and the baseline for A8.
+- **`waitForAtLeast(long bytes, long timeout, TimeUnit unit)`:** waits at most the given time and
+  returns the available bytes, fewer on timeout or close (`isClosed()` tells which); a timeout of
+  zero or less does not wait. Cancellation by deadline instead of only by interrupt
+  (`Condition.awaitNanos` on the wait condition of F278). JML contract, the static boundary
+  `hasTimeLeft` in the ESC scope (15 proofs).
 - **API compatibility gate.** `mvn verify` runs japicmp 0.26.5 against the last release on Maven
   Central (`japicmp.baseline.version`, 1.2.0) and fails when the version step is too small for the
   change under semantic versioning (a binary-incompatible change needs a new major version). Its
@@ -22,6 +47,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so they hold under concurrency. A falsified copy of each failed the RAC run (negative controls).
 
 ### Changed
+- **vmlens runs without the JaCoCo agent** (`jacoco.skip` in the `vmlens` profile). JaCoCo writes its
+  coverage probes into one unsynchronized `boolean[]` per class, so two threads running the same
+  method raced on it and vmlens reported 13 data races in the several-reader scenarios that were not
+  in `StreamBuffer`; without the agent there are none.
+- **The JPF job runs six harnesses** and has a new sibling, `virtual-threads-jdk21` (both scheduled
+  or dispatched only). The pom gets `streambuffer.test.jvmArgs`, extra arguments for the forked test
+  JVM (`-DargLine` does not reach the fork, JaCoCo owns that property).
 - **`read(b, off, len)` takes its bytes in one step.** It still waits until all `len` bytes are
   buffered (or the buffer is closed), but now takes nothing before that and then all of them under
   one lock hold; before, it took the first byte, released the lock and waited for the rest. The bytes
@@ -225,6 +257,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `correctOffsetAndLengthToWrite(byte[], int, int)` → `validateOffsetAndLengthToWrite(byte[], int, int)`.
 
 ### Fixed
+- **`available()` could see a count between two FIFO entries during `read(b, off, len)`** (bug-hunt
+  finding F279). The read copied all its bytes under the lock but lowered `availableBytes` (and
+  counted `totalBytesRead`) per entry, so the lock-free readers of those counters (`available()`,
+  `getAvailableBytesExact()`, `getTotalBytesRead()`, the fast path of `waitForAtLeast`) could see a
+  value no sequential execution has. Found by the Lincheck test once it included reads; the counters
+  now change once per read.
 - **CI: the JPF job failed on every run after the first** with "cannot find gov.nasa.jpf.JPF": its
   cache held only `jpf-core/build`, and on a cache hit the clone with `jpf.properties` was skipped. It
   now caches the whole jpf-core checkout (without `.git`) under a new key.

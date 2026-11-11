@@ -339,6 +339,7 @@ public class StreamBuffer implements Closeable
 | `addTrimEndSignal(Semaphore)` | Registers a semaphore released when trim ends |
 | `removeTrimEndSignal(Semaphore)` | Removes a trim-end semaphore |
 | `waitForAtLeast(long)` | Blocks until at least the given number of bytes are available (or the stream closes) |
+| `waitForAtLeast(long, long, TimeUnit)` | Like `waitForAtLeast(long)`, but waits at most the given time; returns the available bytes, fewer on timeout or close (`isClosed()` tells which) |
 | `waitForAnyData()` | Blocks until at least one byte is available (or the stream closes) |
 
 ### Static Validation Methods
@@ -365,6 +366,15 @@ To avoid blocking, only read as many bytes as `available()` reports. The `waitFo
 ```java
 sb.waitForAnyData();                               // returns once at least one byte is buffered (or closed)
 int n = is.read(buf, 0, Math.min(buf.length, Math.max(1, is.available())));
+```
+
+To give up after a deadline instead of only on an interrupt, use the timed variant:
+
+```java
+long available = sb.waitForAtLeast(RECORD, 5, TimeUnit.SECONDS);
+if (available < RECORD && !sb.isClosed()) {
+    // timed out: nothing is taken, the bytes stay buffered
+}
 ```
 
 This matters for wrappers that read in blocks, such as `InputStreamReader`/`BufferedReader` (8 KiB): over an open buffer in a request/response protocol they wait until a whole block has arrived.
@@ -458,6 +468,11 @@ Test coverage includes:
 - Thread interruption during blocked reads (`InterruptedIOException` with the `InterruptedException` as cause, interrupt flag kept, no byte taken), and an already interrupted thread with and without buffered bytes
 - Several readers on one stream (`StreamBufferConcurrentReadersTest`): two parked readers and two writes or a close, three readers at the lock for two bytes (also closed meanwhile), `read(byte[])` racing `read()`, a reader parked next to a larger `waitForAtLeast`, three writers and three readers
 - Fixed-size records with several readers (1429-byte records with writer id, sequence number and CRC32): one writer with writes of random size and four readers, three writers of whole records and four readers — every record whole, exactly once, in writer order per reader
+- Virtual threads (`StreamBufferVirtualThreadsTest`): 64 virtual readers and 4 virtual writers of records, also with trim and a trim signal; a JFR `jdk.VirtualThreadPinned` check (none inside `StreamBuffer` on JDK 24+, reported on JDK 21 by a scheduled job)
+- `waitForAtLeast(bytes, timeout, unit)`: returns at once, after the timeout, early when bytes arrive, on close; no wait for a timeout of zero; interrupts; two timed waiters woken by one write
+- vmlens interleavings for several readers (`StreamBufferSeveralReadersInterleavingTest`): two readers and a close, two record readers, a trim with a trim start signal, `safeWrite` with a concurrent single-byte write — vmlens also fails the build on any data race
+- jcstress with two readers: `TwoReadersCloseRace`, `TwoReadersTwoWritesRace` (`Mode.Termination`) and `RecordReadersRace` (torn records forbidden)
+- Lincheck including reads (one at a time, only what is buffered) and a variant with `maxBufferElements` 2, so writes trim
 - Concurrent read/write stress tests
 - Parallel close without deadlock
 - Deadlock-freedom of every blocking entry point, stress-checked with jcstress `Mode.Termination`
@@ -466,8 +481,9 @@ Test coverage includes:
   concurrent `close`
 - Exhaustive thread-interleaving model check of the read/write/close protocol with Java PathFinder
   (`src/test/jpf/`, scheduled CI job + local Docker recipe) — the erschöpfende counterpart to the
-  jcstress stress tests; four harnesses: writer and reader, writer racing a closer, two readers,
-  two readers of fixed-size records
+  jcstress stress tests; six harnesses: writer and reader, writer racing a closer, two readers,
+  two readers of fixed-size records, a `waitForAtLeast` caller next to a reader, trim re-entrancy
+  through a trim signal
 - Signal/slot notification via external semaphores on write and all close paths
 - `removeSignal(null)` returning `false` without throwing
 - `addSignal(null)` throwing `NullPointerException`
@@ -493,7 +509,7 @@ verified in a separate CI pipeline
 - **Deductive proof — OpenJML ESC (Z3).** The complete static, sequential core is *proven*
   against full functional contracts: both offset/length validators — including the classic
   `(off + len) < 0` integer-overflow guard, proven equivalent to the clean bounds condition
-  under Java wrap semantics — and the twelve static trim-decision/arithmetic helpers, among
+  under Java wrap semantics — and the thirteen static trim-decision/arithmetic/timeout helpers, among
   them the ceiling division in `calculateResultingChunks` (proven against its multiplicative
   characterization `m·(⌈a/m⌉−1) < a ≤ m·⌈a/m⌉`, including the wrap-around boundary
   `a = Long.MAX_VALUE − m + 1`) and the full decision tree of `decideTrimExecution`.
@@ -516,6 +532,54 @@ discipline on the FIFO deque is additionally gated by Error Prone's `@GuardedBy`
 ordinary build. The scope rationale — with citations to the published case studies that made the
 same split (LinkedList/TACAS 2020, IdentityHashMap/iFM 2022) — lives in the header of the
 specification file.
+
+### Data-Race Freedom
+
+Why the concurrency checks above say something about real executions under the Java memory model,
+and not only about the interleavings they enumerate:
+
+1. **The theorem.** JLS §17.4.5: a program is *correctly synchronized* if no sequentially consistent
+   execution has a data race, and then all of its executions appear sequentially consistent. It is
+   machine-checked (Aspinall & Ševčík, TPHOLs 2007; Lochbihler, JinjaThreads, TOPLAS 2014). The
+   memory model's known problems (out-of-thin-air values, causality) concern racy programs only.
+2. **Every shared field is safe by construction** — final, volatile, atomic, or only touched under
+   one lock (table below).
+3. **vmlens checks it.** It runs the scenarios through their sequentially consistent interleavings and
+   reports a data race by the memory model's happens-before; the `vmlens` job of the Publish pipeline
+   fails the build on one (`There are N data races`). Scenarios: a reader against a writer, two
+   readers and a close, two record readers, a trim with a trim start signal, `safeWrite` with a
+   concurrent single-byte write. All but one run out of interleavings within the iteration limit
+   (all of them explored); two readers and a close stops at vmlens's limit, and JPF explores that
+   case exhaustively (`TwoReaders.jpf`, `WaitAndRead.jpf`).
+
+Hence, for those scenarios, `StreamBuffer` is free of data races, its executions are sequentially
+consistent, and the results of the interleaving-based checks (JPF, vmlens, Lincheck, the jcstress
+outcomes) carry over to the Java memory model. **Limits:** it covers the executed scenarios, not every
+program; the JDK classes it builds on (`ReentrantLock`/`Condition`/AQS, `Semaphore`, `ArrayDeque`,
+`CopyOnWriteArrayList`, `AtomicInteger`/`AtomicLong`) and the JVM including its JIT are trusted.
+
+| Field | Kind | Written | Read |
+|---|---|---|---|
+| `bufferLock`, `waitLock`, `modified`, `is`, `os` | `final` | constructor | anywhere |
+| `buffer` (`ArrayDeque<byte[]>`) | `final`, `@GuardedBy("bufferLock")` | under `bufferLock` | under `bufferLock` |
+| `availableBytes` | `volatile long` | under `bufferLock` | under `bufferLock`, and lock-free by `available()`, `getAvailableBytesExact()` and the wait (fast path and under `waitLock`) |
+| `positionAtCurrentBufferEntry` | `volatile int` | under `bufferLock` | under `bufferLock` |
+| `streamClosed` | `volatile boolean` | under `bufferLock` (`close()`) | under `bufferLock` (write), lock-free (wait, `isClosed()`) |
+| `isTrimRunning` | `volatile boolean` | under `bufferLock` (`trim()`) | under `bufferLock`, lock-free by `isTrimRunning()` |
+| `maxObservedBytes` | `volatile long` | under `bufferLock` | lock-free by the getter |
+| `safeWrite`, `maxBufferElements`, `maxAllocationSize` | `volatile` | by their setters, any thread | once per write or trim |
+| `waitingReaders` | `final AtomicInteger` | under `waitLock` | lock-free by the writer's signal |
+| `totalBytesWritten`, `totalBytesRead` | `final AtomicLong` | under `bufferLock` (`addAndGet`) | lock-free by the getters |
+| `signals`, `trimStartSignals`, `trimEndSignals` | `final CopyOnWriteArrayList` | by add/remove, any thread | iterated over a snapshot |
+
+The **`byte[]` contents** are published through `bufferLock`: the writer adds the array under the
+lock, a reader copies from it under the lock, so the monitor's happens-before orders the two. With
+`safeWrite` off the buffer keeps the caller's array; a caller that changes it after the write races
+with the readers itself — that is the documented contract of [Safe Write](#safe-write-immutable-byte-arrays).
+The arrays `trim()` produces are allocated and filled under the lock. The skip of the wait lock when
+no reader waits (`waitingReaders`) relies on the total synchronization order of volatile accesses
+(JLS §17.4.4): the writer stores `availableBytes` before it reads the count, a waiter increments the
+count before it reads `availableBytes`, so one of them sees the other.
 
 ### Contributors: do not upgrade jqwik past 1.9.3
 

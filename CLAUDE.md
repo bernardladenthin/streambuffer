@@ -48,6 +48,13 @@ mvn test-compile exec:java \
 
 `-prof gc` reports `gc.alloc.rate.norm` (bytes allocated per op) — useful for spotting hidden allocations on the read/write hot paths. `-prof async` produces flamegraphs and requires async-profiler installed locally; CI does not run it.
 
+`mvn test` also runs `StreamBufferVirtualThreadsTest` (64 virtual readers, 4 virtual writers; a JFR
+`jdk.VirtualThreadPinned` check that requires no pinning inside `StreamBuffer` on JDK 24+ and only
+reports on 21-23, see the `virtual-threads-jdk21` job) and the Lincheck tests (`StreamBufferLincheckTest`,
+`StreamBufferTrimLincheckTest` with `maxBufferElements` 2; reads in one `nonParallelGroup`).
+The contended JMH benchmark `StreamBufferContendedBenchmark` (platform vs virtual threads, 1/4 writers
+and readers) is a report, the baseline for roadmap A8.
+
 `mvn test` also runs:
 - **jqwik properties** (`StreamBufferProperties`) — a JUnit Platform engine; Surefire runs the class
   only because `pom.xml` adds `**/*Properties.java` to its include patterns (until 2026-10-19 it ran
@@ -65,24 +72,26 @@ jcstress tests under `net.ladenthin.streambuffer.jcstress` live behind the `jcst
 ```bash
 mvn -Pvmlens test
 ```
-The `vmlens` profile pulls in `com.vmlens:api` and runs the `vmlens-maven-plugin` during the `test` phase. Tests using `com.vmlens.api.AllInterleavings` are then driven through every possible thread interleaving. The profile is off by default — vmlens overhead is too high for every build.
+The `vmlens` profile pulls in `com.vmlens:api` and runs the `vmlens-maven-plugin` during the `test` phase. Tests using `com.vmlens.api.AllInterleavings` are then driven through every possible thread interleaving. The profile is off by default — vmlens overhead is too high for every build. The plugin **fails the build on any data race** (`There are N data races`), which makes the `vmlens` job the race gate of the data-race-freedom argument (README). The profile sets `jacoco.skip`: JaCoCo's unsynchronized coverage arrays made two threads in the same method look like a race. Restrict a local run with `-Dtest=...`.
 
 ## Formal Verification
 
 Two layers, run in a **separate** CI pipeline (`.github/workflows/formal-verification.yml` —
 deliberately not part of the synchronous Publish pipeline and never a required check):
 
-1. **OpenJML ESC** (deductive proof, Z3): the 14 static sequential-core methods (2 validators +
-   12 pure helpers) are proven against full functional contracts.
+1. **OpenJML ESC** (deductive proof, Z3): the 15 static sequential-core methods (2 validators +
+   13 pure helpers) are proven against full functional contracts.
 2. **OpenJML RAC**: the existing JUnit suite runs against RAC-instrumented classes
    (violations throw), checking the static contracts plus the instance/stream-adapter contracts.
 3. **JPF interleavings** (`src/test/jpf/`, scheduled/dispatch CI job `jpf-interleavings`): Java
-   PathFinder exhaustively model-checks the concurrent read/write/close protocol with four harnesses:
+   PathFinder exhaustively model-checks the concurrent read/write/close protocol with six harnesses:
    `StreamBuffer.jpf` (a writer that closes after its writes, a reader), `WriteClose.jpf` (writer,
    closer and reader in three threads -- the order of write and close, which the first cannot see;
    red before bug-hunt fix F149), `TwoReaders.jpf` (a writer that closes, two readers on one
    stream; red before bug-hunt fix F278) and `RecordReaders.jpf` (two readers of 2-byte records written
-   fragmented across the record boundary; red before `read(b, off, len)` took its bytes in one step).
+   fragmented across the record boundary; red before `read(b, off, len)` took its bytes in one step),
+   `WaitAndRead.jpf` (a `waitForAtLeast(2)` caller next to a reader; red before F278) and
+   `TrimReentrancy.jpf` (a trim start signal writing from inside the trim, a reader).
    Requires JDK 11; builds jpf-core from a pinned commit with a
    one-file `AtomicLong` model patch; the harnesses are compiled at `--release 8` and run under JPF. Local recipe (Docker+JDK 11) in
    `src/test/jpf/README.md`. Never touches the shipped jar.
@@ -117,7 +126,7 @@ mvn -P jml-rac -Dopenjml.home=<openjml> -Dopenjml.jdk.java=<openjml>/jdk/bin/jav
   **replaces** all class-level JML in the `.java` (which therefore stays JML-free), and OpenJML
   errors on any signature mismatch — so every signature change in `StreamBuffer.java` must be
   mirrored there, and the verification workflow catches drift.
-- The 12 pure helpers are `static` **because instance-method proof obligations are undecidable
+- The 13 pure helpers are `static` **because instance-method proof obligations are undecidable
   for Z3 in this class** (the non-static inner stream classes poison the receiver context —
   measured, not theorized). New pure helpers must be static or they cannot join the ESC scope.
 - The ESC scope is guarded by an exact proof COUNT in the workflow (`ESC_EXPECTED_PROOFS`);
@@ -198,6 +207,10 @@ mvn -P jml-rac -Dopenjml.home=<openjml> -Dopenjml.jdk.java=<openjml>/jdk/bin/jav
   write skip `waitLock` while no reader waits (volatile order: the writer stores `availableBytes` before
   it reads the count, a waiter increments it before it reads `availableBytes`); `waitForAtLeast` returns
   without the lock when enough bytes are buffered or the stream is closed.
+- **Data-race freedom** (README "Data-Race Freedom"): every shared field is final, volatile, atomic or
+  lock-guarded (the table there), and the vmlens job fails the build on any race it finds, so the
+  interleaving-based results hold under the JMM (JLS §17.4.5). A new field goes into that table; a new
+  concurrent scenario goes into `vmlens/StreamBufferSeveralReadersInterleavingTest`.
 - Several writers and several readers are supported: each write is atomic, each byte reaches exactly one
   reader in FIFO order, no fairness. `read(b, off, len)` is atomic too: it waits until `len` bytes are
   buffered (or closed) and takes them in one `bufferLock` hold, so readers of a fixed record size get

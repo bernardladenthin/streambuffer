@@ -19,8 +19,8 @@
 //  * ESC (deductive proof, openjml --esc): the static, pure, sequential core listed in the
 //    ESC_METHODS variable of the workflow — the two offset/length validators (including the
 //    intentional "(off + len) < 0" int-wraparound idiom, proven equivalent to the clean
-//    bounds condition under Java wrap semantics via code_java_math) and the twelve static
-//    trim-decision/arithmetic helpers (full functional contracts; the ceiling division in
+//    bounds condition under Java wrap semantics via code_java_math) and the thirteen static
+//    trim-decision/arithmetic/timeout helpers (full functional contracts; the ceiling division in
 //    calculateResultingChunks is proven against its multiplicative characterization).
 //
 //  * RAC (runtime assertion checking, openjml --rac): ALL contracts in this file, checked
@@ -76,6 +76,7 @@ import java.io.InputStream;
 import java.io.InterruptedIOException;
 import java.io.OutputStream;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 
 // nullable_by_default: the validators and the signal (de)registration methods legitimately
 // take null and are specified to throw on it (exceptional_behavior ... signals_only
@@ -275,6 +276,12 @@ public class StreamBuffer implements Closeable {
     //@ pure
     static boolean shouldUpdateMaxObservedBytes(long availableBytes, long currentMax);
 
+    /*@ normal_behavior
+      @   ensures \result <==> (remainingNanos > 0);
+      @*/
+    //@ pure
+    static boolean hasTimeLeft(final long remainingNanos);
+
     // ---------------------------------------------------------------------------------------
     // Instance methods (RAC-checked contracts; NOT part of the ESC method list — the
     // non-static inner classes SBInputStream/SBOutputStream make instance-method proof
@@ -315,6 +322,17 @@ public class StreamBuffer implements Closeable {
       @   signals_only InterruptedException;
       @*/
     public long waitForAnyData() throws InterruptedException;
+
+    // The timed wait: fewer bytes than asked for also when the time ran out, so no closed-state
+    // postcondition. The exception clauses name Exception and test instanceof (OpenJML/OpenJML#1050).
+    /*@ public behavior
+      @   requires true;
+      @   ensures 1 <= bytes && unit != null && 0 <= \result;
+      @   signals_only IllegalArgumentException, NullPointerException, InterruptedException;
+      @   signals (Exception e) e instanceof IllegalArgumentException ==> bytes <= 0;
+      @   signals (Exception e) e instanceof NullPointerException ==> 1 <= bytes && unit == null;
+      @*/
+    public long waitForAtLeast(final long bytes, final long timeout, final TimeUnit unit) throws InterruptedException;
 
     /*@ public normal_behavior
       @   ensures true;
