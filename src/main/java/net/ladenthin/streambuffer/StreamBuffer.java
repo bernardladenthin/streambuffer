@@ -947,12 +947,14 @@ public class StreamBuffer implements Closeable {
      * If the stream is closed before {@code bytes} bytes arrive, returns the actual
      * number of bytes that did arrive (which may be less than {@code bytes}).
      *
-     * <p>Several threads may wait at the same time, also while others read. The result is a
-     * snapshot: with several readers, another one may take the bytes before the caller reads
-     * them.</p>
+     * <p>The result is fewer than {@code bytes} only for a closed stream: when enough bytes are
+     * buffered, it is the count that was checked against {@code bytes}. Several threads may wait at
+     * the same time, also while others read, so the result is a snapshot: with several readers,
+     * another one may take the bytes before the caller reads them.</p>
      *
      * @param bytes minimum number of bytes to wait for (must be &#x2265; 1)
-     * @return the number of bytes available now
+     * @return the number of bytes available when the wait ended: at least {@code bytes}, or fewer
+     *         only if the stream is closed
      * @throws InterruptedException if the current thread is interrupted while waiting, or is
      *         interrupted already, fewer than {@code bytes} bytes are buffered and the stream is
      *         open
@@ -989,12 +991,19 @@ public class StreamBuffer implements Closeable {
         waitingReaders.incrementAndGet();
         try {
             // wait until enough bytes are buffered or the stream is closed, checking again after
-            // every signal
-            while (bytes > availableBytes && !streamClosed) {
+            // every signal; enough bytes: return the count that was checked, as the fast path does
+            // (another reader may lower availableBytes right after the check, and returning a
+            // second read let the result fall below bytes on an open stream)
+            long available = availableBytes;
+            while (available < bytes) {
+                if (streamClosed) {
+                    // closed: no write can follow, return what is left
+                    return availableBytes;
+                }
                 modified.await();
+                available = availableBytes;
             }
-            // the available bytes: maybe more than required, or fewer if the stream is closed
-            return availableBytes;
+            return available;
         } finally {
             waitingReaders.decrementAndGet();
             waitLock.unlock();
@@ -1006,7 +1015,7 @@ public class StreamBuffer implements Closeable {
      * {@code bytes} bytes are available, the stream is closed, or the time is up, whichever comes
      * first. Cancellation by deadline instead of only by interrupt.
      *
-     * <p>Returns the number of bytes available then, which is fewer than {@code bytes} when the
+     * <p>Returns the number of bytes available then, which is fewer than {@code bytes} only when the
      * stream was closed or the time ran out; {@link #isClosed()} tells the two apart. A
      * {@code timeout} of zero or less does not wait (like {@code BlockingQueue.poll}). As with
      * {@link #waitForAtLeast(long)}, several threads may wait at the same time, and the result is a
@@ -1060,11 +1069,18 @@ public class StreamBuffer implements Closeable {
         try {
             long remaining = nanos;
             // wait until enough bytes are buffered, the stream is closed or the time is up,
-            // checking again after every signal
-            while (bytes > availableBytes && !streamClosed && hasTimeLeft(remaining)) {
+            // checking again after every signal; enough bytes: return the count that was checked
+            // (another reader may lower availableBytes right after the check)
+            long available = availableBytes;
+            while (available < bytes) {
+                if (streamClosed || !hasTimeLeft(remaining)) {
+                    // closed (no write can follow) or out of time: what is there now
+                    return availableBytes;
+                }
                 remaining = modified.awaitNanos(remaining);
+                available = availableBytes;
             }
-            return availableBytes;
+            return available;
         } finally {
             waitingReaders.decrementAndGet();
             waitLock.unlock();

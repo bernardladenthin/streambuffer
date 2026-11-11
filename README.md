@@ -340,7 +340,7 @@ public class StreamBuffer implements Closeable
 | `removeTrimStartSignal(Semaphore)` | Removes a trim-start semaphore |
 | `addTrimEndSignal(Semaphore)` | Registers a semaphore released when trim ends |
 | `removeTrimEndSignal(Semaphore)` | Removes a trim-end semaphore |
-| `waitForAtLeast(long)` | Blocks until at least the given number of bytes are available (or the stream closes) |
+| `waitForAtLeast(long)` | Blocks until at least the given number of bytes are available (or the stream closes); returns fewer only for a closed stream |
 | `waitForAtLeast(long, long, TimeUnit)` | Like `waitForAtLeast(long)`, but waits at most the given time; returns the available bytes, fewer on timeout or close (`isClosed()` tells which) |
 | `waitForAnyData()` | Blocks until at least one byte is available (or the stream closes) |
 

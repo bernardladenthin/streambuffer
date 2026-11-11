@@ -87,13 +87,15 @@ deliberately not part of the synchronous Publish pipeline and never a required c
 2. **OpenJML RAC**: the existing JUnit suite runs against RAC-instrumented classes
    (violations throw), checking the static contracts plus the instance/stream-adapter contracts.
 3. **JPF interleavings** (`src/test/jpf/`, scheduled/dispatch CI job `jpf-interleavings`): Java
-   PathFinder exhaustively model-checks the concurrent read/write/close protocol with six harnesses:
+   PathFinder exhaustively model-checks the concurrent read/write/close protocol with seven harnesses:
    `StreamBuffer.jpf` (a writer that closes after its writes, a reader), `WriteClose.jpf` (writer,
    closer and reader in three threads -- the order of write and close, which the first cannot see;
    red before bug-hunt fix F149), `TwoReaders.jpf` (a writer that closes, two readers on one
    stream; red before bug-hunt fix F278) and `RecordReaders.jpf` (two readers of 2-byte records written
    fragmented across the record boundary; red before `read(b, off, len)` took its bytes in one step),
-   `WaitAndRead.jpf` (a `waitForAtLeast(2)` caller next to a reader; red before F278) and
+   `WaitAndRead.jpf` (a `waitForAtLeast(2)` caller next to a reader; red before F278),
+   `WaitSnapshot.jpf` (the same next to a 2-byte write: fewer than 2 only once the buffer is
+   closed; red before `waitForAtLeast` returned the count it checked) and
    `TrimReentrancy.jpf` (a trim start signal writing from inside the trim, a reader).
    Requires JDK 11; builds jpf-core from a pinned commit with a
    one-file `AtomicLong` model patch; the harnesses are compiled at `--release 8` and run under JPF. Local recipe (Docker+JDK 11) in
@@ -101,13 +103,13 @@ deliberately not part of the synchronous Publish pipeline and never a required c
 
 4. **TLA+ model** (`src/test/tla/`, scheduled/dispatch CI job `tla-model`): `StreamBuffer.tla` models
    the wait/wake-up/close protocol, the writes (one FIFO entry each) and the reads; TLC checks safety
-   and liveness. `check.sh` compares 15 models with their expected outcomes: the current code checks
+   and liveness. `check.sh` compares 16 models with their expected outcomes: the current code checks
    clean (`read()` with 1, 2, 3 readers, `read(b, 0, 2)` records, records across entries, a `read()`
-   reader next to a record reader, `waitForAtLeast` next to a reader), the older code fails with its
-   counterexamples (F278: an empty take, a deadlock after the close or next to a waiter; #212: a torn
-   record; F279: a count from the middle of a read), and `WaitSnapshot2` shows the documented snapshot
-   of `waitForAtLeast`. Constants `Protocol`, `ReCheck`, `AtomicRead`, `CountOnce` select the code
-   version; `ChunkLen`, `ByteReaders`, `WaitCallers` the scenario. `tla2tools.jar` v1.7.4 is
+   reader next to a record reader, `waitForAtLeast` next to a reader, also next to a 2-byte write),
+   the older code fails with its counterexamples (F278: an empty take, a deadlock after the close or
+   next to a waiter; #212: a torn record; F279: a count from the middle of a read; before
+   `CheckedReturn`: `waitForAtLeast(2)` returning 1 on an open buffer). Constants `Protocol`,
+   `ReCheck`, `AtomicRead`, `CountOnce`, `CheckedReturn` select the code version; `ChunkLen`, `ByteReaders`, `WaitCallers` the scenario. `tla2tools.jar` v1.7.4 is
    pinned by SHA-256. When the wait/signal code changes, change the model with it.
 
 The `@GuardedBy("bufferLock")` lock discipline is gated separately by Error Prone in the default

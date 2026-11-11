@@ -22,7 +22,7 @@
 (* check under waitLock.                                                    *)
 (*                                                                         *)
 (* The constants select a code version; the code since F279 is            *)
-(*   Protocol = "condition", ReCheck, AtomicRead, CountOnce:                *)
+(*   Protocol = "condition", ReCheck, AtomicRead, CountOnce, CheckedReturn: *)
 (* - Protocol: "condition" is the wait since bug-hunt finding F278 (a      *)
 (*   Condition on waitLock with signalAll, waitingReaders lets a write skip *)
 (*   the lock while nobody waits); "semaphore" is the wait before it (a     *)
@@ -35,7 +35,10 @@
 (*   the first byte, released the lock and waited for the rest.             *)
 (* - CountOnce: availableBytes is lowered once per read, after the copy    *)
 (*   (since F279); without it, per FIFO entry during the copy.              *)
-(* trim() merges the entries into one; it keeps the bytes, their order and  *)
+(* - CheckedReturn: waitForAtLeast's waiting branch returns the count it   *)
+(*   checked (since 2026-11-12); without it, availableBytes read again,     *)
+(*   which another reader may have lowered below n on an open buffer.       *)
+(* trim() merges entries; it keeps the bytes, their order and              *)
 (* availableBytes, and is not modeled.                                      *)
 (***************************************************************************)
 EXTENDS Integers, Sequences, FiniteSets
@@ -50,13 +53,15 @@ CONSTANTS
     Protocol,    \* "condition" (since F278) or "semaphore" (before F278)
     ReCheck,     \* the re-check of availableBytes under bufferLock (since F278)
     AtomicRead,  \* read(b, off, len) takes its bytes in one lock hold (since #212)
-    CountOnce    \* availableBytes lowered once per read, not per entry (since F279)
+    CountOnce,   \* availableBytes lowered once per read, not per entry (since F279)
+    CheckedReturn \* waitForAtLeast returns the count it checked (since 2026-11-12)
 
 (* The bytes one read call of r asks for, or the bytes r's wait waits for. *)
 LenOf(r) == IF r \in ByteReaders THEN 1 ELSE ReadLen
 
 ASSUME /\ Protocol \in {"condition", "semaphore"}
        /\ ReCheck \in BOOLEAN /\ AtomicRead \in BOOLEAN /\ CountOnce \in BOOLEAN
+       /\ CheckedReturn \in BOOLEAN
        /\ Bytes \in Nat /\ ChunkLen \in Nat \ {0} /\ ReadLen \in Nat \ {0}
        /\ Readers # {} /\ ByteReaders \subseteq Readers /\ WaitCallers \subseteq Readers
        /\ ByteReaders \cap WaitCallers = {}
@@ -291,17 +296,23 @@ ReaderTest(r) ==
     /\ rpc[r] = "test" /\ wl = r
     /\ IF avail >= want[r] \/ closed
           THEN IF r \in WaitCallers
-                  THEN /\ Goto(r, "wret")
-                       /\ UNCHANGED <<waiters, parked, wl>>
+                  \* CheckedReturn: enough bytes, return the count just checked
+                  THEN IF CheckedReturn /\ avail >= want[r]
+                          THEN /\ Return(r)
+                               /\ waiters' = waiters - 1
+                               /\ wl' = None
+                               /\ UNCHANGED parked
+                          ELSE /\ Goto(r, "wret")
+                               /\ UNCHANGED <<waiters, parked, wl, wres, wclosed>>
                   ELSE /\ waiters' = waiters - 1
                        /\ Goto(r, IF avail >= 1 THEN "lock" ELSE "ret0")
                        /\ wl' = None
-                       /\ UNCHANGED parked
+                       /\ UNCHANGED <<parked, wres, wclosed>>
           ELSE /\ parked' = parked \cup {r}
                /\ Goto(r, "parked")
                /\ wl' = None
-               /\ UNCHANGED waiters
-    /\ UNCHANGED <<Shared, want, cur, hold, left, reads, wres, wclosed, eofAt, permits, bl>>
+               /\ UNCHANGED <<waiters, wres, wclosed>>
+    /\ UNCHANGED <<Shared, want, cur, hold, left, reads, eofAt, permits, bl>>
 
 (* "condition": return availableBytes, still under waitLock, then the      *)
 (* finally block (waitingReaders.decrementAndGet(), unlock).               *)
@@ -465,10 +476,10 @@ RecordsWhole ==
             /\ Len(c) < LenOf(r) => closed
             /\ (ByteReaders = {} /\ Len(c) = ReadLen) => (c[1] - 1) % ReadLen = 0
 
-(* waitForAtLeast(n) returns fewer than n bytes only for a closed buffer.   *)
-(* It holds where nothing else takes bytes; with a reader next to it, the   *)
-(* count it returns is a snapshot that the reader may have lowered already  *)
-(* (its Javadoc), see the WaitSnapshot2 model.                              *)
+(* waitForAtLeast(n) returns fewer than n bytes only for a closed buffer    *)
+(* (its JML postcondition). Before CheckedReturn the waiting branch read    *)
+(* availableBytes again for the result, and a reader next to it could have  *)
+(* lowered it below n on an open buffer (the WaitSnapshot2 model).          *)
 WaitEnoughOrClosed ==
     \A w \in WaitCallers : wres[w] # -1 => wres[w] >= ReadLen \/ wclosed[w]
 

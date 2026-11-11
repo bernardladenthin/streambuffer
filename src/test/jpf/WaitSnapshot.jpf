@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: 2014-2026 Bernard Ladenthin <bernard.ladenthin@gmail.com>
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+# JPF run configuration for the wait-snapshot harness: a waitForAtLeast(2) caller next to a
+# reader of one byte, a writer of one 2-byte write that closes; the waiter's result is fewer than
+# two only on a closed buffer. Same layout as StreamBuffer.jpf; consumed by RunJPF.jar in the
+# jpf-interleavings CI job and by the local recipe in README.md.
+target = net.ladenthin.streambuffer.jpf.JpfWaitSnapshotHarness
+
+classpath = ${config_path}/out;${config_path}/streambuffer-classes;${config_path}/lib/checker-qual.jar;${config_path}/lib/jspecify.jar;${config_path}/lib/error-prone-annotations.jar
+
+vm.enable_assertions = true
