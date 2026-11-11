@@ -506,7 +506,7 @@ Test coverage includes:
 verified in a separate CI pipeline
 ([`formal-verification.yml`](./.github/workflows/formal-verification.yml)) in two layers:
 
-- **Deductive proof — OpenJML ESC (Z3).** The complete static, sequential core is *proven*
+- **Deductive proof — OpenJML ESC (Z3, and again with cvc5).** The complete static, sequential core is *proven*
   against full functional contracts: both offset/length validators — including the classic
   `(off + len) < 0` integer-overflow guard, proven equivalent to the clean bounds condition
   under Java wrap semantics — and the thirteen static trim-decision/arithmetic/timeout helpers, among

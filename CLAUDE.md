@@ -66,7 +66,7 @@ and readers) is a report, the baseline for roadmap A8.
 ```bash
 mvn -Pjcstress test
 ```
-jcstress tests under `net.ladenthin.streambuffer.jcstress` live behind the `jcstress` profile. The profile binds `exec-maven-plugin` to the `test` phase to run the jcstress harness in a forked JVM (`-m default`). Off by default because the harness needs annotation-processor-generated test resources that are skipped by `-DskipTests` / `-Dmaven.test.skip=true` (would otherwise NPE) and because the run is slow.
+jcstress tests under `net.ladenthin.streambuffer.jcstress` live behind the `jcstress` profile. The profile binds `exec-maven-plugin` to the `test` phase to run the jcstress harness in a forked JVM (`-m default`). Off by default because the harness needs annotation-processor-generated test resources that are skipped by `-DskipTests` / `-Dmaven.test.skip=true` (would otherwise NPE) and because the run is slow. The mode is `jcstress.mode`: `quick` by default (every pull request's Test job), `default` in the scheduled `jcstress-default` job and the dispatch-only `arm64-jcstress-benchmark` job of `formal-verification.yml` (`-Djcstress.mode=default` locally).
 
 **Opt-in vmlens interleaving analysis:**
 ```bash
@@ -79,8 +79,10 @@ The `vmlens` profile pulls in `com.vmlens:api` and runs the `vmlens-maven-plugin
 Two layers, run in a **separate** CI pipeline (`.github/workflows/formal-verification.yml` —
 deliberately not part of the synchronous Publish pipeline and never a required check):
 
-1. **OpenJML ESC** (deductive proof, Z3): the 15 static sequential-core methods (2 validators +
-   13 pure helpers) are proven against full functional contracts.
+1. **OpenJML ESC** (deductive proof): the 15 static sequential-core methods (2 validators +
+   13 pure helpers) are proven against full functional contracts, **twice**: with Z3 and again with
+   cvc5 (both bundled with OpenJML), so no proof rests on one solver. Yices2, also bundled, fails
+   every obligation with `ERROR` and is not used. Local: `--prover=cvc5`.
 2. **OpenJML RAC**: the existing JUnit suite runs against RAC-instrumented classes
    (violations throw), checking the static contracts plus the instance/stream-adapter contracts.
 3. **JPF interleavings** (`src/test/jpf/`, scheduled/dispatch CI job `jpf-interleavings`): Java

@@ -50,6 +50,11 @@ SPDX-License-Identifier: Apache-2.0
              empty when skipped, so -DargLine does not reach the fork. Used by the
              virtual-threads-jdk21 job for its JFR recording. -->
         <streambuffer.test.jvmArgs></streambuffer.test.jvmArgs>
+        <!-- jcstress mode of the jcstress profile. quick in every pull request (the Test job of the
+             Publish pipeline): with the several-reader races the default mode planned 864 runs and
+             about doubled that job to 80-90 minutes. default runs in the scheduled jcstress-default
+             job of formal-verification.yml and in the arm64 job; -Djcstress.mode=default locally. -->
+        <jcstress.mode>quick</jcstress.mode>
         <!-- The release the API compatibility gate (japicmp) compares against: the last version on
              Maven Central. Raise it with every release. -->
         <japicmp.baseline.version>1.2.0</japicmp.baseline.version>
@@ -1038,7 +1043,7 @@ SPDX-License-Identifier: Apache-2.0
                                         <argument>org.openjdk.jcstress.Main</argument>
                                         <argument>-v</argument>
                                         <argument>-m</argument>
-                                        <argument>default</argument>
+                                        <argument>${jcstress.mode}</argument>
                                     </arguments>
                                 </configuration>
                             </execution>

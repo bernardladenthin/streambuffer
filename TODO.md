@@ -14,11 +14,11 @@ annotated, so everything below is genuinely still open.
 - **Verification roadmap 2026-11 — packages A5–A13.** Each package is closed on its own, ends in a
   machine-checked result and is listed with its acceptance criterion. The contract every package
   checks: several readers and writers are supported, without fairness (decided with bug-hunt finding
-  F278). Order: A5, A6 + A7; A8 only with the A7 numbers; A13 and A9
-  are long-term. A5, A6 and A7 also build infrastructure that a later memory-model project can
-  reuse (jcstress on several architectures, formal tools pinned in CI, checking real executions
-  against a formal model) — so pinned tool setups belong in a composite action of
-  bernardladenthin/actions rather than in this workflow.
+  F278). Order: A5, then A13 (Apalache) and A6 on the same spec; A8 with the benchmark numbers; A9
+  is long-term. A5 and A6 also build infrastructure that a later memory-model project can reuse
+  (jcstress on several architectures, formal tools pinned in CI, checking real executions against a
+  formal model) — so pinned tool setups belong in a composite action of bernardladenthin/actions
+  rather than in this workflow.
 
   - **A5 — TLA+/PlusCal model of the protocol (~1 week).** Writer, N readers (constant), closer,
     the wait (pre-F278: the max-1 semaphore and the `availableBytes` check outside the lock; since
@@ -33,13 +33,6 @@ annotated, so everything below is genuinely still open.
     test-side wrappers / an agent — no change to production code) and check the traces against the
     A5 spec with TLC (the approach of Cirstea, Kuppe, Merz et al., 2024). Closes the gap between
     model and code. Done when: a deliberately wrong spec rejects recorded traces.
-  - **A7 — The contended benchmark on the GitHub ARM and x86 runners (hours).** The virtual-thread
-    tests, the JDK 21 pinning report (`virtual-threads-jdk21`) and `StreamBufferContendedBenchmark`
-    exist; the benchmark has only been run on a local x86 machine (numbers under A8). Run it on the
-    GitHub ARM runner and on x86, report only (shared runners are too noisy for a gate). Also open:
-    on JDK 21 a virtual thread blocked entering the contended `bufferLock` monitor holds its
-    carrier, which `jdk.VirtualThreadPinned` does not show (it covers parking while pinned); A8
-    removes the monitor.
   - **A8 — `ReentrantLock` instead of `synchronized (bufferLock)` (optional, ~1 week).** The
     waiting part landed with F278: a separate `waitLock` with a `Condition`, `signalAll` on write and
     close, the re-check under `bufferLock`, so a waiting reader no longer pins a carrier. Still on
@@ -47,13 +40,19 @@ annotated, so everything below is genuinely still open.
     virtual reader or writer blocked at the monitor pins its carrier on JDK 21–23. One lock for both
     would also save the second lock per write. The lock-free `available()` path stays `volatile`,
     the external semaphore signal API stays. Check Error Prone's `@GuardedBy` support for `Lock`
-    fields; the A3/A4 checks (vmlens, jcstress, Lincheck, JPF) and A7 are the safety net; the
-    `StreamBufferContendedBenchmark` comparison is mandatory. Baseline (local x86, 16 cores, JDK
+    fields; the A3/A4 checks (vmlens, jcstress, Lincheck, JPF) and A7 (virtual threads, arm64) are
+    the safety net; the `StreamBufferContendedBenchmark` comparison is mandatory. Baseline (local x86, 16 cores, JDK
     25.0.4, 2026-11-11; ms per 11 MiB transfer in 1429-byte records, writers/readers):
     platform 1/1 65.4 ± 5.9, 4/1 66.2 ± 5.2, 1/4 49.6 ± 10.5, 4/4 65.2 ± 7.8; virtual 1/1
     66.9 ± 7.0, 4/1 61.6 ± 5.4, 1/4 57.1 ± 8.3, 4/4 52.5 ± 9.6 (about 170–225 MiB/s). Likely
     dominated by `trim()` copying the whole buffer under the lock once more than 100 entries queue
-    up; measure that before attributing a gain to the lock.
+    up; measure that before attributing a gain to the lock. On arm64 (cfarm424, Neoverse-N1, JDK
+    21, shared load ~33 of 64 cores, 2026-11-11): platform 1/1 68.0 ± 44.0, 4/1 92.1 ± 36.6, 1/4
+    91.1 ± 28.5, 4/4 69.0 ± 26.0; virtual 1/1 84.5 ± 45.8, 4/1 86.3 ± 31.0, 1/4 72.6 ± 88.8,
+    4/4 75.4 ± 49.7 -- too noisy to compare; the `arm64-jcstress-benchmark` job gives a quieter
+    machine. Also for A8: on JDK 21 a virtual thread blocked entering the contended `bufferLock`
+    monitor holds its carrier, which `jdk.VirtualThreadPinned` does not show (it covers parking
+    while pinned); one `ReentrantLock` removes the monitor.
   - **A9 — Functional proof of the sequential instance core (long-term, months).** The parked
     "Deeper ESC" item below; OpenJML first, KeY only for goals where Z3 answers "unknown".
   - **A13 — Unbounded safety of the A5 model (weeks).** TLC checks fixed constants only: check

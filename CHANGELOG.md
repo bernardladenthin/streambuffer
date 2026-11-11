@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **ESC proves every obligation twice, with Z3 and with cvc5.** The formal-verification job runs the
+  same 15 ESC proofs a second time with cvc5 1.3.2 (bundled with OpenJML) and requires the same
+  count, so no proof rests on a single solver (the nonlinear ceiling division included). A falsified
+  contract is rejected by both. Yices2, also bundled, fails every obligation with `ERROR` here.
+- **jcstress and the contended benchmark on arm64 (roadmap A7).** ARM reorders memory accesses far
+  more than x86 (TSO), so a missing happens-before shows up there first. Measured on the GCC Compile
+  Farm (cfarm424, Neoverse-N1, JDK 21.0.13, 2026-11-11): jcstress default mode **342/342 passed**; the
+  benchmark ran under a shared load (errors of ±26–89 ms, a report only). The dispatch-only job
+  `arm64-jcstress-benchmark` repeats both on GitHub's `ubuntu-24.04-arm` runner.
 - **Several readers in every concurrency tool (roadmap A3).** vmlens:
   `StreamBufferSeveralReadersInterleavingTest` (two readers and a close, two record readers, a trim
   with a trim start signal, `safeWrite` with a concurrent single-byte write). jcstress:
@@ -47,6 +56,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so they hold under concurrency. A falsified copy of each failed the RAC run (negative controls).
 
 ### Changed
+- **jcstress runs in quick mode in pull requests** (`jcstress.mode` in `pom.xml`). With the
+  several-reader races the default mode planned 864 runs instead of 482 and about doubled the
+  Publish pipeline's Test job to 80-90 minutes. The default mode runs in the scheduled job
+  `jcstress-default` (x86) and in `arm64-jcstress-benchmark`.
 - **vmlens runs without the JaCoCo agent** (`jacoco.skip` in the `vmlens` profile). JaCoCo writes its
   coverage probes into one unsynchronized `boolean[]` per class, so two threads running the same
   method raced on it and vmlens reported 13 data races in the several-reader scenarios that were not
