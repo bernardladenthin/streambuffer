@@ -73,7 +73,7 @@ with `maxBufferElements` 1 the second write trims, and the trim start signal wri
 inside the trim, on the writer thread that holds the lock; a reader reads concurrently. The reader
 gets `1, 2, 9` when the trim ran and `1, 2` when it took the first byte before the second write
 (then there is no trim); the 9 arrives exactly when the signal fired. Last confirmed run: **no
-errors detected**, 24,880 states (8 s); also green before F278 (the defect concerned several
+errors detected**, 24,972 states (24,880 before the geometric trim of A14, 2026-11-11); also green before F278 (the defect concerned several
 readers). It uses named static classes: with an anonymous `Semaphore` subclass next to lambdas,
 jpf-core's `Thread.start` peer failed with a `NullPointerException`.
 
