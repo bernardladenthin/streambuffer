@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **An interrupted read throws `java.io.InterruptedIOException`** instead of a plain `IOException`
+  wrapping the `InterruptedException`: the cause is still the `InterruptedException` and the
+  thread's interrupt flag is still set again, and for `read(b, off, len)` `bytesTransferred` is the
+  number of bytes already copied to `b` (they are no longer buffered). A subtype of `IOException`, so
+  callers that catch `IOException` are unaffected. The JML spec now names it in `signals_only`.
+- **Documentation:** the `.jml` header no longer names a Checker Framework Lock Checker profile
+  (there is none; the Lock Checker is deferred) and cites DOI 10.1145/3594729 under its real title, de
+  Boer et al., "Formal Specification and Verification of JDK's Identity Hash Map Implementation".
 - - **Dependabot: one grouped pull request per ecosystem a week, on Saturday.**
   `.github/dependabot.yml` is the template of bernardladenthin/actions v1.2.1: every minor and
   patch update of Maven, and of the GitHub Actions, comes in one pull request (a major update
@@ -185,6 +193,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the job ran into its timeout with every contract holding.
 
 ### Fixed
+- **Several readers on one stream (bug-hunt finding F278).** The buffer was correct for one reader
+  only. A write or `close()` woke at most one waiting reader (the internal semaphore held at most one
+  permit), so with two readers parked in `read()`, two writes left one of them blocked while a byte
+  was buffered, and a `close()` left one blocked forever. A reader also checked the buffered count
+  outside the lock and then took the first entry under it without checking again, so when another
+  reader had taken the bytes meanwhile, `read()` threw `NoSuchElementException`. Now every write and
+  the close wake all waiting readers (a `Condition` of a separate `ReentrantLock`, which also does not
+  pin a virtual thread's carrier), and a reader checks the count again under the lock and waits again
+  if the bytes are gone; `read(b, off, len)` copies what is left and waits for the rest. A write
+  takes that lock only while a reader waits, and a read with enough buffered bytes does not take it. Each byte
+  reaches exactly one reader, in FIFO order; readers are not served fairly. Several writers were
+  already safe: each write is atomic. Regression tests in `StreamBufferConcurrentReadersTest` (red
+  before the fix) and a third JPF harness, `TwoReaders.jpf`.
 - **`safeWrite` could be bypassed by a concurrent `write(int)`.** A single-byte write set an
   instance-wide flag that told an array write running on another thread not to clone its array, so
   with `setSafeWrite(true)` the caller's array could land in the buffer by reference and later changes

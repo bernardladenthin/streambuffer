@@ -1008,6 +1008,20 @@ public class StreamBufferTest {
     @Nested
     @DisplayName("waitForAnyData()")
     class WaitForAnyDataTests {
+        @DisplayName("waitForAnyData(): three bytes buffered — returns 3")
+        @Test
+        public void waitForAnyData_threeBytesBuffered_returnsThree() throws IOException, InterruptedException {
+            // arrange
+            final StreamBuffer sb = new StreamBuffer();
+            sb.getOutputStream().write(new byte[] {1, 2, 3});
+
+            // act
+            final long available = sb.waitForAnyData();
+
+            // assert
+            assertThat(available, is(3L));
+        }
+
         @DisplayName("waitForAnyData(): data written before — no waiting")
         @ParameterizedTest
         @MethodSource("net.ladenthin.streambuffer.StreamBufferTest#writeMethods")
@@ -2798,14 +2812,86 @@ public class StreamBufferTest {
             reader.join();
 
             // assert
-            assertThat(
-                    "IOException should be thrown wrapping InterruptedException",
-                    caught[0] instanceof IOException,
-                    is(true));
+            assertInterruptedIOException(caught[0], 0);
             assertThat(
                     "Thread interrupt flag must be preserved after wrapping InterruptedException",
                     interruptFlagAfterCatch.get(),
                     is(true));
+        }
+
+        @DisplayName("read(): interrupted thread, a byte buffered — returns the byte, flag kept")
+        @Test
+        public void read_interruptedThreadByteBuffered_returnsTheByte() throws Exception {
+            // arrange
+            final StreamBuffer sb = new StreamBuffer();
+            sb.getOutputStream().write(42);
+            Thread.currentThread().interrupt();
+
+            // act
+            final int value;
+            final boolean flagAfterRead;
+            try {
+                value = sb.getInputStream().read();
+            } finally {
+                flagAfterRead = Thread.interrupted(); // also clears the flag for the next test
+            }
+
+            // assert: no waiting needed, so the interrupt does not end the read
+            assertThat(value, is(42));
+            assertThat(flagAfterRead, is(true));
+        }
+
+        @DisplayName("read(): interrupted thread, closed empty stream — returns end of stream")
+        @Test
+        public void read_interruptedThreadClosedEmptyStream_returnsEndOfStream() throws Exception {
+            // arrange
+            final StreamBuffer sb = new StreamBuffer();
+            sb.close();
+            Thread.currentThread().interrupt();
+
+            // act
+            final int value;
+            final boolean flagAfterRead;
+            try {
+                value = sb.getInputStream().read();
+            } finally {
+                flagAfterRead = Thread.interrupted();
+            }
+
+            // assert
+            assertThat(value, is(-1));
+            assertThat(flagAfterRead, is(true));
+        }
+
+        @DisplayName("waitForAtLeast(): interrupted thread, too few bytes on an open stream — throws at once")
+        @Test
+        public void waitForAtLeast_interruptedThreadTooFewBytes_throwsInterruptedException() throws Exception {
+            // arrange
+            final StreamBuffer sb = new StreamBuffer();
+            sb.getOutputStream().write(42);
+            Thread.currentThread().interrupt();
+
+            // act + assert: it would have to wait, so the pending interrupt ends it
+            try {
+                assertThrows(InterruptedException.class, () -> sb.waitForAtLeast(2));
+            } finally {
+                Thread.interrupted();
+            }
+        }
+
+        private void assertInterruptedIOException(final Throwable caught, final int bytesTransferred) {
+            assertThat(
+                    "InterruptedIOException should be thrown wrapping InterruptedException: " + caught,
+                    caught instanceof InterruptedIOException,
+                    is(true));
+            assertThat(
+                    "the InterruptedException is the cause",
+                    caught.getCause() instanceof InterruptedException,
+                    is(true));
+            assertThat(
+                    "bytesTransferred counts the bytes already copied",
+                    ((InterruptedIOException) caught).bytesTransferred,
+                    is(bytesTransferred));
         }
 
         @DisplayName("read(): array thread interrupted while waiting for second byte — throws io exception")
@@ -2840,11 +2926,8 @@ public class StreamBufferTest {
             reader.interrupt();
             reader.join();
 
-            // assert
-            assertThat(
-                    "IOException should be thrown wrapping InterruptedException",
-                    caught[0] instanceof IOException,
-                    is(true));
+            // assert: the first byte was already copied to the array
+            assertInterruptedIOException(caught[0], 1);
             assertThat(
                     "Thread interrupt flag must be preserved after wrapping InterruptedException",
                     interruptFlagAfterCatch.get(),
