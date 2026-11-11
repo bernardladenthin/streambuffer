@@ -11,6 +11,11 @@ mvn package          # Build JAR
 mvn install -Dgpg.skip=true  # Install to local repo without GPG signing
 ```
 
+`mvn verify` also runs the **API compatibility gate** (japicmp, `japicmp.baseline.version` in `pom.xml` =
+the last release on Maven Central): it fails when the version step is too small for the change under
+semantic versioning (a removed or changed public member needs a new major version). The report is in
+`target/japicmp/`. Raise the baseline after every release (`docs/RELEASE.md`).
+
 **Run a single test:**
 ```bash
 mvn test -Dtest=StreamBufferTest#testSimpleRoundTrip
@@ -122,17 +127,20 @@ mvn -P jml-rac -Dopenjml.home=<openjml> -Dopenjml.jdk.java=<openjml>/jdk/bin/jav
   at the ceiling-division boundary). Everything else is proven overflow-free under safe math.
 - The exception-message builder `newInvalidOffsetOrLengthToWriteException` carries an ASSUMED
   (unproven) contract — string concatenation defeats the SMT encoding. Do not inline it back.
-- NO class invariants in the `.jml`: OpenJML RAC (21.0.27 and 21.0.28) checks the outer class's
-  invariant inside the constructor of a non-static inner class and reads the field on the wrong
-  class → `NoSuchFieldError` at runtime (14-line reproducer: private field + invariant + inner
-  class). On this class every test fails (258/285). An earlier 21.0.27 compile crash
-  ("no enclosing instance") was not reproduced. **21.0.29 fixed that case but not this class:**
-  the 14-line reproducer runs clean there, but the four candidate invariants on this class still
-  break RAC -- `NoSuchMethodError` on `StreamBuffer$SBOutputStream.JML$INV$$<n>()`, 106 errors
-  (measured 2026-10-20). Cause (narrowed down 2026-10-21): an inner-class method calling an outer
-  instance method *without a qualifier* (`writeSingleByte(b)`); RAC checks the callee's receiver
-  invariant on `this` (the inner object) instead of `StreamBuffer.this`. `Outer.this.m()` runs clean.
-  Reproducer in TODO.md. Re-test on upgrades.
+- Four class invariants live in the `.jml` (`0 <= availableBytes`, `0 <= positionAtCurrentBufferEntry`,
+  `1 <= maxAllocationSize`, `0 <= maxObservedBytes`), checked by RAC. They depend on the **qualified**
+  delegating calls in `SBInputStream`/`SBOutputStream` (`StreamBuffer.this.writeSingleByte(b)`): for an
+  unqualified call from an inner class, OpenJML RAC (21.0.29) checks the callee's invariant on the inner
+  object (`NoSuchMethodError` on `SBOutputStream.JML$INV$$<n>()`, OpenJML/OpenJML#1012). Do not drop
+  the qualifier. A false invariant fails the suite (negative control 2026-11-11: 14/14 errors).
+- RAC contracts reference only `\result`, parameters and **monotone** state: `isClosed()` (stays true),
+  `getAvailableBytesExact()` after the close (can only fall), `getTotalBytesWritten()`/`getTotalBytesRead()`
+  (only grow). Anything else can change between the method body and the postcondition check under
+  concurrency and would fail spuriously. Exception clauses name `Exception` and test `instanceof`, since
+  a clause for a narrower type is evaluated with an unguarded cast for every exception
+  (OpenJML/OpenJML#1050).
+- The read/write contracts sit on the private outer methods (`readSingleByte`, `readIntoArray`, the
+  four-argument `writeFromArray`), declared in the `.jml`; every stream call goes through them.
 - `//@ nullable_by_default` at the class head is load-bearing for RAC: without it JML's
   non-null-by-default inserts an implicit non-null precondition on every reference parameter, so
   the null-argument tests hit `JmlAssertionError.Precondition` instead of the specified NPE.

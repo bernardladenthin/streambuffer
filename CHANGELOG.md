@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **API compatibility gate.** `mvn verify` runs japicmp 0.26.5 against the last release on Maven
+  Central (`japicmp.baseline.version`, 1.2.0) and fails when the version step is too small for the
+  change under semantic versioning (a binary-incompatible change needs a new major version). Its
+  first run found the four methods under "Removed", hence 2.0.0.
+- **Class invariants and stronger contracts under OpenJML RAC.** Four class invariants
+  (`0 <= availableBytes`, `0 <= positionAtCurrentBufferEntry`, `1 <= maxAllocationSize`,
+  `0 <= maxObservedBytes`) now run, after the stream adapters' delegating calls were qualified
+  (`StreamBuffer.this.writeSingleByte(b)`) to work around OpenJML/OpenJML#1012. New contracts on
+  the read and write paths, `waitForAtLeast`, `waitForAnyData` and `close()`: a short read or the end
+  of the stream only on a closed and then empty buffer, a write fails only on a closed buffer,
+  every read and write is counted, `close()` leaves the buffer closed. They only use monotone state,
+  so they hold under concurrency. A falsified copy of each failed the RAC run (negative controls).
+
 ### Changed
 - **`read(b, off, len)` takes its bytes in one step.** It still waits until all `len` bytes are
   buffered (or the buffer is closed), but now takes nothing before that and then all of them under
@@ -198,6 +212,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Under RAC the two stress loops of `StreamBufferTest` are scaled down (`streambuffer.test.rac`):
   RAC prints a stack trace for every `System.arraycopy`/`clone` (OpenJML/OpenJML#1050), and unscaled
   the job ran into its timeout with every contract holding.
+
+### Removed
+- **Breaking: four public methods, so the next release is 2.0.0** (the API gate, japicmp against
+  1.2.0, reports them as binary-incompatible). Removed in June 2026 without a CHANGELOG entry;
+  each has a direct replacement:
+  - `getBufferSize()` → `getBufferElementCount()` (same value: the number of `byte[]` entries, not
+    bytes; the old name read like a byte count).
+  - `blockDataAvailable()` → `waitForAnyData()` (returns the available byte count instead of
+    `void`; the old method was deprecated and pointed to a private one).
+  - `correctOffsetAndLengthToRead(byte[], int, int)` → `validateOffsetAndLengthToRead(byte[], int, int)`.
+  - `correctOffsetAndLengthToWrite(byte[], int, int)` → `validateOffsetAndLengthToWrite(byte[], int, int)`.
 
 ### Fixed
 - **CI: the JPF job failed on every run after the first** with "cannot find gov.nasa.jpf.JPF": its

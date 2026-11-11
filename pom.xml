@@ -9,7 +9,7 @@ SPDX-License-Identifier: Apache-2.0
     <modelVersion>4.0.0</modelVersion>
     <groupId>net.ladenthin</groupId>
     <artifactId>streambuffer</artifactId>
-    <version>1.3.0-SNAPSHOT</version>
+    <version>2.0.0-SNAPSHOT</version>
     <packaging>jar</packaging>
     <name>streambuffer</name>
     <description>A stream buffer is a class to buffer data that has been written to an OutputStream and provide the data in an InputStream.</description>
@@ -44,6 +44,10 @@ SPDX-License-Identifier: Apache-2.0
         <concurrentunit.version>0.4.6</concurrentunit.version>
         <lincheck.version>3.7</lincheck.version>
         <vmlens.version>1.2.28</vmlens.version>
+        <japicmp.version>0.26.5</japicmp.version>
+        <!-- The release the API compatibility gate (japicmp) compares against: the last version on
+             Maven Central. Raise it with every release. -->
+        <japicmp.baseline.version>1.2.0</japicmp.baseline.version>
         <project.build.outputTimestamp>${git.commit.time}</project.build.outputTimestamp>
         <sonar.organization>bernardladenthin</sonar.organization>
         <!-- No Python or other code under .github is covered by a report that reaches Sonar (the
@@ -746,6 +750,50 @@ SPDX-License-Identifier: Apache-2.0
                     <timeoutConstant>30000</timeoutConstant>
                 </configuration>
              </plugin>
+            <!--
+                API compatibility gate (TODO roadmap A11): compares the jar of this build with the
+                last release on Maven Central (japicmp.baseline.version) and fails the build when
+                the version step does not match the change by semantic versioning: a
+                binary-incompatible change needs a new major version, a new feature a new minor one.
+                The report (target/japicmp/) lists every change. Runs at verify, after the jar is
+                packaged.
+            -->
+            <plugin>
+                <groupId>com.github.siom79.japicmp</groupId>
+                <artifactId>japicmp-maven-plugin</artifactId>
+                <version>${japicmp.version}</version>
+                <configuration>
+                    <oldVersion>
+                        <dependency>
+                            <groupId>${project.groupId}</groupId>
+                            <artifactId>${project.artifactId}</artifactId>
+                            <version>${japicmp.baseline.version}</version>
+                            <type>jar</type>
+                        </dependency>
+                    </oldVersion>
+                    <newVersion>
+                        <file>
+                            <path>${project.build.directory}/${project.build.finalName}.jar</path>
+                        </file>
+                    </newVersion>
+                    <parameter>
+                        <onlyModified>true</onlyModified>
+                        <!-- Not breakBuildOnBinaryIncompatibleModifications: that fails on every
+                             incompatible change, also after the major step semantic versioning asks
+                             for. This one fails only when the version step is too small. -->
+                        <breakBuildBasedOnSemanticVersioning>true</breakBuildBasedOnSemanticVersioning>
+                    </parameter>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>api-compatibility</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>cmp</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 
