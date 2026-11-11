@@ -28,8 +28,16 @@ import java.util.concurrent.locks.ReentrantLock;
  * <p>Several threads may write and several may read at the same time. Each write is atomic: its
  * bytes enter the buffer together, in order. Each buffered byte is delivered to exactly one
  * reader, in the order it was written, and no reader blocks while bytes are buffered or after
- * the buffer was closed. Readers are not served fairly, and the bytes one
- * {@code read(b, off, len)} returns can be interleaved with bytes another reader took meanwhile.
+ * the buffer was closed. Readers are not served fairly.
+ *
+ * <p>{@code read(b, off, len)} takes its {@code len} bytes in one step once all of them are
+ * buffered, so they are contiguous in the stream. That makes the buffer usable as a work queue
+ * of fixed-size records with competing consumers (a load balancer): readers that all read the
+ * record size each get whole records, every record goes to exactly one of them, in no particular
+ * order between readers. It holds as long as the stream is a sequence of whole records: with one
+ * writer in writes of any size (a record may be split across writes, a write may hold several
+ * records); with several writers only if each write holds whole records, since writes of different
+ * writers interleave. Only after the close may the last read return fewer bytes.
  *
  * @author Bernard Ladenthin bernard.ladenthin@gmail.com
  */
@@ -897,22 +905,20 @@ public class StreamBuffer implements Closeable {
     /**
      * {@link #waitForAtLeast(long)} for the read paths: an interrupt becomes the
      * {@link InterruptedIOException} the {@link InputStream} contract uses for it, with the
-     * {@link InterruptedException} as its cause and the thread's interrupt flag set again.
+     * {@link InterruptedException} as its cause and the thread's interrupt flag set again. A read
+     * takes no byte before its wait is over, so {@link InterruptedIOException#bytesTransferred} is 0.
      *
      * @param bytes minimum number of bytes to wait for (&#x2265; 1)
-     * @param bytesTransferred the bytes this read already copied to the caller's array, reported
-     *        in {@link InterruptedIOException#bytesTransferred}
      * @return the number of bytes available now
      * @throws InterruptedIOException if the current thread is interrupted while waiting
      */
-    private long awaitBytes(final long bytes, final int bytesTransferred) throws InterruptedIOException {
+    private long awaitBytes(final long bytes) throws InterruptedIOException {
         try {
             return waitForAtLeast(bytes);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            final InterruptedIOException interrupted = new InterruptedIOException(
-                    "Interrupted while waiting for " + bytes + " byte(s) (bytesTransferred=" + bytesTransferred + ")");
-            interrupted.bytesTransferred = bytesTransferred;
+            final InterruptedIOException interrupted =
+                    new InterruptedIOException("Interrupted while waiting for " + bytes + " byte(s); none taken");
             interrupted.initCause(e);
             throw interrupted;
         }
@@ -958,7 +964,7 @@ public class StreamBuffer implements Closeable {
      */
     private int readSingleByte() throws IOException {
         for (; ; ) {
-            if (awaitBytes(1L, 0) < 1) {
+            if (awaitBytes(1L) < 1) {
                 // try to wait, but not enough bytes available
                 // return the end of stream is reached
                 return -1;
@@ -996,92 +1002,79 @@ public class StreamBuffer implements Closeable {
      * Implementation of {@link SBInputStream#read(byte[], int, int)}. See
      * {@link #availableClamped()} for why this lives in the outer class.
      *
-     * <p>Waits for the first byte, then for all remaining {@code len - 1} bytes
-     * ({@code waitForAtLeast}) unless the stream is closed first. Designed that
-     * way since the first version; {@link #getInputStream()} documents it for
-     * callers. When another reader takes bytes in between, it copies what is left
-     * and waits again for the rest.
+     * <p>Waits until all {@code len} bytes are buffered ({@code waitForAtLeast}) unless the stream
+     * is closed first, then takes them in one step under {@link #bufferLock}: the bytes of one call
+     * are contiguous in the stream, also with several readers, so readers of fixed-size records
+     * each get whole records. Nothing is taken before all of them are there; when another reader
+     * took bytes in between, it waits again. Waiting for the full length is the behaviour since the
+     * first version; {@link #getInputStream()} documents it for callers.
      *
      * @param b the destination array
      * @param off the offset in the destination array
      * @param len the maximum number of bytes to read
-     * @return the number of bytes copied, {@code 0} for a zero-length request, or {@code -1}
-     *         on end of stream
-     * @throws InterruptedIOException if the current thread is interrupted while waiting;
-     *         {@code bytesTransferred} is the number of bytes already copied to {@code b},
-     *         the interrupt flag is set
+     * @return the number of bytes copied ({@code len}, or fewer only once the stream is closed),
+     *         {@code 0} for a zero-length request, or {@code -1} on end of stream
+     * @throws InterruptedIOException if the current thread is interrupted while waiting (no byte
+     *         taken, {@code bytesTransferred} 0, interrupt flag set)
      */
     private int readIntoArray(final byte b[], final int off, final int len) throws IOException {
         if (!validateOffsetAndLengthToRead(b, off, len)) {
             return 0;
         }
 
-        // try to read the first byte from FIFO
-        // copied from super.read
-        // === snip
-        int c = readSingleByte();
-        if (c == -1) {
-            return -1;
-        }
-        b[off] = (byte) c;
-        // === snap
-
-        // we have already copied one byte, initialize with 1
-        int copiedBytes = 1;
-
-        int missingBytes = len - copiedBytes;
-        while (!hasNoMissingBytes(missingBytes)) {
-            if (awaitBytes(missingBytes, copiedBytes) < 1) {
-                // try to wait, but no more bytes available
-                return copiedBytes;
+        for (; ; ) {
+            if (awaitBytes(len) < 1) {
+                // closed and nothing left: the end of the stream
+                return -1;
             }
 
-            // some or enough bytes are available, lock and modify the FIFO
             synchronized (bufferLock) {
-                // Read the count again under the lock: another reader may have taken bytes since
-                // the wait returned (F278), so the wait's result can be stale, even 0 by now. The
-                // bytes not copied in this round are waited for in the next one.
+                // Checked again under the lock: another reader may have taken bytes since the wait
+                // returned (F278). Take all len bytes at once, or what is left of a closed stream;
+                // otherwise wait again, and a closed stream another reader emptied ends there.
                 long maximumAvailableBytes = availableBytes;
-                int bytesToCopy = (int) Math.min(maximumAvailableBytes, (long) missingBytes);
-                missingBytes -= bytesToCopy;
+                if (maximumAvailableBytes >= len || (streamClosed && maximumAvailableBytes > 0)) {
+                    int bytesToCopy = (int) Math.min(maximumAvailableBytes, (long) len);
+                    int copiedBytes = 0;
+                    while (!hasNoMissingBytes(bytesToCopy)) {
+                        // get the first element from FIFO
+                        final byte[] first = buffer.getFirst();
+                        // get the maximum bytes which can be copied
+                        // from the first element
+                        final int maximumBytesToCopy = first.length - positionAtCurrentBufferEntry;
 
-                while (!hasNoMissingBytes(bytesToCopy)) {
-                    // get the first element from FIFO
-                    final byte[] first = buffer.getFirst();
-                    // get the maximum bytes which can be copied
-                    // from the first element
-                    final int maximumBytesToCopy = first.length - positionAtCurrentBufferEntry;
-
-                    // this element can be copied fully to the destination
-                    if (bytesToCopy >= maximumBytesToCopy) {
-                        // copy the complete byte[] to the destination
-                        System.arraycopy(first, positionAtCurrentBufferEntry, b, copiedBytes + off, maximumBytesToCopy);
-                        copiedBytes += maximumBytesToCopy;
-                        maximumAvailableBytes =
-                                decrementAvailableBytesBudget(maximumAvailableBytes, maximumBytesToCopy);
-                        availableBytes -= maximumBytesToCopy;
-                        recordReadStatistics(maximumBytesToCopy);
-                        bytesToCopy -= maximumBytesToCopy;
-                        // remove the first element from the buffer
-                        buffer.pollFirst();
-                        // reset the pointer
-                        positionAtCurrentBufferEntry = 0;
-                    } else {
-                        // copy only a part of byte[] to the destination
-                        System.arraycopy(first, positionAtCurrentBufferEntry, b, copiedBytes + off, bytesToCopy);
-                        // add the offset
-                        positionAtCurrentBufferEntry += bytesToCopy;
-                        copiedBytes += bytesToCopy;
-                        maximumAvailableBytes = decrementAvailableBytesBudget(maximumAvailableBytes, bytesToCopy);
-                        availableBytes -= bytesToCopy;
-                        recordReadStatistics(bytesToCopy);
-                        // this round is complete; the head entry still has bytes left
-                        bytesToCopy = 0;
+                        // this element can be copied fully to the destination
+                        if (bytesToCopy >= maximumBytesToCopy) {
+                            // copy the complete byte[] to the destination
+                            System.arraycopy(
+                                    first, positionAtCurrentBufferEntry, b, copiedBytes + off, maximumBytesToCopy);
+                            copiedBytes += maximumBytesToCopy;
+                            maximumAvailableBytes =
+                                    decrementAvailableBytesBudget(maximumAvailableBytes, maximumBytesToCopy);
+                            availableBytes -= maximumBytesToCopy;
+                            recordReadStatistics(maximumBytesToCopy);
+                            bytesToCopy -= maximumBytesToCopy;
+                            // remove the first element from the buffer
+                            buffer.pollFirst();
+                            // reset the pointer
+                            positionAtCurrentBufferEntry = 0;
+                        } else {
+                            // copy only a part of byte[] to the destination
+                            System.arraycopy(first, positionAtCurrentBufferEntry, b, copiedBytes + off, bytesToCopy);
+                            // add the offset
+                            positionAtCurrentBufferEntry += bytesToCopy;
+                            copiedBytes += bytesToCopy;
+                            maximumAvailableBytes = decrementAvailableBytesBudget(maximumAvailableBytes, bytesToCopy);
+                            availableBytes -= bytesToCopy;
+                            recordReadStatistics(bytesToCopy);
+                            // done; the head entry still has bytes left
+                            bytesToCopy = 0;
+                        }
                     }
+                    return copiedBytes;
                 }
             }
         }
-        return copiedBytes;
     }
 
     /**
@@ -1296,17 +1289,18 @@ public class StreamBuffer implements Closeable {
      * {@link java.io.InputStream#available() available()} bytes.
      *
      * <p>
-     * Several threads may read from the returned stream at the same time; see the
-     * class description for what that guarantees.
+     * Several threads may read from the returned stream at the same time, and
+     * {@code read(b, off, len)} takes its bytes in one step; see the class description for
+     * what that guarantees (fixed-size records with several readers).
      *
      * <p>
      * A read whose thread is interrupted while it waits throws
      * {@link java.io.InterruptedIOException} with the {@link InterruptedException} as its
-     * cause and the thread's interrupt flag set again; for
-     * {@link java.io.InputStream#read(byte[], int, int) read(b, off, len)},
-     * {@link java.io.InterruptedIOException#bytesTransferred bytesTransferred} is the number
-     * of bytes already copied to {@code b} (they are no longer buffered). Before 1.3.0 it threw
-     * a plain {@link IOException} wrapping the {@link InterruptedException}.
+     * cause and the thread's interrupt flag set again. It has taken no byte
+     * ({@link java.io.InterruptedIOException#bytesTransferred bytesTransferred} 0): a read takes
+     * its bytes only once its wait is over. Before 1.3.0 it threw a plain {@link IOException}
+     * wrapping the {@link InterruptedException}, and {@code read(b, off, len)} had already taken
+     * the first byte by then.
      *
      * @return an input stream for reading bytes from this buffer.
      */

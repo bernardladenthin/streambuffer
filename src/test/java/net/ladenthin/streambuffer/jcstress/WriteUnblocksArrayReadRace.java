@@ -17,17 +17,17 @@ import org.openjdk.jcstress.annotations.Signal;
 import org.openjdk.jcstress.annotations.State;
 
 /**
- * Deadlock-freedom of the SECOND wait phase of the array read.
+ * Deadlock-freedom of the array read waiting for the rest of its bytes.
  *
- * <p>{@link InputStream#read(byte[], int, int)} first consumes one byte (phase 1, the same
- * {@code waitForAnyData()} path {@link WriteUnblocksReadRace} covers) and then blocks in
- * {@code waitForAtLeast(missingBytes)} for the rest (phase 2, distinct logic — the partial-copy
- * loop). The single-byte {@link WriteUnblocksReadRace} never reaches phase 2. Here the state
- * pre-writes exactly one byte, so the reader clears phase 1 without blocking and parks in phase 2
- * waiting for a second byte; the writer's byte must release it.
+ * <p>{@link InputStream#read(byte[], int, int)} waits in {@code waitForAtLeast(len)} until all
+ * {@code len} bytes are buffered and only then takes them, in one step. The single-byte
+ * {@link WriteUnblocksReadRace} never waits for more than one byte. Here the state pre-writes
+ * exactly one byte and the reader asks for two, so it parks although a byte is buffered; the
+ * writer's second byte must release it. (Until the array read took its bytes in one step, it took
+ * the first byte before it waited for the rest; the waiting is the same.)
  */
 @JCStressTest(Mode.Termination)
-@Description("A reader blocked in the second wait phase of read(byte[],off,len) must be unblocked by a write.")
+@Description("A reader of read(byte[],off,len) waiting for the rest of its bytes must be unblocked by a write.")
 @Outcome(id = "TERMINATED", expect = Expect.ACCEPTABLE, desc = "write() unblocked the array reader")
 @Outcome(id = "STALE", expect = Expect.FORBIDDEN, desc = "Array reader stuck after write()")
 @State

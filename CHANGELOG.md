@@ -8,11 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **`read(b, off, len)` takes its bytes in one step.** It still waits until all `len` bytes are
+  buffered (or the buffer is closed), but now takes nothing before that and then all of them under
+  one lock hold; before, it took the first byte, released the lock and waited for the rest. The bytes
+  of one call are therefore contiguous in the stream, also with several readers: readers of a fixed
+  record size each get whole records, so the buffer works as a work queue with competing consumers
+  (README "Fixed-Size Records with Several Readers"). For a single reader the results are the same,
+  except that an interrupted read no longer loses the byte it had taken.
 - **An interrupted read throws `java.io.InterruptedIOException`** instead of a plain `IOException`
   wrapping the `InterruptedException`: the cause is still the `InterruptedException` and the
-  thread's interrupt flag is still set again, and for `read(b, off, len)` `bytesTransferred` is the
-  number of bytes already copied to `b` (they are no longer buffered). A subtype of `IOException`, so
-  callers that catch `IOException` are unaffected. The JML spec now names it in `signals_only`.
+  thread's interrupt flag is still set again; `bytesTransferred` is 0, since a read takes no byte
+  before its wait is over. A subtype of `IOException`, so callers that catch `IOException` are
+  unaffected. The JML spec now names it in `signals_only`.
 - **Documentation:** the `.jml` header no longer names a Checker Framework Lock Checker profile
   (there is none; the Lock Checker is deferred) and cites DOI 10.1145/3594729 under its real title, de
   Boer et al., "Formal Specification and Verification of JDK's Identity Hash Map Implementation".
@@ -204,7 +211,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reader had taken the bytes meanwhile, `read()` threw `NoSuchElementException`. Now every write and
   the close wake all waiting readers (a `Condition` of a separate `ReentrantLock`, which also does not
   pin a virtual thread's carrier), and a reader checks the count again under the lock and waits again
-  if the bytes are gone; `read(b, off, len)` copies what is left and waits for the rest. A write
+  if the bytes are gone. A write
   takes that lock only while a reader waits, and a read with enough buffered bytes does not take it. Each byte
   reaches exactly one reader, in FIFO order; readers are not served fairly. Several writers were
   already safe: each write is atomic. Regression tests in `StreamBufferConcurrentReadersTest` (red

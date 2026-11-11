@@ -20,9 +20,9 @@ annotated, so everything below is genuinely still open.
   against a formal model) — so pinned tool setups belong in a composite action of
   bernardladenthin/actions rather than in this workflow.
 
-  - **A3 — Several readers in every existing tool (2–3 days).** The JPF harness for the array-read /
-    `waitForAtLeast` paths and one for trim re-entrancy through a trim signal (both formerly "JPF
-    follow-ups" below); jcstress `Mode.Termination` tests with two readers; vmlens scenarios for two
+  - **A3 — Several readers in every existing tool (2–3 days).** A JPF harness for a
+    `waitForAtLeast` caller next to a reader and one for trim re-entrancy through a trim signal (both
+    formerly "JPF follow-ups" below); jcstress `Mode.Termination` tests with two readers; vmlens scenarios for two
     readers, close, trim with signal and `safeWrite`; Lincheck with the blocking reads included
     (several readers are now part of the contract, so no `nonParallelGroup` for the readers is
     needed) reading only when `available() > 0`, plus a setup with a small `maxBufferElements` so
@@ -110,8 +110,8 @@ annotated, so everything below is genuinely still open.
   - **JPF interleaving harness — follow-ups.** The harness (`src/test/jpf/`, the scheduled
     `jpf-interleavings` job in `formal-verification.yml`) runs. Still open: report the AtomicLong
     model completion upstream as a jpf-core deficiency (its native peer already implements the
-    methods the stub model never declared). Further harnesses (the array-read /
-    `waitForAtLeast` blocking paths, trim re-entrancy) are package A3 of the roadmap above.
+    methods the stub model never declared). Further harnesses (a `waitForAtLeast` caller next to
+    a reader, trim re-entrancy) are package A3 of the roadmap above.
   - **RAC evaluates a `signals (E e)` clause for an exception of another type — confirmed OpenJML
     bug, reported in [OpenJML/OpenJML#1050](https://github.com/OpenJML/OpenJML/issues/1050)** (2026-10-19; reproduced on 21.0.28 and on `dev-21` `529ac454da`,
     `BUGHUNT-MEASUREMENTS.md`, „OpenJML-Verdachtsfälle (RAC)“, in commit `0620aa7`, removed since). The spec

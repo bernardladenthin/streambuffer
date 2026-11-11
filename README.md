@@ -69,7 +69,7 @@
 
 # streambuffer
 
-`StreamBuffer` is a single-class Java library that bridges an `OutputStream` and an `InputStream` through a dynamic, unbounded FIFO queue — solving the fixed-buffer and potential deadlock limitations of Java's built-in `PipedInputStream`/`PipedOutputStream`.
+`StreamBuffer` is a single-class Java library that bridges an `OutputStream` and an `InputStream` through a dynamic, unbounded FIFO queue — solving the fixed-buffer and potential deadlock limitations of Java's built-in `PipedInputStream`/`PipedOutputStream`. Several threads may write and several may read at the same time; with fixed-size records it also works as a work queue that spreads the records over several readers (see [Fixed-Size Records with Several Readers](#fixed-size-records-with-several-readers-work-queue)).
 
 - GitHub: [https://github.com/bernardladenthin/streambuffer](https://github.com/bernardladenthin/streambuffer)
 
@@ -130,25 +130,50 @@ Instead of a fixed circular buffer, `StreamBuffer` uses a `Deque<byte[]>` that g
 
 ### Full `InputStream`/`OutputStream` Compatibility
 
-`StreamBuffer` exposes a standard `InputStream` (via `getInputStream()`) and a standard `OutputStream` (via `getOutputStream()`). Both are full subclass implementations and can be used anywhere those types are accepted. One deliberate difference: `read(byte[], off, len)` waits for **all** `len` bytes (or `close()`), see [Read](#read).
+`StreamBuffer` exposes a standard `InputStream` (via `getInputStream()`) and a standard `OutputStream` (via `getOutputStream()`). Both are full subclass implementations and can be used anywhere those types are accepted. One deliberate difference: `read(byte[], off, len)` waits for **all** `len` bytes (or `close()`) and then takes them in one step, see [Read](#read).
 
 ### Thread Safety
 
 The `InputStream` and `OutputStream` can be used concurrently from different threads without additional synchronization, by several writers and several readers at the same time:
 
 - Each `write` is atomic: its bytes enter the buffer together and in order.
+- Each `read(b, off, len)` is atomic too: it takes its `len` bytes in one step once all of them are buffered, so they are contiguous in the stream (see [Fixed-Size Records with Several Readers](#fixed-size-records-with-several-readers-work-queue)).
 - Each buffered byte is delivered to exactly one reader, in the order it was written. No reader blocks while bytes are buffered, and after `close()` every waiting reader returns. `read()` throws no unchecked exception when another reader took the bytes first (bug-hunt finding F278; before 1.3.0 the buffer was correct for one reader only).
-- There is no fairness between readers, and the bytes one `read(b, off, len)` returns can be interleaved with bytes another reader took meanwhile; for whole records over one stream, use one reader or frame the records yourself.
-
+- There is no fairness between readers: which reader gets the next bytes is up to the scheduler.
 - All `Deque` accesses are guarded by a `bufferLock` object.
 - State fields (`streamClosed`, `safeWrite`, `availableBytes`, `positionAtCurrentBufferEntry`, `maxBufferElements`, `maxAllocationSize`, `isTrimRunning`, `maxObservedBytes`) are `volatile`; the cumulative counters `totalBytesWritten` and `totalBytesRead` are `final AtomicLong` (atomic read-modify-write under concurrent I/O).
 - `close()` takes the same lock, so it waits for a write or trim in progress on another thread: a write racing the close is either fully buffered or fails with "Stream closed", never appended after a reader saw the end of the stream. A trim copies every buffered byte, so with a large buffer that wait can be noticeable.
 - A waiting reader blocks on a `Condition` of a `ReentrantLock` (`waitLock`, separate from `bufferLock`), which every write and the close signal to all waiters, avoiding busy-waiting. While no reader waits, a write skips that lock (a count of waiting readers), and a read with enough buffered bytes does not take it either. A `java.util.concurrent` lock does not pin a virtual thread's carrier while it waits. External semaphores can be registered via `addSignal` for thread-decoupled notification.
-- A read interrupted while it waits throws `java.io.InterruptedIOException` (cause: the `InterruptedException`, interrupt flag set again); for `read(b, off, len)`, `bytesTransferred` is the number of bytes already copied to `b`.
+- A read interrupted while it waits throws `java.io.InterruptedIOException` (cause: the `InterruptedException`, interrupt flag set again). It has taken no byte (`bytesTransferred` is 0), since a read takes its bytes only once its wait is over. A thread that is already interrupted and would have to wait throws at once; with enough buffered bytes, or on a closed stream, it reads without an exception.
 
 ### No Write Deadlock
 
 In contrast to `PipedOutputStream`, write operations on `StreamBuffer` never block or deadlock — the FIFO grows as needed.
+
+### Fixed-Size Records with Several Readers (Work Queue)
+
+Because `read(b, off, len)` takes its `len` bytes in one step, several readers that all read the same record size each get whole records. Every record goes to exactly one reader — the *competing consumers* pattern of a work queue, the way a load balancer spreads requests over workers. It is not a broadcast (publish/subscribe, fan-out): a record that one reader took is gone for the others.
+
+```java
+static final int RECORD = 1429;
+
+// any number of readers, each in its own thread
+byte[] record = new byte[RECORD];
+int n;
+while ((n = is.read(record, 0, RECORD)) != -1) {
+    // n == RECORD: a whole record; n < RECORD only for the last read after close()
+    process(record, n);
+}
+```
+
+What it relies on:
+
+- **The stream is a sequence of whole records.** With one writer, the writes may have any size, like TCP segments: a record may be split across writes, and a write may hold the end of one record and the start of the next. With several writers, each `write` must hold whole records (one or several), because the writes of different writers interleave.
+- **Every reader reads the record size** (or the same multiple of it); a reader with another size would shift the record boundaries for everyone.
+- **No order between readers.** Each reader gets the records of each writer in the order they were written, but which reader gets which record is up to the scheduler. If the consumers must restore one order, number the records.
+- **Variable-length records** (a length prefix followed by the payload) need two reads, and another reader can come in between. Use one reader for them, or pad them to a fixed size.
+
+Like TCP, `StreamBuffer` is a byte stream and keeps no message boundaries of its own; the fixed record size provides them. For messages of arbitrary size, a `BlockingQueue<byte[]>` is the more direct tool. `StreamBufferConcurrentReadersTest` checks the record cases with 1429-byte records carrying writer id, sequence number and a CRC32: one writer with writes of random size and four readers, and three writers of whole records with four readers.
 
 ### Smart Partial Reads
 
@@ -187,7 +212,7 @@ Use `isTrimRunning()` to observe whether a trim is currently executing. This val
 
 ### Signal/Slot Notifications
 
-Register external `Semaphore` objects to receive thread-decoupled notifications when the buffer is modified (data written or stream closed). Each registered semaphore is released using the same "max 1 permit" pattern as the internal reader/writer semaphore, enabling observers to block in their own threads and wake up when something changes:
+Register external `Semaphore` objects to receive thread-decoupled notifications when the buffer is modified (data written or stream closed). Each registered semaphore is released using the "max 1 permit" pattern (a permit only while it has none), enabling observers to block in their own threads and wake up when something changes:
 
 ```java
 Semaphore mySignal = new Semaphore(0);
@@ -333,7 +358,7 @@ External observers register `java.util.concurrent.Semaphore` objects via `addSig
 
 ### Read
 
-If no data is available and the stream is not closed, `read()` blocks the calling thread. `read(byte[], off, len)` goes further: after the first byte it keeps waiting until **all** `len` bytes are buffered, and returns fewer only when the stream is closed. That is stricter than the `InputStream` contract (block until at least one byte) and unlike `PipedInputStream`; it has been the design since the first version.
+If no data is available and the stream is not closed, `read()` blocks the calling thread. `read(byte[], off, len)` goes further: it waits until **all** `len` bytes are buffered, then takes them in one step, and returns fewer only when the stream is closed. It takes no byte while it waits. That is stricter than the `InputStream` contract (block until at least one byte) and unlike `PipedInputStream`; waiting for the full length has been the design since the first version, taking the bytes in one step since 1.3.0 (before, the first byte was taken before the wait for the rest).
 
 To avoid blocking, only read as many bytes as `available()` reports. The `waitForAnyData()` and `waitForAtLeast(long)` methods can be used to wait for data before reading:
 
@@ -425,17 +450,19 @@ Test coverage includes:
 - Buffer trimming and byte-order preservation
 - Close via `sb.close()`, `os.close()`, and `is.close()` — all paths tested
 - `available()` behavior before and after close, including with buffered data remaining
-- Thread interruption during blocked reads (`InterruptedIOException` with the `InterruptedException` as cause, interrupt flag kept, `bytesTransferred`)
-- Several readers on one stream (`StreamBufferConcurrentReadersTest`): two parked readers and two writes or a close, three readers at the lock for two bytes, `read(byte[])` racing `read()`, a reader parked next to a larger `waitForAtLeast`, three writers and three readers
+- Thread interruption during blocked reads (`InterruptedIOException` with the `InterruptedException` as cause, interrupt flag kept, no byte taken), and an already interrupted thread with and without buffered bytes
+- Several readers on one stream (`StreamBufferConcurrentReadersTest`): two parked readers and two writes or a close, three readers at the lock for two bytes (also closed meanwhile), `read(byte[])` racing `read()`, a reader parked next to a larger `waitForAtLeast`, three writers and three readers
+- Fixed-size records with several readers (1429-byte records with writer id, sequence number and CRC32): one writer with writes of random size and four readers, three writers of whole records and four readers — every record whole, exactly once, in writer order per reader
 - Concurrent read/write stress tests
 - Parallel close without deadlock
 - Deadlock-freedom of every blocking entry point, stress-checked with jcstress `Mode.Termination`
-  (`-Pjcstress`): a thread parked in `read()`, in the second wait phase of `read(byte[], off, len)`,
-  or in `waitForAtLeast(...)` is always released by both a concurrent `write` and a concurrent
-  `close`
+  (`-Pjcstress`): a thread parked in `read()`, in `read(byte[], off, len)` waiting for the rest
+  of its bytes, or in `waitForAtLeast(...)` is always released by both a concurrent `write` and a
+  concurrent `close`
 - Exhaustive thread-interleaving model check of the read/write/close protocol with Java PathFinder
   (`src/test/jpf/`, scheduled CI job + local Docker recipe) — the erschöpfende counterpart to the
-  jcstress stress tests; three harnesses: writer and reader, writer racing a closer, two readers
+  jcstress stress tests; four harnesses: writer and reader, writer racing a closer, two readers,
+  two readers of fixed-size records
 - Signal/slot notification via external semaphores on write and all close paths
 - `removeSignal(null)` returning `false` without throwing
 - `addSignal(null)` throwing `NullPointerException`

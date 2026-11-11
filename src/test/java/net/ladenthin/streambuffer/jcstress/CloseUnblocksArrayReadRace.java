@@ -17,14 +17,14 @@ import org.openjdk.jcstress.annotations.Signal;
 import org.openjdk.jcstress.annotations.State;
 
 /**
- * Deadlock-freedom of the SECOND wait phase of the array read when the stream is closed.
+ * Deadlock-freedom of the array read waiting for the rest of its bytes when the stream is closed.
  *
- * <p>Companion to {@link WriteUnblocksArrayReadRace}: the reader clears phase 1 on the pre-loaded
- * byte and parks in {@code waitForAtLeast(1)}; {@code close()} must release it (the array read then
- * returns the one byte it already copied — a partial read — rather than hanging forever).
+ * <p>Companion to {@link WriteUnblocksArrayReadRace}: one byte is pre-loaded, the reader asks for
+ * two and parks in {@code waitForAtLeast(2)}; {@code close()} must release it (the array read then
+ * returns the one buffered byte — a short read after the close — rather than hanging forever).
  */
 @JCStressTest(Mode.Termination)
-@Description("A reader blocked in the second wait phase of read(byte[],off,len) must be unblocked by close().")
+@Description("A reader of read(byte[],off,len) waiting for the rest of its bytes must be unblocked by close().")
 @Outcome(id = "TERMINATED", expect = Expect.ACCEPTABLE, desc = "close() unblocked the array reader")
 @Outcome(id = "STALE", expect = Expect.FORBIDDEN, desc = "Array reader stuck after close()")
 @State
