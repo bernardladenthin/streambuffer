@@ -235,6 +235,23 @@ public class StreamBuffer implements Closeable {
     static boolean shouldSkipTrimDueToEdgeCase(long resultingChunks, int currentBufferSize);
 
     /*@ normal_behavior
+      @   ensures \result <==> (merged == 0 || index >= ownedPrefix || unread <= collected);
+      @*/
+    //@ pure
+    static boolean joinsTrimMerge(int merged, int index, int ownedPrefix, long unread, long collected);
+
+    /*@ normal_behavior
+      @   requires 0 <= merged && merged <= entries;
+      @   // the chunk count of at most availableBytes bytes; the bound keeps the sum below in range
+      @   requires 0 <= mergedChunks && mergedChunks <= Long.MAX_VALUE - Integer.MAX_VALUE;
+      @   ensures \result <==> (merged < 2
+      @       || (long) (entries - merged) + mergedChunks
+      @           > (maxBufferElements / 2 > 1 ? maxBufferElements / 2 : 1));
+      @*/
+    //@ pure
+    static boolean shouldTrimMergeAll(int merged, int entries, long mergedChunks, int maxBufferElements);
+
+    /*@ normal_behavior
       @   ensures \result <==> (maxBufferElements <= 0);
       @*/
     //@ pure

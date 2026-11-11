@@ -90,8 +90,8 @@ env:
   # by RAC + the ordinary test pyramid; the exception-message builder
   # newInvalidOffsetOrLengthToWriteException carries a documented ASSUMED contract (string
   # concatenation is beyond the SMT encoding) and is exercised by RAC and the unit tests.
-  ESC_METHODS: "validateOffsetAndLengthToRead;validateOffsetAndLengthToWrite;decideTrimExecution;clampToMaxInt;decrementAvailableBytesBudget;calculateResultingChunks;shouldSkipTrimDueToEdgeCase;shouldSkipTrimDueToInvalidMaxBufferElements;shouldSkipTrimDueToSmallBuffer;shouldSkipTrimDueToSufficientBuffer;isAvailableBytesPositive;isMaxAllocSizeLessThanAvailable;shouldCheckEdgeCase;shouldUpdateMaxObservedBytes;hasTimeLeft"
-  ESC_EXPECTED_PROOFS: "15"
+  ESC_METHODS: "validateOffsetAndLengthToRead;validateOffsetAndLengthToWrite;decideTrimExecution;clampToMaxInt;decrementAvailableBytesBudget;calculateResultingChunks;shouldSkipTrimDueToEdgeCase;shouldSkipTrimDueToInvalidMaxBufferElements;shouldSkipTrimDueToSmallBuffer;shouldSkipTrimDueToSufficientBuffer;isAvailableBytesPositive;isMaxAllocSizeLessThanAvailable;shouldCheckEdgeCase;shouldUpdateMaxObservedBytes;hasTimeLeft;joinsTrimMerge;shouldTrimMergeAll"
+  ESC_EXPECTED_PROOFS: "17"
   # The minutes an artifact upload or download may take (see bernardladenthin/actions,
   # common/check-artifact-timeouts): the repository variable, else 20.
   ARTIFACT_TIMEOUT_MINUTES: ${{ vars.ARTIFACT_TIMEOUT_MINUTES || '20' }}

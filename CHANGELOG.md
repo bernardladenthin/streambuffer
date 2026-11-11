@@ -69,6 +69,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so they hold under concurrency. A falsified copy of each failed the RAC run (negative controls).
 
 ### Changed
+- **Trim merges geometrically instead of copying the whole buffer every time** (TODO roadmap A14).
+  A trim now merges the newest entries: every array the caller may still hold, and an older chunk
+  of its own only while it is not longer than what is collected, so each byte is copied O(log n)
+  times and the FIFO keeps a few chunks of growing size instead of one array; if that leaves more
+  than half of `maxBufferElements` entries, it merges everything as before. Measured on dedicated
+  cores (Vultr, EPYC Milan, JDK 25): `StreamBufferContendedBenchmark` at the default threshold
+  went from 32-47 ms to 3.3-4.8 ms per 11 MiB transfer (9-13x); the old trim recopied the backlog
+  on every trim and took 82-89 % of the CPU. After a trim no buffered array is reachable from
+  outside, as before: a trim copies every caller array (`StreamBufferTrimOwnershipTest`, which
+  fails if a trim keeps one). Two new static helpers, `joinsTrimMerge` and `shouldTrimMergeAll`,
+  join the ESC scope (17 proofs, Z3 and cvc5).
 - **jcstress runs in quick mode in pull requests** (`jcstress.mode` in `pom.xml`). With the
   several-reader races the default mode planned 864 runs instead of 482 and about doubled the
   Publish pipeline's Test job to 80-90 minutes. The default mode runs in the scheduled job

@@ -14,8 +14,8 @@ annotated, so everything below is genuinely still open.
 - **Verification roadmap 2026-11 — packages A6–A14.** Each package is closed on its own, ends in a
   machine-checked result and is listed with its acceptance criterion. The contract every package
   checks: several readers and writers are supported, without fairness (decided with bug-hunt finding
-  F278). Order: A13 (Apalache) and A6 on the A5 spec; A14 (trim policy) before A8, which the
-  measurement showed is not where the time goes; A9 is long-term. A6 also builds infrastructure that a later memory-model project can reuse (jcstress on
+  F278). Order: A13 (Apalache) and A6 on the A5 spec; A8 only if a new measurement shows the lock
+  matters now that A14 (done) removed the trim cost; A9 is long-term. A6 also builds infrastructure that a later memory-model project can reuse (jcstress on
   several architectures, formal tools pinned in CI, checking real executions against a formal model)
   — so pinned tool setups belong in a composite action of bernardladenthin/actions rather than in
   this workflow.
@@ -68,21 +68,24 @@ annotated, so everything below is genuinely still open.
     Also for A8: on JDK 21 a virtual thread blocked entering the contended `bufferLock` monitor
     holds its carrier, which `jdk.VirtualThreadPinned` does not show (it covers parking while
     pinned); one `ReentrantLock` removes the monitor.
-  - **A14 — Trim policy: stop recopying the backlog (design decision, ~2-3 days).** Today a trim
-    merges every buffered byte into one array, and 100 writes later it copies that array again with
-    the new entries, so a backlog costs quadratic copying (measurement under A8). A prototype
-    (local branch `exp/trim-geometric`, 2026-11-11, not pushed) merges only the newest entries:
-    walking from the tail, an older entry joins while it is not longer than what is collected so
-    far, so each byte is copied O(log n) times and the entry lengths grow towards the head; if that
-    would leave more than half of `maxBufferElements` entries, it merges everything as before. Same
-    Vultr machine, trim threshold 100, ms per 11 MiB transfer, current → prototype: platform 1/1
-    43.6 → 3.6, 4/1 45.7 → 4.4, 1/4 34.0 → 4.9, 4/4 46.6 → 5.3; virtual 1/1 42.2 → 3.1, 4/1 42.2 →
-    3.3, 1/4 37.8 → 3.5, 4/4 30.4 → 3.4 (7-14x); threshold 1000: 3.5-7.1 → 1.6-3.9. Trim off stays
-    2-4x faster still (0.8-2.0 ms), the price of the entry bound. The full suite passed with the
-    prototype (338 tests). Behaviour change to decide: after a trim the FIFO holds O(log n) entries
-    instead of one array (README, CLAUDE.md "Buffer trimming"). To ship it: the docs, tests that keep
-    PIT at 100 % (the fallback branch at least), the JPF `TrimReentrancy` and vmlens trim scenarios
-    re-run, a CHANGELOG entry. The TLA+ model does not model trim and stays valid.
+  - ~~**A14 — Trim policy: stop recopying the backlog.**~~ **Done 2026-11-11.** A trim used to merge
+    every buffered byte into one array and, 100 writes later, copy that array again with the new
+    entries: a backlog cost quadratic copying (measurement under A8). Now it merges geometrically:
+    walking from the tail it takes every entry the caller may still hold (`ownedPrefix` counts the
+    leading chunks a trim allocated) and an older own chunk only while it is not longer than what is
+    collected, so each byte is copied O(log n) times and the FIFO keeps a few chunks of growing size;
+    if that would leave more than half of `maxBufferElements` entries, it merges everything. The
+    owner's condition holds: after any trim no buffered array is reachable from outside, so a caller
+    writing without `safeWrite` may overwrite its arrays once a trim has run, and no `trimAll()` is
+    needed (`StreamBufferTrimOwnershipTest`: green on the old and the new trim, red if a trim keeps a
+    caller array). Checked: ESC 17 proofs (the helpers `joinsTrimMerge` and `shouldTrimMergeAll`,
+    Z3 and cvc5; deliberately wrong specs fail), the full suite 353 tests on Vultr, vmlens no data
+    race, JPF `TrimReentrancy` (24,972 states, was 24,880), `StreamBuffer`, `WaitAndRead`,
+    `WriteClose` no errors, PIT 257/257 (100 %, Vast EPYC 7742, 48 threads, 24 min). Same Vultr
+    machine, threshold 100, ms per 11 MiB transfer, before → after: platform 1/1 43.9 → 3.7, 4/1
+    46.6 → 4.4, 1/4 39.7 → 4.9, 4/4 45.6 → 4.8; virtual 1/1 43.4 → 3.2, 4/1 41.2 → 3.4, 1/4 36.8 →
+    3.5, 4/4 32.3 → 3.7 (8-13x); threshold 1000: 3.5-7.5 → 1.6-3.9. Trim off stays 2-4x faster
+    still (0.8-2.0 ms), the price of the entry bound. The TLA+ model does not model trim.
   - **A9 — Functional proof of the sequential instance core (long-term, months).** The parked
     "Deeper ESC" item below; OpenJML first, KeY only for goals where Z3 answers "unknown".
   - **A13 — Unbounded safety of the A5 model (weeks).** TLC checks fixed constants only (up to 3
@@ -156,7 +159,7 @@ annotated, so everything below is genuinely still open.
     clean with `InvA.this.inc()`.
   - **Deeper ESC — instance-method / trim() functional correctness (parked, revisit; package A9
     of the roadmap above).** Today
-    ESC proves the 14 static helpers; the instance methods and trim() are RAC-only. A full
+    ESC proves the static helpers (17 methods with the validators); the instance methods and trim() are RAC-only. A full
     functional proof (e.g. a ghost model sequence for the deque with the invariant
     `availableBytes == sum of buffered byte[] lengths`, preserved across read/write/trim) is the
     "TimSort-level" target. Currently blocked two ways: OpenJML ESC returns solver "unknown" on

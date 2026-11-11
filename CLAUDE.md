@@ -80,8 +80,8 @@ The `vmlens` profile pulls in `com.vmlens:api` and runs the `vmlens-maven-plugin
 Two layers, run in a **separate** CI pipeline (`.github/workflows/formal-verification.yml` —
 deliberately not part of the synchronous Publish pipeline and never a required check):
 
-1. **OpenJML ESC** (deductive proof): the 15 static sequential-core methods (2 validators +
-   13 pure helpers) are proven against full functional contracts, **twice**: with Z3 and again with
+1. **OpenJML ESC** (deductive proof): the 17 static sequential-core methods (2 validators +
+   15 pure helpers) are proven against full functional contracts, **twice**: with Z3 and again with
    cvc5 (both bundled with OpenJML), so no proof rests on one solver. Yices2, also bundled, fails
    every obligation with `ERROR` and is not used. Local: `--prover=cvc5`.
 2. **OpenJML RAC**: the existing JUnit suite runs against RAC-instrumented classes
@@ -140,7 +140,7 @@ mvn -P jml-rac -Dopenjml.home=<openjml> -Dopenjml.jdk.java=<openjml>/jdk/bin/jav
   **replaces** all class-level JML in the `.java` (which therefore stays JML-free), and OpenJML
   errors on any signature mismatch — so every signature change in `StreamBuffer.java` must be
   mirrored there, and the verification workflow catches drift.
-- The 13 pure helpers are `static` **because instance-method proof obligations are undecidable
+- The 15 pure helpers are `static` **because instance-method proof obligations are undecidable
   for Z3 in this class** (the non-static inner stream classes poison the receiver context —
   measured, not theorized). New pure helpers must be static or they cannot join the ESC scope.
 - The ESC scope is guarded by an exact proof COUNT in the workflow (`ESC_EXPECTED_PROOFS`);
@@ -235,7 +235,7 @@ mvn -P jml-rac -Dopenjml.home=<openjml> -Dopenjml.jdk.java=<openjml>/jdk/bin/jav
 
 - **`positionAtCurrentBufferEntry`** — tracks read offset within the head byte array, enabling partial reads without copying
 - **`safeWrite`** (default: `false`) — when `true`, clones input arrays on write to protect against external mutation
-- **Buffer trimming** — when `Deque` size exceeds `maxBufferElements` (default: 100), all buffered data is consolidated into a single byte array; `shouldTrim()` controls this
+- **Buffer trimming** — when `Deque` size exceeds `maxBufferElements` (default: 100), a trim merges the newest entries geometrically (roadmap A14): every entry the caller may still hold (`ownedPrefix` counts the leading entries a trim allocated), and an older own chunk only while it is not longer than what is collected, so each byte is copied O(log n) times and the FIFO keeps O(log n) entries of growing size; if that leaves more than half of `maxBufferElements` entries, it merges everything into chunks of at most `maxAllocationSize`. After any trim no buffered array is reachable from outside (`StreamBufferTrimOwnershipTest`). `shouldTrim()`, `joinsTrimMerge` and `shouldTrimMergeAll` control this
 - **`available()`** returns `Integer.MAX_VALUE` when `availableBytes > Integer.MAX_VALUE`, supporting >2GB buffers
 
 ### Tests

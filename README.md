@@ -193,14 +193,16 @@ When writing with an offset (e.g., `write(b, off, len)`), a new byte array of ex
 
 ### Buffer Trimming
 
-When the `Deque` grows beyond `maxBufferElements` entries (default: `100`), the next write operation consolidates all buffered data into a single byte array. This bounds the number of FIFO elements and can improve read performance for large accumulated buffers.
+When the `Deque` grows beyond `maxBufferElements` entries (default: `100`), the next write operation consolidates the buffered data. This bounds the number of FIFO elements and can improve read performance for large accumulated buffers.
+
+A trim merges geometrically: walking from the newest entry back, it takes every array the caller wrote since the last trim, and an older chunk of its own only while that chunk is not longer than what it has collected so far. Each byte is therefore copied a logarithmic number of times rather than once per trim, and the FIFO holds a few chunks that grow towards the head instead of one array. Would that still leave more than half of `maxBufferElements` entries, the trim merges everything, as before. A writer that stays ahead of its readers no longer pays for its backlog again on every trim: with 1429-byte records, the contended benchmark went from about 40 ms to about 4 ms per 11 MiB at the default threshold (details in `TODO.md`, A8 and A14).
 
 ```java
 sb.setMaxBufferElements(50);  // trim when more than 50 elements are queued
 sb.setMaxBufferElements(0);   // disable trimming entirely
 ```
 
-Trimming is triggered by writes, not by `setMaxBufferElements`. The trim copies the buffered arrays directly into the consolidated ones, without going through the streams, so `safeWrite` does not apply (the arrays it produces are not reachable from outside the buffer) and the buffered byte count stays constant while it runs: a concurrent `waitForAtLeast` or `available()` never sees a partly drained buffer.
+Trimming is triggered by writes, not by `setMaxBufferElements`. The trim copies the buffered arrays directly into the consolidated ones, without going through the streams, so `safeWrite` does not apply (the arrays it produces are not reachable from outside the buffer) and the buffered byte count stays constant while it runs: a concurrent `waitForAtLeast` or `available()` never sees a partly drained buffer. Every array the caller may still hold is copied by every trim, so **after a trim no buffered array is reachable from outside**: a caller writing without `safeWrite` may overwrite its arrays once a trim has run (a trim end signal tells when), and only the arrays written after that trim are still buffered by reference.
 
 If `maxAllocationSize` is set (see below), trim may produce multiple smaller chunks instead of one. Trim is also skipped automatically when consolidation would not reduce the chunk count below `maxBufferElements` — for example, when `maxAllocationSize` is small enough that the resulting chunk count would still exceed the threshold. This prevents repeated no-op trims on every write.
 
@@ -268,7 +270,7 @@ System.out.println(sb.getMaxObservedBytes());  // 3 (peak bytes in buffer)
 
 ### Configurable Trim Allocation Size
 
-By default trim consolidates all buffered data into a single byte array. `maxAllocationSize` limits how large each individual byte array can be during consolidation. When `availableBytes > maxAllocationSize`, trim produces multiple smaller chunks:
+`maxAllocationSize` limits how large each individual byte array can be during consolidation. When the bytes a trim merges exceed `maxAllocationSize`, it produces several smaller chunks:
 
 ```java
 sb.setMaxAllocationSize(1024 * 1024);  // cap each consolidated chunk at 1 MiB
