@@ -23,6 +23,9 @@ models=(
   "Semaphore2|Error: Invariant NoEmptyTake is violated."
   "SemaphoreReCheck2|Error: Deadlock reached."
   "ConditionNoReCheck2|Error: Invariant NoEmptyTake is violated."
+  "Records2|Model checking completed. No error has been found."
+  "RecordsTwoPhase2|Error: Invariant RecordsWhole is violated."
+  "RecordsCountPerEntry2|Error: Invariant AvailLinearizable is violated."
 )
 
 failed=0

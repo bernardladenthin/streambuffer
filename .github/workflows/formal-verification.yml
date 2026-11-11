@@ -32,8 +32,8 @@
 #                 reports jdk.VirtualThreadPinned events inside StreamBuffer (a report, not a gate).
 #
 #   tla-model     (scheduled/dispatch only) TLC model-checks the TLA+ model of the wait/wake-up/
-#                 close protocol (src/test/tla/StreamBuffer.tla): the code since F278 checks clean,
-#                 the code before it fails with the F278 counterexamples (roadmap A5).
+#                 close protocol and the reads (src/test/tla/StreamBuffer.tla): the current code
+#                 checks clean, the older code fails with the F278, #212 and F279 counterexamples.
 #
 #   jcstress-default  (scheduled/dispatch only) jcstress in its default mode on x86; every pull
 #                 request runs the quick mode (jcstress.mode in pom.xml) to keep the Test job short.
@@ -423,7 +423,7 @@ jobs:
           if-no-files-found: ignore
 
   # ---------------------------------------------------------------------------------------------
-  # TLA+ model of the protocol (TODO roadmap A5) -- scheduled/dispatch only, ~30 s of TLC.
+  # TLA+ model of the protocol (TODO roadmap A5) -- scheduled/dispatch only, ~70 s of TLC.
   # src/test/tla/check.sh runs every model against its expected outcome: the models of the code
   # since F278 (Protocol "condition" with the re-check) must check clean, safety and liveness; the
   # models of the code before it must fail with exactly the error that shows the defect
