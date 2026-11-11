@@ -524,6 +524,12 @@ verified in a separate CI pipeline
   statistics. Under concurrency these contracts stay sound because they only use monotone state
   (closed stays closed, a closed buffer only drains, the counters only grow).
 
+- **Model checking of the protocol — TLA+ / TLC.** A TLA+ model of how threads write, close, wait
+  and take data ([`src/test/tla/`](./src/test/tla/)) is checked for safety and liveness (every
+  waiting reader returns) with up to three readers. The same model with the code before bug-hunt
+  finding F278 fails exactly as that code did: an empty take, and a reader waiting forever after
+  the close.
+
 Concurrency itself is outside the deductive scope by JML doctrine (JML specifies sequential
 behavior; OpenJML does not model `volatile` or monitors) and is covered empirically by the
 Lincheck, jcstress and vmlens suites listed above, plus an exhaustive Java PathFinder
