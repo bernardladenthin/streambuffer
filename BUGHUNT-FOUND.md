@@ -141,7 +141,7 @@ Repos plus eins. Geprüfte Klassen ohne Fund stehen in [`BUGHUNT-CHECKED.md`](BU
 - **Fix:** Die Schleife kopiert nur noch; `availableBytes -= copiedBytes` und `recordReadStatistics(copiedBytes)` laufen einmal nach der Schleife, noch unter dem Lock. Damit ist jede Änderung der lock-frei gelesenen Zähler genau eine Operation (Linearisierungspunkt).
 - **Tests:** `StreamBufferLincheckTest` (Lese-Operationen in einer `nonParallelGroup`, nur was gepuffert ist) – vor dem Fix in zwei Läufen rot mit der obigen Ausführung, danach grün; `StreamBufferTrimLincheckTest` ebenso grün. JPF `RecordReaders.jpf` mit Fix fehlerfrei (2.352.249 Zustände).
 - **Status:** gefixt
-- **Commit:** (folgt)
+- **Commit:** da2eccf
 
 ## Offene Verdachte ohne Fund-ID
 
