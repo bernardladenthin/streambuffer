@@ -72,10 +72,11 @@ deliberately not part of the synchronous Publish pipeline and never a required c
 2. **OpenJML RAC**: the existing JUnit suite runs against RAC-instrumented classes
    (violations throw), checking the static contracts plus the instance/stream-adapter contracts.
 3. **JPF interleavings** (`src/test/jpf/`, scheduled/dispatch CI job `jpf-interleavings`): Java
-   PathFinder exhaustively model-checks the concurrent read/write/close protocol with two harnesses:
-   `StreamBuffer.jpf` (a writer that closes after its writes, a reader) and `WriteClose.jpf` (writer,
+   PathFinder exhaustively model-checks the concurrent read/write/close protocol with three harnesses:
+   `StreamBuffer.jpf` (a writer that closes after its writes, a reader), `WriteClose.jpf` (writer,
    closer and reader in three threads -- the order of write and close, which the first cannot see;
-   red before bug-hunt fix F149). Requires JDK 11; builds jpf-core from a pinned commit with a
+   red before bug-hunt fix F149) and `TwoReaders.jpf` (a writer that closes, two readers on one
+   stream; red before bug-hunt fix F278). Requires JDK 11; builds jpf-core from a pinned commit with a
    one-file `AtomicLong` model patch; the harnesses are compiled at `--release 8` and run under JPF. Local recipe (Docker+JDK 11) in
    `src/test/jpf/README.md`. Never touches the shipped jar.
 
@@ -179,7 +180,16 @@ mvn -P jml-rac -Dopenjml.home=<openjml> -Dopenjml.jdk.java=<openjml>/jdk/bin/jav
 
 - `bufferLock` object — synchronizes all deque access
 - `volatile` fields — `streamClosed`, `safeWrite`, `availableBytes`, `positionAtCurrentBufferEntry`, `maxBufferElements`
-- `Semaphore signalModification` — blocks reading threads until data is written or stream is closed (avoids busy-waiting)
+- `ReentrantLock waitLock` + `Condition modified` — a reader waits on `modified` until data is written or
+  the stream is closed; every write and the close `signalAll()` (bug-hunt finding F278: a semaphore with
+  at most one permit woke one of several readers). A waiter never holds `bufferLock`, and every read
+  checks `availableBytes` again under `bufferLock` after the wait, so several readers are safe. The
+  external `addSignal` semaphores keep the max-1-permit pattern. `AtomicInteger waitingReaders` lets a
+  write skip `waitLock` while no reader waits (volatile order: the writer stores `availableBytes` before
+  it reads the count, a waiter increments it before it reads `availableBytes`); `waitForAtLeast` returns
+  without the lock when enough bytes are buffered or the stream is closed.
+- Several writers and several readers are supported: each write is atomic, each byte reaches exactly one
+  reader in FIFO order, no fairness. `StreamBufferConcurrentReadersTest` holds that.
 
 ### Key Behaviors
 

@@ -11,71 +11,23 @@ annotated, so everything below is genuinely still open.
 
 ## Open
 
-- **Verification roadmap 2026-11 — packages A1–A13.** Each package is closed on its own, ends in a
-  machine-checked result and is listed with its acceptance criterion. Order: A1 and A2 first (A1
-  fixes a defect, without it every later proof proves the wrong contract), then A3 + A4, A5, A6 +
-  A7; A10–A12 at any time; A8 only after the A1 decision and with the A7 numbers; A13 and A9 are
-  long-term. A3, A5, A6 and A7 also build infrastructure that a later memory-model project can
+- **Verification roadmap 2026-11 — packages A3–A13.** Each package is closed on its own, ends in a
+  machine-checked result and is listed with its acceptance criterion. The contract every package
+  checks: several readers and writers are supported, without fairness (decided with bug-hunt finding
+  F278). Order: A3 + A4, A5, A6 + A7; A10–A12 at any time; A8 only with the A7 numbers; A13 and A9
+  are long-term. A3, A5, A6 and A7 also build infrastructure that a later memory-model project can
   reuse (jcstress on several architectures, formal tools pinned in CI, checking real executions
   against a formal model) — so pinned tool setups belong in a composite action of
   bernardladenthin/actions rather than in this workflow.
 
-  - **A1 — Concurrent readers: defect, decision, minimal fix (1–2 days).** Every concurrency check
-    today (both JPF harnesses, jcstress, vmlens, Lincheck) has exactly **one** reader. With two
-    readers on the same `InputStream` there are three defects, measured 2026-11-10 on JDK 21.0.12
-    against unchanged `main` (`7ce9033`):
-
-    | Scenario | Result |
-    |---|---|
-    | two readers parked in `read()`, then two single-byte writes back to back | 96/100 runs (98/100 in a first run): one reader stays blocked although 1 byte is buffered, until the next write or close |
-    | two readers parked in `read()`, then `close()` | **100/100** runs: one reader blocks **forever** (no write can follow a close) |
-    | 1 byte buffered, two readers call `read()` at the same time (`CyclicBarrier`), 3000 runs | 5 runs: `read()` throws an unchecked `NoSuchElementException` from `ArrayDeque.getFirst()` |
-
-    Causes: (1) the max-1-permit pattern — `signalModification()` releases only when the semaphore
-    has 0 permits, so two writes before the first wake-up leave one permit for two waiters, and
-    `close()` releases one permit that the first woken reader consumes; (2) check outside the lock,
-    act inside it — `waitForAtLeast` reads `availableBytes` without `bufferLock`, then
-    `readSingleByte`/`readIntoArray` call `buffer.getFirst()` under the lock without re-checking.
-    Correct for a single consumer, not for two. For `readIntoArray` the same race inside the copy
-    loop, after partial copies were already accounted, is plausible (bytes lost plus exception) —
-    **not measured**. Contract today: only the Javadoc of `waitForAtLeast` says "single reader
-    thread"; `getInputStream()` and README "Thread Safety" ("blocks reading threads", "can be used
-    concurrently from different threads") do not. `BUGHUNT-CHECKED.md` (`95bac9a`, "no lost wakeup")
-    covered one reader. Reproduction: start two daemon reader threads, spin until both are
-    `Thread.State.WAITING`, then `close()` (or `write(1); write(2);`), then
-    `CountDownLatch.await(100 ms)` for both — false today. A probe that re-releases the internal
-    semaphore whenever `waitForAtLeast` leaves its loop (data there or closed) brought scenarios 1
-    and 2 to 0/100, not scenario 3 — that needs the re-check under the lock.
-    **Decision needed:** support several readers safely, or document a single-consumer contract.
-    Recommended: make it safe (no hang after `close()`, no unchecked exception from `read()`)
-    without a fairness promise — `close()` wakes every waiter (re-release in the `streamClosed`
-    branch; a surplus permit after close is harmless), and under the lock re-check the available
-    bytes and go back to waiting instead of calling `getFirst()` on an empty deque. Record it as a
-    new finding in `BUGHUNT-FOUND.md` (next free ID per that file's rule).
-    Done when: the three scenarios are regression tests, red on `7ce9033` and green after the fix;
-    PIT stays at 100 %; `-Pjml-rac` and both JPF harnesses green; the existing JMH benchmark shows
-    no measurable loss.
-  - **A2 — Documentation and small hardening (hours).** The `.jml` header (line 39) names a
-    Checker Framework Lock Checker pass `mvn -P lockchecker compile`; no such profile exists (the
-    Lock Checker is deferred, see below). The header cites DOI 10.1145/3594729 as "Formally
-    Verifying an Efficient Sorter"; that DOI is de Boer et al., "Formal Specification and
-    Verification of JDK's Identity Hash Map Implementation" (iFM 2022, FAoC 2023). README "Thread
-    Safety" follows the A1 contract. Interrupted reads throw `java.io.InterruptedIOException`
-    (cause via `initCause`, interrupt flag kept) instead of `new IOException(InterruptedException)`
-    — a subtype, so source-compatible for callers, and the conventional signal for cancellation by
-    interrupt (what `StructuredTaskScope` does). Done when: Javadoc `@throws`, JML `signals` clauses
-    and tests (type and interrupt flag) agree.
-  - **A3 — The A1 defect in every existing tool (2–3 days).** A third JPF harness with two readers
-    (a writer writes two bytes and closes) — JPF must report a deadlock or the uncaught
-    `NoSuchElementException` on `7ce9033`, which is also its non-vacuity proof; the harness for the
-    array-read / `waitForAtLeast` paths and one for trim re-entrancy through a trim signal (both
-    formerly "JPF follow-ups" below); jcstress `Mode.Termination` tests with two readers (only if A1
-    supports several readers); vmlens scenarios for two readers, close, trim with signal and
-    `safeWrite`; Lincheck with the reader operations in one `nonParallelGroup` (models the single
-    consumer) reading only when `available() > 0` (only the consumer removes data, so that never
-    blocks), plus a setup with a small `maxBufferElements` so trim runs — first check that
-    `@Operation(nonParallelGroup = …)` exists in Lincheck 3.7. Done when: every new check is red on
-    `7ce9033` and green after A1 (the F149 practice).
+  - **A3 — Several readers in every existing tool (2–3 days).** The JPF harness for the array-read /
+    `waitForAtLeast` paths and one for trim re-entrancy through a trim signal (both formerly "JPF
+    follow-ups" below); jcstress `Mode.Termination` tests with two readers; vmlens scenarios for two
+    readers, close, trim with signal and `safeWrite`; Lincheck with the blocking reads included
+    (several readers are now part of the contract, so no `nonParallelGroup` for the readers is
+    needed) reading only when `available() > 0`, plus a setup with a small `maxBufferElements` so
+    trim runs. Done when: every new check is red on the commit before F278 (`b3c309e`) and green
+    on the fix (the F149 practice).
   - **A4 — Data-race freedom as a stated argument (2–3 days).** JLS §17.4.5: if a program is
     correctly synchronized, all its executions appear sequentially consistent; "correctly
     synchronized" means no *sequentially consistent* execution has a data race. So checking SC
@@ -88,16 +40,17 @@ annotated, so everything below is genuinely still open.
     contents are safe (published through `bufferLock`; with `safeWrite=false` a later change of the
     array by the caller is the caller's own race), (c) CI fails when vmlens reports a race, over the
     A3 scenarios. State the limits: it covers the executed scenarios; the JDK classes
-    (`Semaphore`/AQS, `ArrayDeque`, `CopyOnWriteArrayList`) and the JVM including its JIT are the
-    trusted base.
+    (`ReentrantLock`/`Condition`/AQS, `Semaphore`, `ArrayDeque`, `CopyOnWriteArrayList`) and the
+    JVM including its JIT are the trusted base.
   - **A5 — TLA+/PlusCal model of the protocol (~1 week).** Writer, N readers (constant), closer,
-    the max-1 semaphore, the `availableBytes` check outside the lock, trim as one atomic step under
-    the lock. Safety: bytes read are a prefix of bytes written, `available = written − read`, no
+    the wait (pre-F278: the max-1 semaphore and the `availableBytes` check outside the lock; since
+    F278: the condition with `signalAll` and the re-check under the lock), trim as one atomic step
+    under the lock. Safety: bytes read are a prefix of bytes written, `available = written − read`, no
     write accepted after a close was observed (F149), no removal from an empty deque. Liveness
     under weak fairness: a waiting reader returns once enough bytes are there or the buffer is
     closed. TLC in `formal-verification.yml`, `tla2tools.jar` pinned by version and SHA-256.
     TLA+ was not part of the 2026-09 evaluation below. Done when: N=2 on the
-    pre-fix model yields the A1 counterexample, the fixed model is green, N=1 is green on both.
+    pre-fix model yields the F278 counterexample, the fixed model is green, N=1 is green on both.
   - **A6 — Trace validation (1–2 weeks).** Record the events of real runs (JPF listener, or
     test-side wrappers / an agent — no change to production code) and check the traces against the
     A5 spec with TLC (the approach of Cirstea, Kuppe, Merz et al., 2024). Closes the gap between
@@ -110,12 +63,14 @@ annotated, so everything below is genuinely still open.
     JDK 21–23. A JMH producer/consumer benchmark (`@Group`, one `@GroupThreads` each), platform vs
     virtual threads, on x86 and on the GitHub ARM runner — the baseline for A8. Report only, not a
     gate (shared runners are too noisy).
-  - **A8 — `ReentrantLock` + `Condition` instead of `synchronized` + semaphore (optional, ~1
-    week).** Only if A1 wants full multi-reader support: `signalAll` on write and close, waiting
-    under the lock with re-check, no carrier pinning on JDK 21–23, timeouts via `awaitNanos`. The
-    lock-free `available()` path stays `volatile`, the external semaphore signal API stays. Check
-    Error Prone's `@GuardedBy` support for `Lock` fields; A3–A7 are the safety net; the A7 JMH
-    comparison is mandatory.
+  - **A8 — `ReentrantLock` instead of `synchronized (bufferLock)` (optional, ~1 week).** The
+    waiting part landed with F278: a separate `waitLock` with a `Condition`, `signalAll` on write and
+    close, the re-check under `bufferLock`, so a waiting reader no longer pins a carrier. Still on
+    `synchronized`: every FIFO access including `trim()`, which copies the whole buffer, so a
+    virtual reader or writer blocked at the monitor pins its carrier on JDK 21–23. One lock for both
+    would also save the second lock per write. The lock-free `available()` path stays `volatile`,
+    the external semaphore signal API stays. Check Error Prone's `@GuardedBy` support for `Lock`
+    fields; A3–A7 are the safety net; the A7 JMH comparison is mandatory.
   - **A9 — Functional proof of the sequential instance core (long-term, months).** The parked
     "Deeper ESC" item below; OpenJML first, KeY only for goals where Z3 answers "unknown".
   - **A10 — Class invariants under RAC via qualified delegation (hours).** The downstream
@@ -128,7 +83,7 @@ annotated, so everything below is genuinely still open.
     Central, failing on a binary-incompatible change without a matching version step. Missing
     today.
   - **A12 — Waiting with a timeout (1–2 days).** `waitForAtLeast(long bytes, long timeout,
-    TimeUnit unit)` via `Semaphore.tryAcquire` (Java 8; `awaitNanos` after A8): cancellation by
+    TimeUnit unit)` via `Condition.awaitNanos` on the F278 condition (Java 8): cancellation by
     deadline instead of only by interrupt. New API: JML spec, tests, README.
   - **A13 — Unbounded safety of the A5 model (weeks).** TLC checks fixed constants only: check
     the inductive invariant with Apalache, or prove it with TLAPS.
@@ -155,7 +110,7 @@ annotated, so everything below is genuinely still open.
   - **JPF interleaving harness — follow-ups.** The harness (`src/test/jpf/`, the scheduled
     `jpf-interleavings` job in `formal-verification.yml`) runs. Still open: report the AtomicLong
     model completion upstream as a jpf-core deficiency (its native peer already implements the
-    methods the stub model never declared). Further harnesses (two readers, the array-read /
+    methods the stub model never declared). Further harnesses (the array-read /
     `waitForAtLeast` blocking paths, trim re-entrancy) are package A3 of the roadmap above.
   - **RAC evaluates a `signals (E e)` clause for an exception of another type — confirmed OpenJML
     bug, reported in [OpenJML/OpenJML#1050](https://github.com/OpenJML/OpenJML/issues/1050)** (2026-10-19; reproduced on 21.0.28 and on `dev-21` `529ac454da`,

@@ -134,12 +134,17 @@ Instead of a fixed circular buffer, `StreamBuffer` uses a `Deque<byte[]>` that g
 
 ### Thread Safety
 
-The `InputStream` and `OutputStream` can be used concurrently from different threads without additional synchronization:
+The `InputStream` and `OutputStream` can be used concurrently from different threads without additional synchronization, by several writers and several readers at the same time:
+
+- Each `write` is atomic: its bytes enter the buffer together and in order.
+- Each buffered byte is delivered to exactly one reader, in the order it was written. No reader blocks while bytes are buffered, and after `close()` every waiting reader returns. `read()` throws no unchecked exception when another reader took the bytes first (bug-hunt finding F278; before 1.3.0 the buffer was correct for one reader only).
+- There is no fairness between readers, and the bytes one `read(b, off, len)` returns can be interleaved with bytes another reader took meanwhile; for whole records over one stream, use one reader or frame the records yourself.
 
 - All `Deque` accesses are guarded by a `bufferLock` object.
 - State fields (`streamClosed`, `safeWrite`, `availableBytes`, `positionAtCurrentBufferEntry`, `maxBufferElements`, `maxAllocationSize`, `isTrimRunning`, `maxObservedBytes`) are `volatile`; the cumulative counters `totalBytesWritten` and `totalBytesRead` are `final AtomicLong` (atomic read-modify-write under concurrent I/O).
 - `close()` takes the same lock, so it waits for a write or trim in progress on another thread: a write racing the close is either fully buffered or fails with "Stream closed", never appended after a reader saw the end of the stream. A trim copies every buffered byte, so with a large buffer that wait can be noticeable.
-- A `Semaphore signalModification` blocks reading threads until data is written or the stream is closed, avoiding busy-waiting. External semaphores can be registered via `addSignal` for thread-decoupled notification.
+- A waiting reader blocks on a `Condition` of a `ReentrantLock` (`waitLock`, separate from `bufferLock`), which every write and the close signal to all waiters, avoiding busy-waiting. While no reader waits, a write skips that lock (a count of waiting readers), and a read with enough buffered bytes does not take it either. A `java.util.concurrent` lock does not pin a virtual thread's carrier while it waits. External semaphores can be registered via `addSignal` for thread-decoupled notification.
+- A read interrupted while it waits throws `java.io.InterruptedIOException` (cause: the `InterruptedException`, interrupt flag set again); for `read(b, off, len)`, `bytesTransferred` is the number of bytes already copied to `b`.
 
 ### No Write Deadlock
 
@@ -420,7 +425,8 @@ Test coverage includes:
 - Buffer trimming and byte-order preservation
 - Close via `sb.close()`, `os.close()`, and `is.close()` — all paths tested
 - `available()` behavior before and after close, including with buffered data remaining
-- Thread interruption during blocked reads (wraps `InterruptedException` in `IOException`)
+- Thread interruption during blocked reads (`InterruptedIOException` with the `InterruptedException` as cause, interrupt flag kept, `bytesTransferred`)
+- Several readers on one stream (`StreamBufferConcurrentReadersTest`): two parked readers and two writes or a close, three readers at the lock for two bytes, `read(byte[])` racing `read()`, a reader parked next to a larger `waitForAtLeast`, three writers and three readers
 - Concurrent read/write stress tests
 - Parallel close without deadlock
 - Deadlock-freedom of every blocking entry point, stress-checked with jcstress `Mode.Termination`
@@ -429,7 +435,7 @@ Test coverage includes:
   `close`
 - Exhaustive thread-interleaving model check of the read/write/close protocol with Java PathFinder
   (`src/test/jpf/`, scheduled CI job + local Docker recipe) — the erschöpfende counterpart to the
-  jcstress stress tests
+  jcstress stress tests; three harnesses: writer and reader, writer racing a closer, two readers
 - Signal/slot notification via external semaphores on write and all close paths
 - `removeSignal(null)` returning `false` without throwing
 - `addSignal(null)` throwing `NullPointerException`

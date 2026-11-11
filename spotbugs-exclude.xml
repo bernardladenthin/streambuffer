@@ -113,4 +113,35 @@ SPDX-License-Identifier: Apache-2.0
         <Method name="trim"/>
         <Bug pattern="PSC_PRESIZE_COLLECTIONS"/>
     </Match>
+
+    <!--
+        MDM_WAIT_WITHOUT_TIMEOUT on the wait for data (bug-hunt finding F278). awaitAtLeast, the
+        waiting part of waitForAtLeast, blocks until bytes arrive or the stream is closed: waiting
+        without a deadline is the method's documented contract (a timed variant is roadmap package
+        A12 in TODO.md), and an interrupt ends it. signalModification takes the same lock only to
+        signal the condition, and only while a reader waits; the lock is held for the signalAll call
+        and by a waiter only while it checks two volatile fields, never across I/O, so lock() cannot
+        wait long.
+    -->
+    <Match>
+        <Class name="net.ladenthin.streambuffer.StreamBuffer"/>
+        <Or>
+            <Method name="awaitAtLeast"/>
+            <Method name="signalModification"/>
+        </Or>
+        <Bug pattern="MDM_WAIT_WITHOUT_TIMEOUT"/>
+    </Match>
+
+    <!--
+        CWO_CLOSED_WITHOUT_OPENED on awaitAtLeast is a false positive: waitLock.lockInterruptibly()
+        comes right before the try block, and the finally block's unlock() is the only unlock. The detector reports it only for the method that calls Condition.await() in the
+        loop (await releases and re-acquires the lock internally, which fb-contrib does not
+        model); signalModification, the same lock/try/finally without await, is not reported.
+        Also with a single return statement the finding stays.
+    -->
+    <Match>
+        <Class name="net.ladenthin.streambuffer.StreamBuffer"/>
+        <Method name="awaitAtLeast"/>
+        <Bug pattern="CWO_CLOSED_WITHOUT_OPENED"/>
+    </Match>
 </FindBugsFilter>

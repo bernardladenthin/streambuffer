@@ -23,12 +23,13 @@ The harness (`JpfStreamBufferHarness.java`) runs one writer (writes two bytes, t
 one reader (`read()` until EOF) over one real `StreamBuffer`, and JPF explores every interleaving,
 reporting:
 
-- **deadlocks** — a thread parked forever on the semaphore (lost wakeup),
+- **deadlocks** — a thread parked forever waiting for data (lost wakeup),
 - **uncaught exceptions** — any thread dying unexpectedly,
 - **byte fidelity** — the reader must receive exactly the two bytes, in order, then EOF (an explicit
   `throw`, validated with a negative control so it cannot be vacuous).
 
-Last confirmed run: **no errors detected**, 13,616 states, maxDepth 127.
+Last confirmed run (2026-11-11, after bug-hunt fix F278): **no errors detected**, 20,050 states,
+maxDepth 143 (13,616 before F278; the separate wait lock adds interleavings).
 
 A second harness (`JpfWriteCloseHarness.java`, run configuration `WriteClose.jpf`) puts the writer,
 a separate closer and the reader in three threads, so a write can race the close — which the first
@@ -37,9 +38,20 @@ bytes, each of which either succeeds or fails with "Stream closed"; JPF checks o
 interleaving that a write after a failed write fails too, and that the reader receives **exactly**
 the bytes whose write returned normally, in order. That is the property bug-hunt finding F149 broke
 (a write passed the closed check outside the lock and added its bytes after the reader had already
-seen the end). Last confirmed run: **no errors detected**, 75,438 states (~15–25 s); against the
-production classes before the F149 fix (`6ece270^`) it reports "reader got 1 bytes, but 2 writes
-returned normally" after 3,956 states, so the oracle is not vacuous.
+seen the end). Last confirmed run (2026-11-11): **no errors detected**, 195,915 states (~1:25 min;
+75,438 before F278); against the production classes before the F149 fix (`6ece270^`) it reports
+"reader got 1 bytes, but 2 writes returned normally" after 3,956 states, so the oracle is not
+vacuous.
+
+A third harness (`JpfTwoReadersHarness.java`, run configuration `TwoReaders.jpf`) puts two readers
+on the same input stream; the writer writes two bytes and closes. JPF checks that no reader blocks
+forever, that no thread dies, and that each byte reaches exactly one reader (a reader that got both
+got them in order). That is what bug-hunt finding F278 broke: a write or close woke at most one
+waiting reader, and a reader took the first FIFO entry without checking the count again under the
+lock. Last confirmed run (2026-11-11): **no errors detected**, 3,530,400 states, maxDepth 190,
+about 18 minutes. Against the production classes before the F278 fix (`b3c309e`) it reports the
+`NoSuchElementException` after 251 states; with `+search.multiple_errors=true` it finds 24,350
+interleavings with that exception and 337 deadlocks in 765,968 states (14 min).
 
 ## Files
 
@@ -49,6 +61,8 @@ returned normally" after 3,956 states, so the oracle is not vacuous.
 | `StreamBuffer.jpf` | JPF run configuration (target + classpath) |
 | `net/ladenthin/streambuffer/jpf/JpfWriteCloseHarness.java` | the write/close harness (writer, closer, reader) |
 | `WriteClose.jpf` | its JPF run configuration (same classpath) |
+| `net/ladenthin/streambuffer/jpf/JpfTwoReadersHarness.java` | the two-readers harness (writer that closes, two readers) |
+| `TwoReaders.jpf` | its JPF run configuration (same classpath) |
 | `jpf-model/java/util/concurrent/atomic/AtomicLong.java` | a completed `AtomicLong` model that patches a jpf-core stub (see below) |
 
 ## Why the AtomicLong patch
@@ -90,6 +104,7 @@ docker run --rm -v "$WORK/jpf-core:/jpf" -v "$SB:/sb" -w /jpf eclipse-temurin:11
   javac --release 8 -cp streambuffer-classes -d out net/ladenthin/streambuffer/jpf/*.java
   java -jar /jpf/build/RunJPF.jar StreamBuffer.jpf
   java -jar /jpf/build/RunJPF.jar WriteClose.jpf
+  java -jar /jpf/build/RunJPF.jar TwoReaders.jpf   # about 18 minutes
 '
 ```
 

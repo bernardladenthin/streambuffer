@@ -35,12 +35,14 @@
 //    Fundamental Concepts), and OpenJML does not model `volatile` nor implement the Level-C
 //    concurrency features (monitors_for, when, \lockset). The concurrent shell around the
 //    sequential core proven here is covered empirically by Lincheck (linearizability,
-//    mvn test), jcstress (mvn -P jcstress test) and vmlens (mvn -P vmlens test), plus the
-//    Checker Framework Lock Checker pass (mvn -P lockchecker compile) for the @GuardedBy
-//    discipline. Precedent for exactly this scoping split: Hiep et al., "Verifying
-//    OpenJDK's LinkedList using KeY" (TACAS 2020, https://arxiv.org/abs/1911.04195) and
-//    de Boer et al., "Formally Verifying an Efficient Sorter" — IdentityHashMap case study
-//    (iFM 2022, https://dl.acm.org/doi/10.1145/3594729).
+//    mvn test), jcstress (mvn -P jcstress test) and vmlens (mvn -P vmlens test), and
+//    exhaustively for small harnesses by Java PathFinder (src/test/jpf); the @GuardedBy
+//    discipline is gated by Error Prone in the default build (the Checker Framework Lock
+//    Checker is deferred, see TODO.md). Precedent for exactly this scoping split: Hiep et
+//    al., "Verifying OpenJDK's LinkedList using KeY" (TACAS 2020,
+//    https://arxiv.org/abs/1911.04195) and de Boer et al., "Formal Specification and
+//    Verification of JDK's Identity Hash Map Implementation" (iFM 2022; Formal Aspects of
+//    Computing 2023, https://doi.org/10.1145/3594729).
 //
 //  * The exception-message builder newInvalidOffsetOrLengthToWriteException carries an
 //    ASSUMED contract (it is excluded from the ESC method list): string concatenation sends
@@ -66,6 +68,7 @@ package net.ladenthin.streambuffer;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InterruptedIOException;
 import java.io.OutputStream;
 import java.util.concurrent.Semaphore;
 
@@ -284,7 +287,7 @@ public class StreamBuffer implements Closeable {
     public void setMaxAllocationSize(final long maxSize);
 
     // A single heavyweight 'behavior' rather than normal/exceptional: the method both returns a
-    // value AND can throw InterruptedException (it blocks on a Semaphore), so InterruptedException
+    // value AND can throw InterruptedException (it waits on a Condition), so InterruptedException
     // must be an allowed outcome under ANY argument, while IllegalArgumentException is allowed only
     // for bytes <= 0. A normal_behavior with 'ensures' cannot also whitelist a non-argument-driven
     // checked exception, so the two outcomes are expressed with signals/signals_only here.
@@ -361,15 +364,16 @@ public class StreamBuffer implements Closeable {
           @*/
         public int available() throws IOException;
 
+        // The only IOException a read throws is the InterruptedIOException of an interrupted wait.
         /*@ also public behavior
           @   ensures -1 <= \result && \result <= 255;
-          @   signals_only IOException;
+          @   signals_only InterruptedIOException;
           @*/
         public int read() throws IOException;
 
         /*@ also public behavior
           @   ensures -1 <= \result && \result <= len;
-          @   signals_only NullPointerException, IndexOutOfBoundsException, IOException;
+          @   signals_only NullPointerException, IndexOutOfBoundsException, InterruptedIOException;
           @*/
         public int read(final byte b[], final int off, final int len) throws IOException;
     }
@@ -377,7 +381,7 @@ public class StreamBuffer implements Closeable {
     private class SBOutputStream extends OutputStream {
 
         // RuntimeException is in signals_only on purpose: write() drives the observer
-        // notifications (signalModification, and trim's start/end signals), and a registered
+        // notifications (the registered modification signals, and trim's start/end signals), and a registered
         // observer's Semaphore is caller-supplied code that may throw an unchecked exception,
         // which propagates out of write() by design (exercised by the trim signal-release tests).
         /*@ also public behavior
