@@ -129,7 +129,7 @@ Repos plus eins. Geprüfte Klassen ohne Fund stehen in [`BUGHUNT-CHECKED.md`](BU
 - **Leistung:** die erste Fassung (Lock und `signalAll()` bei jedem Write, Lock bei jedem Warten) kostete im JMH-Benchmark `StreamBufferThroughputBenchmark` 4–10 % beim Schreiben und bis 16 % im Round-Trip mit 128-Byte-Blöcken. Seither nimmt ein Write den `waitLock` nur, solange `waitingReaders` nicht 0 ist (die Reihenfolge der volatile-Zugriffe macht das sicher, Javadoc von `waitingReaders`), und `waitForAtLeast` kehrt ohne Lock zurück, wenn genug Bytes da sind oder der Stream geschlossen ist. Danach (JDK 25.0.4, je 1 Fork, 5×2 s gegen `b3c309e`): alle 12 Konfigurationen zwischen −3,9 % und +7,2 %, innerhalb der Streuung. Der schnelle Weg verschiebt eine Grenze: ein schon unterbrochener Thread, der warten müsste, wirft jetzt sofort (`lockInterruptibly`); mit genug Bytes oder auf einem geschlossenen Stream wirft er wie bisher nicht – drei Tests in `ThreadInterruptionDuringReadTests` halten das fest.
 - **Breit:** ganze Suite grün (`mvn clean verify`, 317/317: `StreamBufferTest` 295, `StreamBufferConcurrentReadersTest` 6, jqwik, Lincheck, Architektur), Javadoc gebaut, SpotBugs 0 (zwei neue begründete Ausschlüsse in `spotbugs-exclude.xml`: `MDM_WAIT_WITHOUT_TIMEOUT` für das gewollte Warten ohne Frist in `awaitAtLeast`/`signalModification`, `CWO_CLOSED_WITHOUT_OPENED` als Fehlalarm bei `await()` in der Schleife), PIT 207/207.
 - **Status:** gefixt
-- **Commit:** (folgt)
+- **Commit:** d07d91d
 
 ## Offene Verdachte ohne Fund-ID
 
