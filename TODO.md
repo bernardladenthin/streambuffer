@@ -50,7 +50,7 @@ annotated, so everything below is genuinely still open.
   - **A13 — Unbounded safety of the A5 model (weeks).** TLC checks fixed constants only (up to 3
     readers, 2 bytes): check an inductive invariant of `src/test/tla/StreamBuffer.tla` with Apalache
     (unbounded byte counts and runs, fixed readers), or prove it with TLAPS for any number of readers.
-    The model extended to `read(b, off, len)` of several bytes would also cover #212.
+    The model covers `read()` and fixed-size `read(b, off, len)` (#212, F279).
   - **Considered 2026-11 and not planned:** `StructuredTaskScope` inside the library (Java 8
     target, a caller-side API; preview in JDK 27 as JEP 533, final planned for JDK 28 with JEP 543 —
     at most an example once JDK 28 is released); fuzzing with Jazzer (jqwik properties plus PIT at

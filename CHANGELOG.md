@@ -13,7 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   checks clean with 1, 2 and 3 readers, safety and liveness (every reader returns). The code before it
   fails as it did: with two readers TLC finds the empty take (`NoSuchElementException`), and with the
   re-check alone a deadlock after the close; without the re-check the condition fails too. A
-  mutation without the waiting-reader count deadlocks, so the model checks that optimization.
+  mutation without the waiting-reader count deadlocks, so the model checks that optimization. The
+  model also covers `read(b, off, len)` of several bytes and the count a lock-free reader sees:
+  with 2-byte records the current code checks clean, the two-phase read before #212 yields the
+  torn record `<<1, 3>>`, and lowering the count per entry as before F279 shows a count from the
+  middle of a read (`AvailLinearizable`).
 - **ESC proves every obligation twice, with Z3 and with cvc5.** The formal-verification job runs the
   same 15 ESC proofs a second time with cvc5 1.3.2 (bundled with OpenJML) and requires the same
   count, so no proof rests on a single solver (the nonlinear ceiling division included). A falsified

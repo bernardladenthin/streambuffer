@@ -99,9 +99,11 @@ deliberately not part of the synchronous Publish pipeline and never a required c
    `src/test/jpf/README.md`. Never touches the shipped jar.
 
 4. **TLA+ model** (`src/test/tla/`, scheduled/dispatch CI job `tla-model`): `StreamBuffer.tla` models
-   the wait/wake-up/close protocol; TLC checks safety and liveness. `check.sh` compares every model with
-   its expected outcome: the code since F278 checks clean (1, 2, 3 readers), the code before it fails
-   with the F278 counterexamples (an empty take, a deadlock after the close). `tla2tools.jar` v1.7.4 is
+   the wait/wake-up/close protocol and the reads; TLC checks safety and liveness. `check.sh` compares
+   ten models with their expected outcomes: the current code checks clean (`read()` with 1, 2, 3
+   readers, `read(b, 0, 2)` records with 2), the older code fails with its counterexamples (F278: an
+   empty take, a deadlock after the close; #212: a torn record; F279: a count from the middle of a
+   read). Constants `Protocol`, `ReCheck`, `AtomicRead`, `CountOnce` select the code version. `tla2tools.jar` v1.7.4 is
    pinned by SHA-256. When the wait/signal code changes, change the model with it.
 
 The `@GuardedBy("bufferLock")` lock discipline is gated separately by Error Prone in the default
