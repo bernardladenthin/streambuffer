@@ -14,15 +14,18 @@ part of the Maven build and never touches the shipped jar.
 
 ## What is modeled
 
-- **Threads:** a writer of `Bytes` single-byte writes, a closer, and the readers in `Readers`, each
-  reading `ReadLen` bytes per call (`read()` for 1, `read(b, 0, ReadLen)` otherwise) until a call
-  returns -1.
-- **State:** the buffered bytes in FIFO order (`buf`), `availableBytes` as its own variable
-  (`avail`, the count every lock-free reader sees), the bytes written and committed, `streamClosed`,
-  and the waiting machinery.
+- **Threads:** a writer of `Bytes` bytes in writes of `ChunkLen` bytes (the last one shorter), a
+  closer, and the threads in `Readers`. A reader reads until a call returns -1: `read()` if it is in
+  `ByteReaders`, `read(b, 0, ReadLen)` otherwise. A thread in `WaitCallers` calls
+  `waitForAtLeast(ReadLen)` once instead and keeps what it returns.
+- **State:** the FIFO as a sequence of entries, one per write (`buf`), with the read position in the
+  head entry (`pos`, `positionAtCurrentBufferEntry`); `availableBytes` as its own variable (`avail`,
+  the count every lock-free reader sees), the bytes written and committed, `streamClosed`, and the
+  waiting machinery.
 - **Atomicity:** one step is one atomic action; each lock-free volatile read or write is a step of
   its own, and both locks are variables (`bl` for `bufferLock`, `wl` for `waitLock`). A copy under
-  `bufferLock` takes one step per FIFO entry, so a lock-free reader of `avail` can watch it; a
+  `bufferLock` takes one step per FIFO entry (at most the rest of the head entry, one turn of the
+  copy loop of `readIntoArray`), so a lock-free reader of `avail` can watch it; a
   writer's signal cannot come between a reader's increment of `waitingReaders` and its check under
   `waitLock`.
 - **Code versions**, chosen by constants; the code since F279 is `Protocol = "condition"`,
@@ -46,19 +49,20 @@ part of the Maven build and never touches the shipped jar.
 | `TypeOK` | invariant | every variable in its domain |
 | `NoEmptyTake` | invariant | no reader takes from an empty FIFO (`NoSuchElementException`, F278) |
 | `Fifo` | invariant | `written = taken \o InFlight \o buf`: nothing lost, nothing twice |
-| `AvailLinearizable` | invariant | `availableBytes = written − committed` in every state, so a lock-free reader never sees a count from the middle of a read (F279) |
+| `AvailLinearizable` | invariant | `availableBytes` is `written − committed`, or that minus the whole read in flight: a lock-free reader sees the count before or after a read, never from the middle of it (F279) |
 | `ReaderOrder` | invariant | each reader gets the bytes in the order they were written |
-| `RecordsWhole` | invariant | each read returns consecutive bytes, a whole aligned record of `ReadLen` bytes, fewer only from a closed buffer (#212) |
+| `RecordsWhole` | invariant | each read returns consecutive bytes, as many as it asked for, fewer only from a closed buffer; with readers of one size, a whole aligned record (#212) |
+| `WaitEnoughOrClosed` | invariant | `waitForAtLeast(n)` returns fewer than `n` only for a closed buffer — holds where nothing else takes bytes; next to a reader the result is a snapshot (`WaitSnapshot2`) |
 | `NoWriteAfterEof` | invariant | no write returns normally after a reader reported the end (F149) |
 | `EofOnlyWhenClosedAndEmpty` | invariant | only a closed buffer reports the end, and it stays empty |
-| `AllReadersFinish` | liveness | every reader returns, from every wait (no lost wake-up, F278) |
+| `AllReadersFinish` | liveness | every read and every `waitForAtLeast` call returns, from every wait (no lost wake-up, F278) |
 
 ## Models and results
 
 `check.sh` runs every model and compares it with its **expected** outcome. Last run 2026-11-11, TLC
-v1.7.4, about 70 s in total:
+v1.7.4, about 90 s in total. Writes are single bytes unless the row says otherwise:
 
-| Model | Code | Reads | Readers | Expected and found |
+| Model | Code | Reads | Threads | Expected and found |
 |---|---|---|---|---|
 | `Condition1` | since F278 | `read()` | 1 | no error, 570 states |
 | `Condition2` | since F278 | `read()` | 2 | no error, 11,239 states |
@@ -70,17 +74,31 @@ v1.7.4, about 70 s in total:
 | `ConditionNoReCheck2` | condition, without the re-check | `read()` | 2 | `NoEmptyTake` violated: the re-check is needed with the condition too |
 | `RecordsTwoPhase2` | two-phase read, before #212 | `read(b, 0, 2)` | 2 | `RecordsWhole` violated: a reader got `<<1, 3>>`, the same torn record vmlens found |
 | `RecordsCountPerEntry2` | count per entry, before F279 | `read(b, 0, 2)` | 2 | `AvailLinearizable` violated: the count dropped by one in the middle of a read |
+| `Chunks2` | since F279 | `read(b, 0, 2)`; writes of 3 and 1 bytes | 2 | no error, 14,263 states: records span two entries and end inside one |
+| `Mixed2` | since F279 | `read()` and `read(b, 0, 2)`; writes of 2 and 1 bytes | 2 | no error, 12,749 states |
+| `WaitAndRead2` | since F279 | `waitForAtLeast(2)` and `read()`; 1 byte | 2 | no error, 1,796 states (the JPF `WaitAndRead` scenario, liveness included) |
+| `SemaphoreWaitAndRead2` | before F278 | `waitForAtLeast(2)` and `read()`; 1 byte | 2 | deadlock: the wait took the only permit, the reader waits forever (F278) |
+| `WaitSnapshot2` | since F279 | `waitForAtLeast(2)` and `read()`; one 2-byte write | 2 | `WaitEnoughOrClosed` violated: the wait saw 2 bytes under `waitLock`, the reader took one, the wait returned 1 on an open buffer |
+
+`WaitSnapshot2` shows the documented contract, not a defect: the Javadoc of `waitForAtLeast` calls
+the result a snapshot that another reader may lower. The waiting branch reads `availableBytes` again
+for the return after its loop condition; the fast path returns the value it checked.
 
 A mutation check on 2026-11-11 (not committed): with `waitingReaders` never counted, every signal is
-skipped and TLC reports a deadlock in `Condition2` and `Records2`, so the model does check the skip
-of the wait lock that the count allows.
+skipped and TLC reports a deadlock in `Condition2`, `Records2`, `Chunks2`, `Mixed2` and
+`WaitAndRead2`, so the model does check the skip of the wait lock that the count allows. Probe
+invariants that must fail (not committed) confirm the new models reach their cases: a partly read
+head entry, a copy across two entries, completed reads of both sizes, `waitForAtLeast` parked and
+returning through the waiting branch. Moving the FIFO from bytes to entries left the state counts of
+the clean single-byte models unchanged.
 
 ## Limits
 
-- **Single-byte writes and fixed read sizes.** Writes of several bytes (each one entry, atomic under
-  the lock), readers of different sizes, `waitForAtLeast` called directly and trim's consolidation
-  (it keeps `availableBytes` and the byte order, so it is a no-op here) are not in the model; JPF,
-  vmlens, jcstress and Lincheck cover them.
+- **Not in the model:** several writers (each write is atomic under the lock, so they interleave
+  as whole entries), read sizes other than 1 and `ReadLen`, `waitForAtLeast` with a timeout,
+  interrupts, the external `addSignal` semaphores, and trim's merging of the entries (it keeps the
+  bytes, their order and `availableBytes`; it only changes how many copy steps a read takes, which
+  matters to the count per entry before F279 alone). JPF, vmlens, jcstress and Lincheck cover them.
 - **Sequential consistency.** TLC explores interleavings of atomic steps. That this matches the Java
   memory model rests on the data-race-freedom argument in the README ("Data-Race Freedom").
 - **Model vs. code.** The model is written by hand from the code; nothing checks that they agree.

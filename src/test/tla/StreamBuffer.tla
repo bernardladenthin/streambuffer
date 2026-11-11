@@ -4,19 +4,22 @@
 
 ---------------------------- MODULE StreamBuffer ----------------------------
 (***************************************************************************)
-(* The wait/wake-up/close protocol and the reads of                        *)
+(* The wait/wake-up/close protocol, the writes and the reads of            *)
 (* net.ladenthin.streambuffer.StreamBuffer (TODO roadmap A5), checked with  *)
 (* TLC.                                                                    *)
 (*                                                                         *)
-(* Threads: one writer of Bytes single-byte writes, one closer, and the     *)
-(* readers in Readers, each reading ReadLen bytes per call (read() for 1,   *)
-(* read(b, 0, ReadLen) otherwise) until a call returns -1. The FIFO is      *)
-(* abstracted to its bytes (buf); avail is availableBytes. Every step is    *)
-(* one atomic action: a lock-free volatile read or write is a step of its   *)
-(* own, and both locks are variables (bl for bufferLock, wl for waitLock),  *)
-(* so a copy under bufferLock may take several steps that a lock-free       *)
-(* reader of avail can watch, and a signal cannot slip in between a         *)
-(* waiter's increment of waitingReaders and its check under waitLock.       *)
+(* Threads: one writer of Bytes bytes in writes of ChunkLen bytes (the last *)
+(* one shorter; each write is one FIFO entry), one closer, and the threads  *)
+(* in Readers. A reader reads until a call returns -1: read() if it is in   *)
+(* ByteReaders, else read(b, 0, ReadLen). A thread in WaitCallers calls     *)
+(* waitForAtLeast(ReadLen) once instead. The FIFO is a sequence of entries  *)
+(* (buf) with the read position in the head entry (pos); avail is          *)
+(* availableBytes. Every step is one atomic action: a lock-free volatile    *)
+(* read or write is a step of its own, and both locks are variables (bl for *)
+(* bufferLock, wl for waitLock), so a copy under bufferLock takes one step  *)
+(* per FIFO entry that a lock-free reader of avail can watch, and a signal  *)
+(* cannot slip in between a waiter's increment of waitingReaders and its    *)
+(* check under waitLock.                                                    *)
 (*                                                                         *)
 (* The constants select a code version; the code since F279 is            *)
 (*   Protocol = "condition", ReCheck, AtomicRead, CountOnce:                *)
@@ -32,29 +35,39 @@
 (*   the first byte, released the lock and waited for the rest.             *)
 (* - CountOnce: availableBytes is lowered once per read, after the copy    *)
 (*   (since F279); without it, per FIFO entry during the copy.              *)
-(* trim() keeps availableBytes and the byte order, so it is a no-op here.   *)
+(* trim() merges the entries into one; it keeps the bytes, their order and  *)
+(* availableBytes, and is not modeled.                                      *)
 (***************************************************************************)
 EXTENDS Integers, Sequences, FiniteSets
 
 CONSTANTS
-    Readers,    \* the reader threads (model values)
-    Bytes,      \* how many single-byte writes the writer attempts
-    ReadLen,    \* the bytes one read call asks for
-    Protocol,   \* "condition" (since F278) or "semaphore" (before F278)
-    ReCheck,    \* the re-check of availableBytes under bufferLock (since F278)
-    AtomicRead, \* read(b, off, len) takes its bytes in one lock hold (since #212)
-    CountOnce   \* availableBytes lowered once per read, not per entry (since F279)
+    Readers,     \* the reading and waiting threads (model values)
+    ByteReaders, \* the readers calling read(); the others read(b, 0, ReadLen)
+    WaitCallers, \* the threads calling waitForAtLeast(ReadLen) once, not reading
+    Bytes,       \* how many bytes the writer attempts to write
+    ChunkLen,    \* the bytes per write (one FIFO entry each)
+    ReadLen,     \* the bytes one read(b, 0, len) asks for, and waitForAtLeast waits for
+    Protocol,    \* "condition" (since F278) or "semaphore" (before F278)
+    ReCheck,     \* the re-check of availableBytes under bufferLock (since F278)
+    AtomicRead,  \* read(b, off, len) takes its bytes in one lock hold (since #212)
+    CountOnce    \* availableBytes lowered once per read, not per entry (since F279)
+
+(* The bytes one read call of r asks for, or the bytes r's wait waits for. *)
+LenOf(r) == IF r \in ByteReaders THEN 1 ELSE ReadLen
 
 ASSUME /\ Protocol \in {"condition", "semaphore"}
        /\ ReCheck \in BOOLEAN /\ AtomicRead \in BOOLEAN /\ CountOnce \in BOOLEAN
-       /\ Bytes \in Nat /\ ReadLen \in Nat \ {0} /\ Readers # {}
+       /\ Bytes \in Nat /\ ChunkLen \in Nat \ {0} /\ ReadLen \in Nat \ {0}
+       /\ Readers # {} /\ ByteReaders \subseteq Readers /\ WaitCallers \subseteq Readers
+       /\ ByteReaders \cap WaitCallers = {}
        \* the code without the re-check is modeled for read() only
-       /\ ReCheck \/ ReadLen = 1
+       /\ ReCheck \/ \A r \in Readers \ WaitCallers : LenOf(r) = 1
 
 None == "none"
 
 VARIABLES
-    buf,        \* the buffered bytes in FIFO order
+    buf,        \* the FIFO entries (each a nonempty sequence of bytes), in order
+    pos,        \* positionAtCurrentBufferEntry: the bytes of Head(buf) already read
     avail,      \* availableBytes, the count every lock-free reader sees
     written,    \* every byte whose write returned normally, in order
     taken,      \* every byte a read committed (counted), in that order
@@ -62,36 +75,44 @@ VARIABLES
     nextByte,   \* the value of the writer's next byte (1, 2, ...)
     wpc,        \* the writer's program counter
     cpc,        \* the closer's program counter
-    rpc,        \* rpc[r]: reader r's program counter
-    want,       \* want[r]: the bytes reader r's current wait waits for
+    rpc,        \* rpc[r]: thread r's program counter
+    want,       \* want[r]: the bytes r's current wait waits for
     cur,        \* cur[r]: the bytes of r's current read call committed so far
     hold,       \* hold[r]: the bytes r copied in its current hold of bufferLock
     left,       \* left[r]: the bytes r still copies in this hold
     reads,      \* reads[r]: the results of r's completed read calls
+    wres,       \* wres[w]: what waitForAtLeast returned to w, -1 before
+    wclosed,    \* wclosed[w]: streamClosed when it returned
     eofAt,      \* Len(written) when a reader first returned -1, else -1
     permits,    \* "semaphore": permits of the internal semaphore (0 or 1)
     waiters,    \* "condition": waitingReaders
-    parked,     \* "condition": the readers parked in Condition.await()
+    parked,     \* "condition": the threads parked in Condition.await()
     wl,         \* the holder of waitLock, or None
     bl          \* the holder of bufferLock, or None
 
-vars == <<buf, avail, written, taken, closed, nextByte, wpc, cpc, rpc, want, cur,
-          hold, left, reads, eofAt, permits, waiters, parked, wl, bl>>
+vars == <<buf, pos, avail, written, taken, closed, nextByte, wpc, cpc, rpc, want, cur,
+          hold, left, reads, wres, wclosed, eofAt, permits, waiters, parked, wl, bl>>
 
 Min(a, b) == IF a < b THEN a ELSE b
 
 RECURSIVE Flat(_)
 Flat(s) == IF s = <<>> THEN <<>> ELSE Head(s) \o Flat(Tail(s))
 
+(* The bytes still buffered, in order. *)
+BufBytes == IF buf = <<>> THEN <<>>
+            ELSE SubSeq(Head(buf), pos + 1, Len(Head(buf))) \o Flat(Tail(buf))
+
 (* The bytes reader r received, over all its completed reads. *)
 Got(r) == Flat(reads[r])
 
 ReaderStates == {"start", "reread", "acquire", "lockwait", "inc", "test", "parked",
-                 "woken", "lock", "decide", "copy", "finish", "ret0", "eof", "done",
-                 "nsee"}
+                 "woken", "wret", "lock", "decide", "copy", "finish", "ret0", "eof",
+                 "done", "nsee"}
 
 TypeOK ==
-    /\ buf \in Seq(1..Bytes) /\ written \in Seq(1..Bytes) /\ taken \in Seq(1..Bytes)
+    /\ buf \in Seq(Seq(1..Bytes)) /\ \A i \in 1..Len(buf) : buf[i] # <<>>
+    /\ pos \in 0..Bytes /\ (buf # <<>> => pos < Len(Head(buf))) /\ (buf = <<>> => pos = 0)
+    /\ written \in Seq(1..Bytes) /\ taken \in Seq(1..Bytes)
     /\ avail \in 0..Bytes /\ closed \in BOOLEAN /\ nextByte \in 1..(Bytes + 1)
     /\ wpc \in {"write", "sigread", "siglock", "done", "failed"}
     /\ cpc \in {"close", "sigread", "siglock", "done"}
@@ -99,28 +120,31 @@ TypeOK ==
     /\ want \in [Readers -> 0..ReadLen] /\ left \in [Readers -> 0..ReadLen]
     /\ cur \in [Readers -> Seq(1..Bytes)] /\ hold \in [Readers -> Seq(1..Bytes)]
     /\ reads \in [Readers -> Seq(Seq(1..Bytes))]
+    /\ wres \in [Readers -> -1..Bytes] /\ wclosed \in [Readers -> BOOLEAN]
     /\ eofAt \in -1..Bytes
     /\ permits \in 0..1 /\ waiters \in 0..Cardinality(Readers)
     /\ parked \subseteq Readers
     /\ wl \in Readers \cup {None} /\ bl \in Readers \cup {None}
 
 Init ==
-    /\ buf = <<>> /\ avail = 0 /\ written = <<>> /\ taken = <<>>
+    /\ buf = <<>> /\ pos = 0 /\ avail = 0 /\ written = <<>> /\ taken = <<>>
     /\ closed = FALSE /\ nextByte = 1
     /\ wpc = "write" /\ cpc = "close"
     /\ rpc = [r \in Readers |-> "start"]
     /\ want = [r \in Readers |-> 0] /\ left = [r \in Readers |-> 0]
     /\ cur = [r \in Readers |-> <<>>] /\ hold = [r \in Readers |-> <<>>]
     /\ reads = [r \in Readers |-> <<>>]
+    /\ wres = [r \in Readers |-> -1] /\ wclosed = [r \in Readers |-> FALSE]
     /\ eofAt = -1 /\ permits = 0 /\ waiters = 0 /\ parked = {} /\ wl = None /\ bl = None
 
-ReaderVars == <<rpc, want, cur, hold, left, reads>>
+ReaderVars == <<rpc, want, cur, hold, left, reads, wres, wclosed>>
+Sync == <<permits, waiters, parked, wl, bl>>
 
 (***************************************************************************)
 (* The signal after a write or the close (signalModification()):          *)
 (* "semaphore" releases a permit only while there is none (max 1);        *)
 (* "condition" reads waitingReaders lock-free and, if it is not 0, takes  *)
-(* waitLock and signals all: every parked reader becomes "woken". Taking  *)
+(* waitLock and signals all: every parked thread becomes "woken". Taking  *)
 (* waitLock, signalling and releasing it is one step here.                 *)
 (***************************************************************************)
 WakeAll ==
@@ -129,22 +153,24 @@ WakeAll ==
     /\ parked' = {}
 
 (***************************************************************************)
-(* The writer: write(int) under bufferLock, failing once closed (F149),   *)
-(* then the signal.                                                        *)
+(* The writer: write(b, 0, n) of the next ChunkLen bytes as one entry      *)
+(* under bufferLock, failing once closed (F149), then the signal.          *)
 (***************************************************************************)
 WriterDone == IF nextByte > Bytes THEN "done" ELSE "write"
+
+Chunk == [i \in 1..Min(ChunkLen, Bytes - nextByte + 1) |-> nextByte + i - 1]
 
 WriterWrite ==
     /\ wpc = "write" /\ bl = None
     /\ IF closed
           THEN /\ wpc' = "failed"
                /\ UNCHANGED <<buf, avail, written, nextByte>>
-          ELSE /\ buf' = Append(buf, nextByte)
-               /\ written' = Append(written, nextByte)
-               /\ avail' = avail + 1
-               /\ nextByte' = nextByte + 1
+          ELSE /\ buf' = Append(buf, Chunk)
+               /\ written' = written \o Chunk
+               /\ avail' = avail + Len(Chunk)
+               /\ nextByte' = nextByte + Len(Chunk)
                /\ wpc' = "sigread"
-    /\ UNCHANGED <<taken, closed, cpc, ReaderVars, eofAt, permits, waiters, parked, wl, bl>>
+    /\ UNCHANGED <<pos, taken, closed, cpc, ReaderVars, eofAt, Sync>>
 
 WriterSigRead ==
     /\ wpc = "sigread"
@@ -153,15 +179,15 @@ WriterSigRead ==
                /\ wpc' = WriterDone
           ELSE /\ wpc' = IF waiters # 0 THEN "siglock" ELSE WriterDone
                /\ UNCHANGED permits
-    /\ UNCHANGED <<buf, avail, written, taken, closed, nextByte, cpc, ReaderVars, eofAt,
+    /\ UNCHANGED <<buf, pos, avail, written, taken, closed, nextByte, cpc, ReaderVars, eofAt,
                    waiters, parked, wl, bl>>
 
 WriterSigLock ==
     /\ wpc = "siglock"
     /\ WakeAll
     /\ wpc' = WriterDone
-    /\ UNCHANGED <<buf, avail, written, taken, closed, nextByte, cpc, want, cur, hold, left,
-                   reads, eofAt, permits, waiters, wl, bl>>
+    /\ UNCHANGED <<buf, pos, avail, written, taken, closed, nextByte, cpc, want, cur, hold,
+                   left, reads, wres, wclosed, eofAt, permits, waiters, wl, bl>>
 
 WriterStep == WriterWrite \/ WriterSigRead \/ WriterSigLock
 
@@ -172,8 +198,7 @@ CloserClose ==
     /\ cpc = "close" /\ bl = None
     /\ closed' = TRUE
     /\ cpc' = "sigread"
-    /\ UNCHANGED <<buf, avail, written, taken, nextByte, wpc, ReaderVars, eofAt, permits,
-                   waiters, parked, wl, bl>>
+    /\ UNCHANGED <<buf, pos, avail, written, taken, nextByte, wpc, ReaderVars, eofAt, Sync>>
 
 CloserSigRead ==
     /\ cpc = "sigread"
@@ -182,88 +207,118 @@ CloserSigRead ==
                /\ cpc' = "done"
           ELSE /\ cpc' = IF waiters # 0 THEN "siglock" ELSE "done"
                /\ UNCHANGED permits
-    /\ UNCHANGED <<buf, avail, written, taken, closed, nextByte, wpc, ReaderVars, eofAt,
+    /\ UNCHANGED <<buf, pos, avail, written, taken, closed, nextByte, wpc, ReaderVars, eofAt,
                    waiters, parked, wl, bl>>
 
 CloserSigLock ==
     /\ cpc = "siglock"
     /\ WakeAll
     /\ cpc' = "done"
-    /\ UNCHANGED <<buf, avail, written, taken, closed, nextByte, wpc, want, cur, hold, left,
-                   reads, eofAt, permits, waiters, wl, bl>>
+    /\ UNCHANGED <<buf, pos, avail, written, taken, closed, nextByte, wpc, want, cur, hold,
+                   left, reads, wres, wclosed, eofAt, permits, waiters, wl, bl>>
 
 CloserStep == CloserClose \/ CloserSigRead \/ CloserSigLock
 
 (***************************************************************************)
 (* A reader. A read call waits (waitForAtLeast) for want bytes, takes      *)
 (* bufferLock, decides how many to copy, copies them entry by entry,       *)
-(* commits them, and either returns or (two-phase read) waits again.       *)
+(* commits them, and either returns or (two-phase read) waits again. A     *)
+(* thread in WaitCallers runs the wait only and records what it returns.   *)
 (***************************************************************************)
 Goto(r, s) == rpc' = [rpc EXCEPT ![r] = s]
 
-Shared == <<buf, avail, written, taken, closed, nextByte, wpc, cpc>>
+Shared == <<buf, pos, avail, written, taken, closed, nextByte, wpc, cpc>>
+
+(* waitForAtLeast returns avail to w; the snapshot also notes streamClosed. *)
+Return(w) ==
+    /\ wres' = [wres EXCEPT ![w] = avail]
+    /\ wclosed' = [wclosed EXCEPT ![w] = closed]
+    /\ Goto(w, "done")
 
 (* What the current wait waits for: the whole read (AtomicRead), else the  *)
 (* first byte (readSingleByte) and then the rest (waitForAtLeast(missing)). *)
-WantNow(r) == IF AtomicRead THEN ReadLen
-              ELSE IF cur[r] = <<>> THEN 1 ELSE ReadLen - Len(cur[r])
+WantNow(r) == IF AtomicRead \/ r \in WaitCallers THEN LenOf(r)
+              ELSE IF cur[r] = <<>> THEN 1 ELSE LenOf(r) - Len(cur[r])
 
-(* The lock-free fast path of the wait. *)
+(* The lock-free fast path of the wait: enough bytes, then the returned    *)
+(* count is the one just checked.                                          *)
 ReaderStart(r) ==
     /\ rpc[r] = "start"
     /\ want' = [want EXCEPT ![r] = WantNow(r)]
-    /\ IF avail >= WantNow(r) THEN Goto(r, "lock")
-       ELSE IF closed THEN Goto(r, "reread")
-       ELSE Goto(r, IF Protocol = "condition" THEN "lockwait" ELSE "acquire")
-    /\ UNCHANGED <<Shared, cur, hold, left, reads, eofAt, permits, waiters, parked, wl, bl>>
+    /\ IF avail >= WantNow(r) /\ r \in WaitCallers THEN Return(r)
+       ELSE /\ IF avail >= WantNow(r) THEN Goto(r, "lock")
+               ELSE IF closed THEN Goto(r, "reread")
+               ELSE Goto(r, IF Protocol = "condition" THEN "lockwait" ELSE "acquire")
+            /\ UNCHANGED <<wres, wclosed>>
+    /\ UNCHANGED <<Shared, cur, hold, left, reads, eofAt, Sync>>
 
 (* Closed seen: the wait returns availableBytes, read again. *)
 ReaderReread(r) ==
     /\ rpc[r] = "reread"
-    /\ Goto(r, IF avail >= 1 THEN "lock" ELSE "ret0")
-    /\ UNCHANGED <<Shared, want, cur, hold, left, reads, eofAt, permits, waiters, parked, wl, bl>>
+    /\ IF r \in WaitCallers THEN Return(r)
+       ELSE /\ Goto(r, IF avail >= 1 THEN "lock" ELSE "ret0")
+            /\ UNCHANGED <<wres, wclosed>>
+    /\ UNCHANGED <<Shared, want, cur, hold, left, reads, eofAt, Sync>>
 
 (* "semaphore": block on the semaphore, then check again (the loop). *)
 ReaderAcquire(r) ==
     /\ rpc[r] = "acquire" /\ permits > 0
     /\ permits' = permits - 1
     /\ Goto(r, "start")
-    /\ UNCHANGED <<Shared, want, cur, hold, left, reads, eofAt, waiters, parked, wl, bl>>
+    /\ UNCHANGED <<Shared, want, cur, hold, left, reads, wres, wclosed, eofAt, waiters, parked,
+                   wl, bl>>
 
 (* "condition": awaitAtLeast takes waitLock (again after a wake-up). *)
 ReaderWaitLock(r) ==
     /\ rpc[r] \in {"lockwait", "woken"} /\ wl = None
     /\ wl' = r
     /\ Goto(r, IF rpc[r] = "lockwait" THEN "inc" ELSE "test")
-    /\ UNCHANGED <<Shared, want, cur, hold, left, reads, eofAt, permits, waiters, parked, bl>>
+    /\ UNCHANGED <<Shared, want, cur, hold, left, reads, wres, wclosed, eofAt, permits,
+                   waiters, parked, bl>>
 
 (* "condition": waitingReaders.incrementAndGet() under waitLock. *)
 ReaderInc(r) ==
     /\ rpc[r] = "inc"
     /\ waiters' = waiters + 1
     /\ Goto(r, "test")
-    /\ UNCHANGED <<Shared, want, cur, hold, left, reads, eofAt, permits, parked, wl, bl>>
+    /\ UNCHANGED <<Shared, want, cur, hold, left, reads, wres, wclosed, eofAt, permits, parked,
+                   wl, bl>>
 
 (* "condition": the loop condition under waitLock; await() parks and       *)
-(* releases the lock in one step; leaving returns availableBytes.          *)
+(* releases the lock in one step. Leaving, a reader goes on with the count  *)
+(* it read; a WaitCallers thread reads availableBytes again to return it.   *)
 ReaderTest(r) ==
     /\ rpc[r] = "test" /\ wl = r
     /\ IF avail >= want[r] \/ closed
-          THEN /\ waiters' = waiters - 1
-               /\ Goto(r, IF avail >= 1 THEN "lock" ELSE "ret0")
-               /\ UNCHANGED parked
+          THEN IF r \in WaitCallers
+                  THEN /\ Goto(r, "wret")
+                       /\ UNCHANGED <<waiters, parked, wl>>
+                  ELSE /\ waiters' = waiters - 1
+                       /\ Goto(r, IF avail >= 1 THEN "lock" ELSE "ret0")
+                       /\ wl' = None
+                       /\ UNCHANGED parked
           ELSE /\ parked' = parked \cup {r}
                /\ Goto(r, "parked")
+               /\ wl' = None
                /\ UNCHANGED waiters
+    /\ UNCHANGED <<Shared, want, cur, hold, left, reads, wres, wclosed, eofAt, permits, bl>>
+
+(* "condition": return availableBytes, still under waitLock, then the      *)
+(* finally block (waitingReaders.decrementAndGet(), unlock).               *)
+ReaderWaitReturn(r) ==
+    /\ rpc[r] = "wret" /\ wl = r
+    /\ Return(r)
+    /\ waiters' = waiters - 1
     /\ wl' = None
-    /\ UNCHANGED <<Shared, want, cur, hold, left, reads, eofAt, permits, bl>>
+    /\ UNCHANGED <<Shared, want, cur, hold, left, reads, eofAt, permits, parked, bl>>
 
 (* Take bufferLock. *)
 ReaderLock(r) ==
     /\ rpc[r] = "lock" /\ bl = None
     /\ bl' = r
     /\ Goto(r, "decide")
-    /\ UNCHANGED <<Shared, want, cur, hold, left, reads, eofAt, permits, waiters, parked, wl>>
+    /\ UNCHANGED <<Shared, want, cur, hold, left, reads, wres, wclosed, eofAt, permits,
+                   waiters, parked, wl>>
 
 (* Under bufferLock: how many bytes to copy, or release and wait again.   *)
 ReaderDecide(r) ==
@@ -277,9 +332,9 @@ ReaderDecide(r) ==
                        /\ Goto(r, "copy")
                        /\ UNCHANGED bl
        ELSE IF AtomicRead
-          \* since #212: all ReadLen bytes, or what is left of a closed stream
-          THEN IF avail >= ReadLen \/ (closed /\ avail > 0)
-                  THEN /\ left' = [left EXCEPT ![r] = Min(avail, ReadLen)]
+          \* since #212: all bytes of the read, or what is left of a closed stream
+          THEN IF avail >= LenOf(r) \/ (closed /\ avail > 0)
+                  THEN /\ left' = [left EXCEPT ![r] = Min(avail, LenOf(r))]
                        /\ Goto(r, "copy")
                        /\ UNCHANGED bl
                   ELSE /\ bl' = None
@@ -294,19 +349,27 @@ ReaderDecide(r) ==
                   ELSE /\ bl' = None
                        /\ Goto(r, "start")
                        /\ UNCHANGED left
-    /\ UNCHANGED <<Shared, want, cur, hold, reads, eofAt, permits, waiters, parked, wl>>
+    /\ UNCHANGED <<Shared, want, cur, hold, reads, wres, wclosed, eofAt, permits, waiters,
+                   parked, wl>>
 
-(* Under bufferLock: copy one FIFO entry (one byte); before F279 the count  *)
-(* went down per entry.                                                    *)
+(* Under bufferLock: copy from the head entry, at most what is left of it   *)
+(* (one turn of the copy loop); a fully read entry is removed. Before F279  *)
+(* the count went down per entry.                                           *)
 ReaderCopy(r) ==
     /\ rpc[r] = "copy" /\ bl = r /\ left[r] > 0
-    /\ hold' = [hold EXCEPT ![r] = Append(@, Head(buf))]
-    /\ buf' = Tail(buf)
-    /\ avail' = IF CountOnce THEN avail ELSE avail - 1
-    /\ left' = [left EXCEPT ![r] = @ - 1]
-    /\ Goto(r, IF left[r] = 1 THEN "finish" ELSE "copy")
-    /\ UNCHANGED <<written, taken, closed, nextByte, wpc, cpc, want, cur, reads, eofAt,
-                   permits, waiters, parked, wl, bl>>
+    /\ LET e == Head(buf)
+           k == Min(left[r], Len(e) - pos)
+       IN /\ hold' = [hold EXCEPT ![r] = @ \o SubSeq(e, pos + 1, pos + k)]
+          /\ IF pos + k = Len(e)
+                THEN /\ buf' = Tail(buf)
+                     /\ pos' = 0
+                ELSE /\ pos' = pos + k
+                     /\ UNCHANGED buf
+          /\ avail' = IF CountOnce THEN avail ELSE avail - k
+          /\ left' = [left EXCEPT ![r] = @ - k]
+          /\ Goto(r, IF left[r] = k THEN "finish" ELSE "copy")
+    /\ UNCHANGED <<written, taken, closed, nextByte, wpc, cpc, want, cur, reads, wres,
+                   wclosed, eofAt, Sync>>
 
 (* Under bufferLock: commit the copied bytes (since F279 also the count),  *)
 (* release the lock; the read returns, or the two-phase read goes on.      *)
@@ -315,7 +378,7 @@ ReaderFinish(r) ==
     /\ taken' = taken \o hold[r]
     /\ avail' = IF CountOnce THEN avail - Len(hold[r]) ELSE avail
     /\ LET c == cur[r] \o hold[r] IN
-          IF AtomicRead \/ Len(c) = ReadLen
+          IF AtomicRead \/ Len(c) = LenOf(r)
              THEN /\ reads' = [reads EXCEPT ![r] = Append(@, c)]
                   /\ cur' = [cur EXCEPT ![r] = <<>>]
              ELSE /\ cur' = [cur EXCEPT ![r] = c]
@@ -323,8 +386,8 @@ ReaderFinish(r) ==
     /\ hold' = [hold EXCEPT ![r] = <<>>]
     /\ bl' = None
     /\ Goto(r, "start")
-    /\ UNCHANGED <<buf, written, closed, nextByte, wpc, cpc, want, left, eofAt, permits,
-                   waiters, parked, wl>>
+    /\ UNCHANGED <<buf, pos, written, closed, nextByte, wpc, cpc, want, left, wres, wclosed,
+                   eofAt, permits, waiters, parked, wl>>
 
 (* The wait returned 0 (closed and empty): -1, or the short read so far.   *)
 ReaderRet0(r) ==
@@ -335,19 +398,19 @@ ReaderRet0(r) ==
           ELSE /\ reads' = [reads EXCEPT ![r] = Append(@, cur[r])]
                /\ cur' = [cur EXCEPT ![r] = <<>>]
                /\ Goto(r, "start")
-    /\ UNCHANGED <<Shared, want, hold, left, eofAt, permits, waiters, parked, wl, bl>>
+    /\ UNCHANGED <<Shared, want, hold, left, wres, wclosed, eofAt, Sync>>
 
 (* The read returns -1. *)
 ReaderEof(r) ==
     /\ rpc[r] = "eof"
     /\ eofAt' = IF eofAt = -1 THEN Len(written) ELSE eofAt
     /\ Goto(r, "done")
-    /\ UNCHANGED <<Shared, want, cur, hold, left, reads, permits, waiters, parked, wl, bl>>
+    /\ UNCHANGED <<Shared, want, cur, hold, left, reads, wres, wclosed, Sync>>
 
 ReaderStep(r) ==
     \/ ReaderStart(r) \/ ReaderReread(r) \/ ReaderAcquire(r) \/ ReaderWaitLock(r)
-    \/ ReaderInc(r) \/ ReaderTest(r) \/ ReaderLock(r) \/ ReaderDecide(r)
-    \/ ReaderCopy(r) \/ ReaderFinish(r) \/ ReaderRet0(r) \/ ReaderEof(r)
+    \/ ReaderInc(r) \/ ReaderTest(r) \/ ReaderWaitReturn(r) \/ ReaderLock(r)
+    \/ ReaderDecide(r) \/ ReaderCopy(r) \/ ReaderFinish(r) \/ ReaderRet0(r) \/ ReaderEof(r)
 
 Terminated ==
     /\ wpc \in {"done", "failed"} /\ cpc = "done"
@@ -375,26 +438,39 @@ NoEmptyTake == \A r \in Readers : rpc[r] # "nsee"
 (* Every byte written is committed, being copied, or still buffered, in    *)
 (* FIFO order: nothing lost, nothing twice.                                *)
 InFlight == IF bl \in Readers THEN hold[bl] ELSE <<>>
-Fifo == written = taken \o InFlight \o buf
+Fifo == written = taken \o InFlight \o BufBytes
 
 (* The count a lock-free reader sees (available(), getAvailableBytesExact(),*)
 (* the fast path of the wait) is always that of a state between two         *)
-(* operations, never one in the middle of a read (F279).                     *)
-AvailLinearizable == avail = Len(written) - Len(taken)
+(* operations: before the read under bufferLock, or after all of it, never  *)
+(* in the middle of it (F279). The read in flight takes Len(hold) + left    *)
+(* bytes in all.                                                            *)
+AvailLinearizable ==
+    LET d == Len(written) - Len(taken) - avail IN
+        \/ d = 0
+        \/ bl \in Readers /\ d = Len(hold[bl]) + left[bl]
 
 (* Each reader gets the bytes in the order they were written. *)
 ReaderOrder ==
     \A r \in Readers : \A i, j \in 1..Len(Got(r)) : i < j => Got(r)[i] < Got(r)[j]
 
-(* Each read returns consecutive bytes, a whole aligned record of ReadLen   *)
-(* bytes, or fewer only from a closed buffer (#212).                        *)
+(* Each read returns consecutive bytes, as many as it asked for or fewer   *)
+(* only from a closed buffer; with readers of one size only, a whole       *)
+(* aligned record (#212).                                                  *)
 RecordsWhole ==
     \A r \in Readers : \A k \in 1..Len(reads[r]) :
         LET c == reads[r][k] IN
-            /\ c # <<>>
+            /\ c # <<>> /\ Len(c) <= LenOf(r)
             /\ \A i \in 1..(Len(c) - 1) : c[i + 1] = c[i] + 1
-            /\ Len(c) = ReadLen => (c[1] - 1) % ReadLen = 0
-            /\ Len(c) < ReadLen => closed
+            /\ Len(c) < LenOf(r) => closed
+            /\ (ByteReaders = {} /\ Len(c) = ReadLen) => (c[1] - 1) % ReadLen = 0
+
+(* waitForAtLeast(n) returns fewer than n bytes only for a closed buffer.   *)
+(* It holds where nothing else takes bytes; with a reader next to it, the   *)
+(* count it returns is a snapshot that the reader may have lowered already  *)
+(* (its Javadoc), see the WaitSnapshot2 model.                              *)
+WaitEnoughOrClosed ==
+    \A w \in WaitCallers : wres[w] # -1 => wres[w] >= ReadLen \/ wclosed[w]
 
 (* No write returns normally after a reader reported the end (F149). *)
 NoWriteAfterEof == eofAt # -1 => Len(written) = eofAt
@@ -402,6 +478,7 @@ NoWriteAfterEof == eofAt # -1 => Len(written) = eofAt
 (* Only a closed buffer reports the end, and it stays empty from then on. *)
 EofOnlyWhenClosedAndEmpty == eofAt # -1 => closed /\ buf = <<>> /\ avail = 0
 
-(* Liveness: every reader returns, from every wait (no lost wake-up, F278). *)
+(* Liveness: every reader and every waitForAtLeast call returns, from      *)
+(* every wait (no lost wake-up, F278).                                     *)
 AllReadersFinish == <>(\A r \in Readers : rpc[r] = "done")
 =============================================================================

@@ -4,8 +4,9 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Runs every TLC model of StreamBuffer.tla and compares each with its expected outcome: the models
-# of the code since F278 must check clean, the models of the code before it must fail with exactly
-# the error that shows the defect (so the spec can fail, and fails for the right reason).
+# of the current code must check clean, the models of older code must fail with exactly the error
+# that shows the defect (so the spec can fail, and fails for the right reason), and WaitSnapshot2
+# must show the documented snapshot of waitForAtLeast.
 #
 # Usage: src/test/tla/check.sh <path to tla2tools.jar>   (run from anywhere; needs java on PATH)
 set -euo pipefail
@@ -26,6 +27,11 @@ models=(
   "Records2|Model checking completed. No error has been found."
   "RecordsTwoPhase2|Error: Invariant RecordsWhole is violated."
   "RecordsCountPerEntry2|Error: Invariant AvailLinearizable is violated."
+  "Chunks2|Model checking completed. No error has been found."
+  "Mixed2|Model checking completed. No error has been found."
+  "WaitAndRead2|Model checking completed. No error has been found."
+  "SemaphoreWaitAndRead2|Error: Deadlock reached."
+  "WaitSnapshot2|Error: Invariant WaitEnoughOrClosed is violated."
 )
 
 failed=0

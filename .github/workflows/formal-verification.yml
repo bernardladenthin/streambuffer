@@ -423,7 +423,7 @@ jobs:
           if-no-files-found: ignore
 
   # ---------------------------------------------------------------------------------------------
-  # TLA+ model of the protocol (TODO roadmap A5) -- scheduled/dispatch only, ~70 s of TLC.
+  # TLA+ model of the protocol (TODO roadmap A5) -- scheduled/dispatch only, ~90 s of TLC.
   # src/test/tla/check.sh runs every model against its expected outcome: the models of the code
   # since F278 (Protocol "condition" with the re-check) must check clean, safety and liveness; the
   # models of the code before it must fail with exactly the error that shows the defect

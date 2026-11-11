@@ -526,10 +526,11 @@ verified in a separate CI pipeline
 
 - **Model checking of the protocol — TLA+ / TLC.** A TLA+ model of how threads write, close, wait
   and take data ([`src/test/tla/`](./src/test/tla/)) is checked for safety and liveness (every
-  waiting reader returns) with up to three readers, for `read()` and for fixed-size records with
-  `read(b, off, len)`. The same model with the older code fails exactly as that code did: before
-  bug-hunt finding F278 an empty take and a reader waiting forever after the close, before #212 a
-  torn record, before F279 a count from the middle of a read.
+  waiting reader returns) with up to three readers, for `read()`, for fixed-size records with
+  `read(b, off, len)` (also across the entries of multi-byte writes and next to a `read()` reader)
+  and for `waitForAtLeast`. The same model with the older code fails exactly as that code did:
+  before bug-hunt finding F278 an empty take and a reader waiting forever after the close or next to
+  a waiter, before #212 a torn record, before F279 a count from the middle of a read.
 
 Concurrency itself is outside the deductive scope by JML doctrine (JML specifies sequential
 behavior; OpenJML does not model `volatile` or monitors) and is covered empirically by the
