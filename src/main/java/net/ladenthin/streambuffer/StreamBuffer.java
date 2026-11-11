@@ -11,6 +11,7 @@ import java.io.InterruptedIOException;
 import java.io.OutputStream;
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.Iterator;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
@@ -67,6 +68,26 @@ public class StreamBuffer implements Closeable {
      */
     @GuardedBy("bufferLock")
     private final Deque<byte[]> buffer = new ArrayDeque<>();
+
+    /**
+     * The number of leading {@link #buffer} entries that {@link #trim()} allocated itself. A trim
+     * appends its chunks at the tail after it took every entry it merges, and readers remove from
+     * the head, so these entries always form a prefix. Every entry behind it may be an array the
+     * caller still holds (a write without {@code safeWrite} stores the caller's array), and a trim
+     * copies all of those: after a trim no buffered array is reachable from outside the buffer.
+     */
+    @GuardedBy("bufferLock")
+    private int ownedPrefix = 0;
+
+    /** Removes the head entry of the {@link #buffer}, keeping {@link #ownedPrefix} in step. */
+    @GuardedBy("bufferLock")
+    private void pollHead() {
+        buffer.pollFirst();
+        // != rather than >: -1 would act as 0 here, so a boundary mutant could not be told apart
+        if (ownedPrefix != 0) {
+            ownedPrefix--;
+        }
+    }
 
     /**
      * The lock a waiting reader ({@link #waitForAtLeast(long)}) checks the buffered byte count and
@@ -532,6 +553,13 @@ public class StreamBuffer implements Closeable {
      * Respects {@link #maxAllocationSize} limit when allocating byte arrays, and allocates
      * every chunk (through {@link #allocateTrimChunk(int)}) before it touches the FIFO: an
      * {@link OutOfMemoryError} propagates out of the write with the buffer unchanged.
+     *
+     * <p>Merges geometrically (TODO roadmap A14): walking from the tail, it takes every entry
+     * the caller may still hold, and an older entry it allocated itself only while that entry is
+     * not longer than what is collected so far ({@link #joinsTrimMerge}). A merged chunk thus at
+     * least doubles every byte it takes in, so each byte is copied O(log n) times instead of once
+     * per trim, and the entries grow towards the head. When that would leave too many entries
+     * ({@link #shouldTrimMergeAll}), it merges everything, as every trim did before.
      */
     // Non-atomic update on the volatile positionAtCurrentBufferEntry field is
     // safe because the entire method body runs under bufferLock (see @GuardedBy
@@ -558,28 +586,64 @@ public class StreamBuffer implements Closeable {
                  * input stream did) let a waiter observe the intermediate count, e.g.
                  * a read() reporting the end of an open stream that still held data.
                  */
+                // how many entries at the tail to merge, and their unread bytes
+                final int entries = buffer.size();
+                int merged = 0;
+                long collected = 0;
+                int index = entries;
+                for (final Iterator<byte[]> it = buffer.descendingIterator(); it.hasNext(); ) {
+                    final byte[] entry = it.next();
+                    index--;
+                    final long unread = index == 0 ? entry.length - positionAtCurrentBufferEntry : entry.length;
+                    if (!joinsTrimMerge(merged, index, ownedPrefix, unread, collected)) {
+                        break;
+                    }
+                    collected += unread;
+                    merged++;
+                }
+                if (shouldTrimMergeAll(
+                        merged,
+                        entries,
+                        calculateResultingChunks(collected, maxAllocationSize),
+                        getMaxBufferElements())) {
+                    merged = entries;
+                    collected = availableBytes;
+                }
+
                 final Deque<byte[]> chunks = new ArrayDeque<>();
-                long remaining = availableBytes;
+                long remaining = collected;
                 while (remaining > 0) {
                     final int size = (int) Math.min(remaining, maxAllocationSize);
                     chunks.add(allocateTrimChunk(size));
                     remaining -= size;
                 }
+                // take the merged entries off the tail, oldest first
+                final byte[][] taken = new byte[merged][];
+                for (int i = merged - 1; i >= 0; i--) {
+                    taken[i] = buffer.removeLast();
+                }
+                int next = 0;
+                int offset = merged == entries ? positionAtCurrentBufferEntry : 0;
                 for (final byte[] chunk : chunks) {
                     int filled = 0;
                     while (filled < chunk.length) {
-                        final byte[] first = buffer.getFirst();
-                        final int toCopy = Math.min(first.length - positionAtCurrentBufferEntry, chunk.length - filled);
-                        System.arraycopy(first, positionAtCurrentBufferEntry, chunk, filled, toCopy);
+                        final byte[] entry = taken[next];
+                        final int toCopy = Math.min(entry.length - offset, chunk.length - filled);
+                        System.arraycopy(entry, offset, chunk, filled, toCopy);
                         filled += toCopy;
-                        positionAtCurrentBufferEntry += toCopy;
-                        if (positionAtCurrentBufferEntry == first.length) {
-                            buffer.pollFirst();
-                            positionAtCurrentBufferEntry = 0;
+                        offset += toCopy;
+                        if (offset == entry.length) {
+                            next++;
+                            offset = 0;
                         }
                     }
                 }
+                if (merged == entries) {
+                    positionAtCurrentBufferEntry = 0;
+                }
                 buffer.addAll(chunks);
+                // what stayed was the buffer's own already, the rest is new
+                ownedPrefix = buffer.size();
             } finally {
                 isTrimRunning = false;
                 releaseTrimEndSignals();
@@ -754,6 +818,40 @@ public class StreamBuffer implements Closeable {
      */
     static boolean shouldSkipTrimDueToEdgeCase(long resultingChunks, int currentBufferSize) {
         return resultingChunks >= currentBufferSize;
+    }
+
+    /**
+     * Whether the entry at {@code index} joins a trim's merge, walking from the tail (TODO roadmap
+     * A14). The newest entry always does; an entry the caller may still hold (at or behind
+     * {@code ownedPrefix}) always does, so that no caller array stays buffered; an entry the buffer
+     * allocated itself does while it is not longer than the bytes collected so far.
+     * Package-private for direct unit testing.
+     *
+     * @param merged the entries already taken into the merge
+     * @param index the entry's position in the FIFO, 0 for the head
+     * @param ownedPrefix the number of leading entries a trim allocated
+     * @param unread the entry's bytes not read yet
+     * @param collected the unread bytes of the entries already taken
+     * @return {@code true} if the entry is merged
+     */
+    static boolean joinsTrimMerge(int merged, int index, int ownedPrefix, long unread, long collected) {
+        return merged == 0 || index >= ownedPrefix || unread <= collected;
+    }
+
+    /**
+     * Whether a trim merges every entry instead of the tail it collected (TODO roadmap A14): when
+     * the tail is a single entry (nothing would be gained), or when the entries left would exceed
+     * half of {@code maxBufferElements} (lengths that grow towards the tail), so that the trims stay
+     * rare. Package-private for direct unit testing.
+     *
+     * @param merged the entries the geometric walk collected
+     * @param entries the entries in the FIFO
+     * @param mergedChunks the chunks the collected bytes need
+     * @param maxBufferElements the trim threshold
+     * @return {@code true} if everything is merged
+     */
+    static boolean shouldTrimMergeAll(int merged, int entries, long mergedChunks, int maxBufferElements) {
+        return merged < 2 || entries - merged + mergedChunks > Math.max(1, maxBufferElements / 2);
     }
 
     /**
@@ -1070,7 +1168,7 @@ public class StreamBuffer implements Closeable {
                         // reset the pointer
                         positionAtCurrentBufferEntry = 0;
                         // remove the first element from the buffer
-                        buffer.pollFirst();
+                        pollHead();
                     }
                     availableBytes--;
                     recordReadStatistics(1);
@@ -1136,7 +1234,7 @@ public class StreamBuffer implements Closeable {
                                     decrementAvailableBytesBudget(maximumAvailableBytes, maximumBytesToCopy);
                             bytesToCopy -= maximumBytesToCopy;
                             // remove the first element from the buffer
-                            buffer.pollFirst();
+                            pollHead();
                             // reset the pointer
                             positionAtCurrentBufferEntry = 0;
                         } else {

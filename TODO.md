@@ -156,7 +156,7 @@ annotated, so everything below is genuinely still open.
     clean with `InvA.this.inc()`.
   - **Deeper ESC — instance-method / trim() functional correctness (parked, revisit; package A9
     of the roadmap above).** Today
-    ESC proves the 14 static helpers; the instance methods and trim() are RAC-only. A full
+    ESC proves the static helpers (17 methods with the validators); the instance methods and trim() are RAC-only. A full
     functional proof (e.g. a ghost model sequence for the deque with the invariant
     `availableBytes == sum of buffered byte[] lengths`, preserved across read/write/trim) is the
     "TimSort-level" target. Currently blocked two ways: OpenJML ESC returns solver "unknown" on
