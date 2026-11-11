@@ -11,11 +11,11 @@ annotated, so everything below is genuinely still open.
 
 ## Open
 
-- **Verification roadmap 2026-11 — packages A6–A13.** Each package is closed on its own, ends in a
+- **Verification roadmap 2026-11 — packages A6–A14.** Each package is closed on its own, ends in a
   machine-checked result and is listed with its acceptance criterion. The contract every package
   checks: several readers and writers are supported, without fairness (decided with bug-hunt finding
-  F278). Order: A13 (Apalache) and A6 on the A5 spec; A8 with the benchmark numbers; A9 is
-  long-term. A6 also builds infrastructure that a later memory-model project can reuse (jcstress on
+  F278). Order: A13 (Apalache) and A6 on the A5 spec; A14 (trim policy) before A8, which the
+  measurement showed is not where the time goes; A9 is long-term. A6 also builds infrastructure that a later memory-model project can reuse (jcstress on
   several architectures, formal tools pinned in CI, checking real executions against a formal model)
   — so pinned tool setups belong in a composite action of bernardladenthin/actions rather than in
   this workflow.
@@ -38,13 +38,51 @@ annotated, so everything below is genuinely still open.
     writers/readers): platform 1/1 65.4 ± 5.9, 4/1 66.2 ± 5.2, 1/4 49.6 ± 10.5, 4/4 65.2 ± 7.8;
     virtual 1/1 66.9 ± 7.0, 4/1 61.6 ± 5.4, 1/4 57.1 ± 8.3, 4/4 52.5 ± 9.6 (about 170–225 MiB/s).
     Likely dominated by `trim()` copying the whole buffer under the lock once more than 100 entries
-    queue up; measure that before attributing a gain to the lock. On arm64 (cfarm424, Neoverse-N1,
-    JDK 21, shared load ~33 of 64 cores, 2026-11-11): platform 1/1 68.0 ± 44.0, 4/1 92.1 ± 36.6, 1/4
-    91.1 ± 28.5, 4/4 69.0 ± 26.0; virtual 1/1 84.5 ± 45.8, 4/1 86.3 ± 31.0, 1/4 72.6 ± 88.8, 4/4
-    75.4 ± 49.7 -- too noisy to compare; the `arm64-jcstress-benchmark` job gives a quieter machine.
+    queue up; measure that before attributing a gain to the lock. **Measured 2026-11-11: it is
+    `trim()`, not the lock.** Vultr `voc-c-16c-32gb` (16 dedicated vCPUs, AMD EPYC Milan, 8 cores
+    with SMT, JDK 25.0.5), `StreamBufferContendedBenchmark` with the new `maxBufferElements` parameter,
+    ms per 11 MiB transfer, writers/readers:
+
+    | threads | w/r | trim 100 (default) | trim off (0) | trim 1000 |
+    |---|---|---|---|---|
+    | platform | 1/1 | 42.7 ± 3.9 | 1.13 ± 0.13 | 5.4 ± 0.4 |
+    | platform | 4/1 | 46.7 ± 5.9 | 0.97 ± 0.09 | 6.3 ± 1.3 |
+    | platform | 1/4 | 33.7 ± 13.6 | 2.01 ± 0.32 | 5.0 ± 1.4 |
+    | platform | 4/4 | 43.6 ± 5.1 | 1.54 ± 0.22 | 6.8 ± 0.6 |
+    | virtual | 1/1 | 40.0 ± 3.7 | 1.54 ± 0.82 | 4.2 ± 0.6 |
+    | virtual | 4/1 | 39.8 ± 3.2 | 0.84 ± 0.10 | 4.9 ± 0.5 |
+    | virtual | 1/4 | 37.0 ± 4.2 | 2.04 ± 0.38 | 3.9 ± 2.0 |
+    | virtual | 4/4 | 32.7 ± 3.7 | 1.39 ± 0.27 | 4.3 ± 1.0 |
+
+    With the default threshold a transfer is 17-48x slower than without trimming (about 260-340 MiB/s
+    against 5.5-13 GiB/s). async-profiler (CPU, platform threads, trim 100): 82-89 % of all samples
+    in `trim()`, 44-48 % in its `System.arraycopy`; with trim off, 0 %. A writer faster than its
+    readers keeps the FIFO above 100 entries, and each trim copies everything buffered again, so the
+    cost grows with the backlog. A lock change (A8) cannot win much here; the lever is the trim
+    policy, a design decision with a memory trade-off and not an A8 sub-step (see the next item).
+
+    On arm64 (cfarm424, Neoverse-N1, JDK 21, shared load ~33 of 64 cores, 2026-11-11): platform 1/1
+    68.0 ± 44.0, 4/1 92.1 ± 36.6, 1/4 91.1 ± 28.5, 4/4 69.0 ± 26.0; virtual 1/1 84.5 ± 45.8, 4/1
+    86.3 ± 31.0, 1/4 72.6 ± 88.8, 4/4 75.4 ± 49.7 -- too noisy to compare; the
+    `arm64-jcstress-benchmark` job gives a quieter machine.
     Also for A8: on JDK 21 a virtual thread blocked entering the contended `bufferLock` monitor
     holds its carrier, which `jdk.VirtualThreadPinned` does not show (it covers parking while
     pinned); one `ReentrantLock` removes the monitor.
+  - **A14 — Trim policy: stop recopying the backlog (design decision, ~2-3 days).** Today a trim
+    merges every buffered byte into one array, and 100 writes later it copies that array again with
+    the new entries, so a backlog costs quadratic copying (measurement under A8). A prototype
+    (local branch `exp/trim-geometric`, 2026-11-11, not pushed) merges only the newest entries:
+    walking from the tail, an older entry joins while it is not longer than what is collected so
+    far, so each byte is copied O(log n) times and the entry lengths grow towards the head; if that
+    would leave more than half of `maxBufferElements` entries, it merges everything as before. Same
+    Vultr machine, trim threshold 100, ms per 11 MiB transfer, current → prototype: platform 1/1
+    43.6 → 3.6, 4/1 45.7 → 4.4, 1/4 34.0 → 4.9, 4/4 46.6 → 5.3; virtual 1/1 42.2 → 3.1, 4/1 42.2 →
+    3.3, 1/4 37.8 → 3.5, 4/4 30.4 → 3.4 (7-14x); threshold 1000: 3.5-7.1 → 1.6-3.9. Trim off stays
+    2-4x faster still (0.8-2.0 ms), the price of the entry bound. The full suite passed with the
+    prototype (338 tests). Behaviour change to decide: after a trim the FIFO holds O(log n) entries
+    instead of one array (README, CLAUDE.md "Buffer trimming"). To ship it: the docs, tests that keep
+    PIT at 100 % (the fallback branch at least), the JPF `TrimReentrancy` and vmlens trim scenarios
+    re-run, a CHANGELOG entry. The TLA+ model does not model trim and stays valid.
   - **A9 — Functional proof of the sequential instance core (long-term, months).** The parked
     "Deeper ESC" item below; OpenJML first, KeY only for goals where Z3 answers "unknown".
   - **A13 — Unbounded safety of the A5 model (weeks).** TLC checks fixed constants only (up to 3

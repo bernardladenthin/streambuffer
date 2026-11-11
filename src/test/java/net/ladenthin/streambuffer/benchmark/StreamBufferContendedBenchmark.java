@@ -64,12 +64,20 @@ public class StreamBufferContendedBenchmark {
     @Param({"1", "4"})
     public int readers;
 
+    /**
+     * The trim threshold ({@link StreamBuffer#setMaxBufferElements(int)}): 100 is the default, 0
+     * turns trimming off, so the difference is what {@code trim()} costs under contention.
+     */
+    @Param({"100", "0", "1000"})
+    public int maxBufferElements;
+
     @Benchmark
     public long transfer() throws InterruptedException {
         final ThreadFactory factory = "virtual".equals(kind)
                 ? Thread.ofVirtual().factory()
                 : Thread.ofPlatform().factory();
         final StreamBuffer sb = new StreamBuffer();
+        sb.setMaxBufferElements(maxBufferElements);
         final OutputStream os = sb.getOutputStream();
         final InputStream is = sb.getInputStream();
         final AtomicLong received = new AtomicLong();
