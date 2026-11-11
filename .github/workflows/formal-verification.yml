@@ -31,6 +31,10 @@
 #   virtual-threads-jdk21  (scheduled/dispatch only) StreamBufferVirtualThreadsTest on JDK 21:
 #                 reports jdk.VirtualThreadPinned events inside StreamBuffer (a report, not a gate).
 #
+#   tla-model     (scheduled/dispatch only) TLC model-checks the TLA+ model of the wait/wake-up/
+#                 close protocol (src/test/tla/StreamBuffer.tla): the code since F278 checks clean,
+#                 the code before it fails with the F278 counterexamples (roadmap A5).
+#
 #   jcstress-default  (scheduled/dispatch only) jcstress in its default mode on x86; every pull
 #                 request runs the quick mode (jcstress.mode in pom.xml) to keep the Test job short.
 #
@@ -417,6 +421,44 @@ jobs:
           name: virtual-threads-jdk21
           path: pinned.txt
           if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------------------------
+  # TLA+ model of the protocol (TODO roadmap A5) -- scheduled/dispatch only, ~30 s of TLC.
+  # src/test/tla/check.sh runs every model against its expected outcome: the models of the code
+  # since F278 (Protocol "condition" with the re-check) must check clean, safety and liveness; the
+  # models of the code before it must fail with exactly the error that shows the defect
+  # (NoEmptyTake violated, deadlock after the close). tla2tools.jar is pinned by version and
+  # SHA-256 (computed from the release asset, which GitHub lists without a digest for v1.7.4).
+  # ---------------------------------------------------------------------------------------------
+  tla-model:
+    name: TLA+ model of the protocol (TLC)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    timeout-minutes: 20
+    env:
+      TLA_TOOLS_VERSION: "v1.7.4"
+      TLA_TOOLS_SHA256: "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          java-version-file: .java-version
+          distribution: temurin
+      - name: Download tla2tools.jar (pinned, checksum-verified)
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 -o "$RUNNER_TEMP/tla2tools.jar"             "https://github.com/tlaplus/tlaplus/releases/download/$TLA_TOOLS_VERSION/tla2tools.jar"
+          echo "$TLA_TOOLS_SHA256  $RUNNER_TEMP/tla2tools.jar" | sha256sum --check --strict
+      - name: Model-check every model against its expected outcome
+        run: |
+          set -euo pipefail
+          bash src/test/tla/check.sh "$RUNNER_TEMP/tla2tools.jar" | tee tla-check.log
+          {
+            echo "### TLA+ model (TLC $TLA_TOOLS_VERSION)"
+            echo '```'
+            cat tla-check.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # ---------------------------------------------------------------------------------------------
   # jcstress in its default mode on x86 -- scheduled/dispatch only. Pull requests run the quick

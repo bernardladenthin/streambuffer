@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2014-2026 Bernard Ladenthin <bernard.ladenthin@gmail.com>
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+# Runs every TLC model of StreamBuffer.tla and compares each with its expected outcome: the models
+# of the code since F278 must check clean, the models of the code before it must fail with exactly
+# the error that shows the defect (so the spec can fail, and fails for the right reason).
+#
+# Usage: src/test/tla/check.sh <path to tla2tools.jar>   (run from anywhere; needs java on PATH)
+set -euo pipefail
+jar="$1"
+cd "$(dirname "$0")"
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+
+# model | expected TLC message
+models=(
+  "Condition1|Model checking completed. No error has been found."
+  "Condition2|Model checking completed. No error has been found."
+  "Condition3|Model checking completed. No error has been found."
+  "Semaphore1|Model checking completed. No error has been found."
+  "Semaphore2|Error: Invariant NoEmptyTake is violated."
+  "SemaphoreReCheck2|Error: Deadlock reached."
+  "ConditionNoReCheck2|Error: Invariant NoEmptyTake is violated."
+)
+
+failed=0
+for entry in "${models[@]}"; do
+  model="${entry%%|*}"
+  expected="${entry#*|}"
+  log="$work/$model.log"
+  set +e
+  java -XX:+UseParallelGC -cp "$jar" tlc2.TLC -workers auto -metadir "$work/$model" \
+    -config "$model.cfg" StreamBuffer.tla > "$log" 2>&1
+  set -e
+  states="$(grep -oE '[0-9]+ distinct states found' "$log" | tail -1 || true)"
+  if grep -qF "$expected" "$log"; then
+    echo "OK   $model: $expected ($states)"
+  else
+    echo "FAIL $model: expected \"$expected\""
+    grep -E 'Error:|No error has been found' "$log" | head -3 | sed 's/^/     /'
+    failed=1
+  fi
+done
+exit "$failed"

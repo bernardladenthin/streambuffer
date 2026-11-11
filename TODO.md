@@ -11,52 +11,46 @@ annotated, so everything below is genuinely still open.
 
 ## Open
 
-- **Verification roadmap 2026-11 — packages A5–A13.** Each package is closed on its own, ends in a
+- **Verification roadmap 2026-11 — packages A6–A13.** Each package is closed on its own, ends in a
   machine-checked result and is listed with its acceptance criterion. The contract every package
   checks: several readers and writers are supported, without fairness (decided with bug-hunt finding
-  F278). Order: A5, then A13 (Apalache) and A6 on the same spec; A8 with the benchmark numbers; A9
-  is long-term. A5 and A6 also build infrastructure that a later memory-model project can reuse
-  (jcstress on several architectures, formal tools pinned in CI, checking real executions against a
-  formal model) — so pinned tool setups belong in a composite action of bernardladenthin/actions
-  rather than in this workflow.
+  F278). Order: A13 (Apalache) and A6 on the A5 spec; A8 with the benchmark numbers; A9 is
+  long-term. A6 also builds infrastructure that a later memory-model project can reuse (jcstress on
+  several architectures, formal tools pinned in CI, checking real executions against a formal model)
+  — so pinned tool setups belong in a composite action of bernardladenthin/actions rather than in
+  this workflow.
 
-  - **A5 — TLA+/PlusCal model of the protocol (~1 week).** Writer, N readers (constant), closer,
-    the wait (pre-F278: the max-1 semaphore and the `availableBytes` check outside the lock; since
-    F278: the condition with `signalAll` and the re-check under the lock), trim as one atomic step
-    under the lock. Safety: bytes read are a prefix of bytes written, `available = written − read`, no
-    write accepted after a close was observed (F149), no removal from an empty deque. Liveness
-    under weak fairness: a waiting reader returns once enough bytes are there or the buffer is
-    closed. TLC in `formal-verification.yml`, `tla2tools.jar` pinned by version and SHA-256.
-    TLA+ was not part of the 2026-09 evaluation below. Done when: N=2 on the
-    pre-fix model yields the F278 counterexample, the fixed model is green, N=1 is green on both.
   - **A6 — Trace validation (1–2 weeks).** Record the events of real runs (JPF listener, or
     test-side wrappers / an agent — no change to production code) and check the traces against the
-    A5 spec with TLC (the approach of Cirstea, Kuppe, Merz et al., 2024). Closes the gap between
-    model and code. Done when: a deliberately wrong spec rejects recorded traces.
-  - **A8 — `ReentrantLock` instead of `synchronized (bufferLock)` (optional, ~1 week).** The
-    waiting part landed with F278: a separate `waitLock` with a `Condition`, `signalAll` on write and
-    close, the re-check under `bufferLock`, so a waiting reader no longer pins a carrier. Still on
+    A5 spec (`src/test/tla/StreamBuffer.tla`) with TLC (the approach of Cirstea, Kuppe, Merz et al.,
+    2024). Closes the gap between model and code. Done when: a deliberately wrong spec rejects
+    recorded traces.
+  - **A8 — `ReentrantLock` instead of `synchronized (bufferLock)` (optional, ~1 week).** The waiting
+    part landed with F278: a separate `waitLock` with a `Condition`, `signalAll` on write and close,
+    the re-check under `bufferLock`, so a waiting reader no longer pins a carrier. Still on
     `synchronized`: every FIFO access including `trim()`, which copies the whole buffer, so a
     virtual reader or writer blocked at the monitor pins its carrier on JDK 21–23. One lock for both
     would also save the second lock per write. The lock-free `available()` path stays `volatile`,
     the external semaphore signal API stays. Check Error Prone's `@GuardedBy` support for `Lock`
     fields; the A3/A4 checks (vmlens, jcstress, Lincheck, JPF) and A7 (virtual threads, arm64) are
-    the safety net; the `StreamBufferContendedBenchmark` comparison is mandatory. Baseline (local x86, 16 cores, JDK
-    25.0.4, 2026-11-11; ms per 11 MiB transfer in 1429-byte records, writers/readers):
-    platform 1/1 65.4 ± 5.9, 4/1 66.2 ± 5.2, 1/4 49.6 ± 10.5, 4/4 65.2 ± 7.8; virtual 1/1
-    66.9 ± 7.0, 4/1 61.6 ± 5.4, 1/4 57.1 ± 8.3, 4/4 52.5 ± 9.6 (about 170–225 MiB/s). Likely
-    dominated by `trim()` copying the whole buffer under the lock once more than 100 entries queue
-    up; measure that before attributing a gain to the lock. On arm64 (cfarm424, Neoverse-N1, JDK
-    21, shared load ~33 of 64 cores, 2026-11-11): platform 1/1 68.0 ± 44.0, 4/1 92.1 ± 36.6, 1/4
-    91.1 ± 28.5, 4/4 69.0 ± 26.0; virtual 1/1 84.5 ± 45.8, 4/1 86.3 ± 31.0, 1/4 72.6 ± 88.8,
-    4/4 75.4 ± 49.7 -- too noisy to compare; the `arm64-jcstress-benchmark` job gives a quieter
-    machine. Also for A8: on JDK 21 a virtual thread blocked entering the contended `bufferLock`
-    monitor holds its carrier, which `jdk.VirtualThreadPinned` does not show (it covers parking
-    while pinned); one `ReentrantLock` removes the monitor.
+    the safety net; the `StreamBufferContendedBenchmark` comparison is mandatory. Baseline (local
+    x86, 16 cores, JDK 25.0.4, 2026-11-11; ms per 11 MiB transfer in 1429-byte records,
+    writers/readers): platform 1/1 65.4 ± 5.9, 4/1 66.2 ± 5.2, 1/4 49.6 ± 10.5, 4/4 65.2 ± 7.8;
+    virtual 1/1 66.9 ± 7.0, 4/1 61.6 ± 5.4, 1/4 57.1 ± 8.3, 4/4 52.5 ± 9.6 (about 170–225 MiB/s).
+    Likely dominated by `trim()` copying the whole buffer under the lock once more than 100 entries
+    queue up; measure that before attributing a gain to the lock. On arm64 (cfarm424, Neoverse-N1,
+    JDK 21, shared load ~33 of 64 cores, 2026-11-11): platform 1/1 68.0 ± 44.0, 4/1 92.1 ± 36.6, 1/4
+    91.1 ± 28.5, 4/4 69.0 ± 26.0; virtual 1/1 84.5 ± 45.8, 4/1 86.3 ± 31.0, 1/4 72.6 ± 88.8, 4/4
+    75.4 ± 49.7 -- too noisy to compare; the `arm64-jcstress-benchmark` job gives a quieter machine.
+    Also for A8: on JDK 21 a virtual thread blocked entering the contended `bufferLock` monitor
+    holds its carrier, which `jdk.VirtualThreadPinned` does not show (it covers parking while
+    pinned); one `ReentrantLock` removes the monitor.
   - **A9 — Functional proof of the sequential instance core (long-term, months).** The parked
     "Deeper ESC" item below; OpenJML first, KeY only for goals where Z3 answers "unknown".
-  - **A13 — Unbounded safety of the A5 model (weeks).** TLC checks fixed constants only: check
-    the inductive invariant with Apalache, or prove it with TLAPS.
+  - **A13 — Unbounded safety of the A5 model (weeks).** TLC checks fixed constants only (up to 3
+    readers, 2 bytes): check an inductive invariant of `src/test/tla/StreamBuffer.tla` with Apalache
+    (unbounded byte counts and runs, fixed readers), or prove it with TLAPS for any number of readers.
+    The model extended to `read(b, off, len)` of several bytes would also cover #212.
   - **Considered 2026-11 and not planned:** `StructuredTaskScope` inside the library (Java 8
     target, a caller-side API; preview in JDK 27 as JEP 533, final planned for JDK 28 with JEP 543 —
     at most an example once JDK 28 is released); fuzzing with Jazzer (jqwik properties plus PIT at

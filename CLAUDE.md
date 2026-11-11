@@ -98,6 +98,12 @@ deliberately not part of the synchronous Publish pipeline and never a required c
    one-file `AtomicLong` model patch; the harnesses are compiled at `--release 8` and run under JPF. Local recipe (Docker+JDK 11) in
    `src/test/jpf/README.md`. Never touches the shipped jar.
 
+4. **TLA+ model** (`src/test/tla/`, scheduled/dispatch CI job `tla-model`): `StreamBuffer.tla` models
+   the wait/wake-up/close protocol; TLC checks safety and liveness. `check.sh` compares every model with
+   its expected outcome: the code since F278 checks clean (1, 2, 3 readers), the code before it fails
+   with the F278 counterexamples (an empty take, a deadlock after the close). `tla2tools.jar` v1.7.4 is
+   pinned by SHA-256. When the wait/signal code changes, change the model with it.
+
 The `@GuardedBy("bufferLock")` lock discipline is gated separately by Error Prone in the default
 build. The Checker Framework Lock Checker was evaluated as a further layer and deferred — see
 TODO.md "Formal verification".
