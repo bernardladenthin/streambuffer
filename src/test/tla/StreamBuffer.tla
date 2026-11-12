@@ -59,7 +59,8 @@ CONSTANTS
 (* The bytes one read call of r asks for, or the bytes r's wait waits for. *)
 LenOf(r) == IF r \in ByteReaders THEN 1 ELSE ReadLen
 
-ASSUME /\ Protocol \in {"condition", "semaphore"}
+ASSUME SBAssump ==
+       /\ Protocol \in {"condition", "semaphore"}
        /\ ReCheck \in BOOLEAN /\ AtomicRead \in BOOLEAN /\ CountOnce \in BOOLEAN
        /\ CheckedReturn \in BOOLEAN
        /\ Bytes \in Nat /\ ChunkLen \in Nat \ {0} /\ ReadLen \in Nat \ {0}
@@ -76,6 +77,7 @@ VARIABLES
     avail,      \* availableBytes, the count every lock-free reader sees
     written,    \* every byte whose write returned normally, in order
     taken,      \* every byte a read committed (counted), in that order
+    toff,       \* ghost: Len(taken) % ReadLen, kept linear (the A13 refinement proof)
     closed,     \* streamClosed
     nextByte,   \* the value of the writer's next byte (1, 2, ...)
     wpc,        \* the writer's program counter
@@ -95,13 +97,14 @@ VARIABLES
     wl,         \* the holder of waitLock, or None
     bl          \* the holder of bufferLock, or None
 
-vars == <<buf, pos, avail, written, taken, closed, nextByte, wpc, cpc, rpc, want, cur,
+vars == <<buf, pos, avail, written, taken, toff, closed, nextByte, wpc, cpc, rpc, want, cur,
           hold, left, reads, wres, wclosed, eofAt, permits, waiters, parked, wl, bl>>
 
 Min(a, b) == IF a < b THEN a ELSE b
 
-RECURSIVE Flat(_)
-Flat(s) == IF s = <<>> THEN <<>> ELSE Head(s) \o Flat(Tail(s))
+\* the concatenation of a sequence of sequences: a recursive function, not a RECURSIVE operator,
+\* which tlapm cannot parse (the A13 refinement proof extends this module)
+Flat(s) == LET F[i \in 0..Len(s)] == IF i = 0 THEN <<>> ELSE F[i - 1] \o s[i] IN F[Len(s)]
 
 (* The bytes still buffered, in order. *)
 BufBytes == IF buf = <<>> THEN <<>>
@@ -118,6 +121,7 @@ TypeOK ==
     /\ buf \in Seq(Seq(1..Bytes)) /\ \A i \in 1..Len(buf) : buf[i] # <<>>
     /\ pos \in 0..Bytes /\ (buf # <<>> => pos < Len(Head(buf))) /\ (buf = <<>> => pos = 0)
     /\ written \in Seq(1..Bytes) /\ taken \in Seq(1..Bytes)
+    /\ toff = Len(taken) % ReadLen
     /\ avail \in 0..Bytes /\ closed \in BOOLEAN /\ nextByte \in 1..(Bytes + 1)
     /\ wpc \in {"write", "sigread", "siglock", "done", "failed"}
     /\ cpc \in {"close", "sigread", "siglock", "done"}
@@ -132,7 +136,7 @@ TypeOK ==
     /\ wl \in Readers \cup {None} /\ bl \in Readers \cup {None}
 
 Init ==
-    /\ buf = <<>> /\ pos = 0 /\ avail = 0 /\ written = <<>> /\ taken = <<>>
+    /\ buf = <<>> /\ pos = 0 /\ avail = 0 /\ written = <<>> /\ taken = <<>> /\ toff = 0
     /\ closed = FALSE /\ nextByte = 1
     /\ wpc = "write" /\ cpc = "close"
     /\ rpc = [r \in Readers |-> "start"]
@@ -175,7 +179,7 @@ WriterWrite ==
                /\ avail' = avail + Len(Chunk)
                /\ nextByte' = nextByte + Len(Chunk)
                /\ wpc' = "sigread"
-    /\ UNCHANGED <<pos, taken, closed, cpc, ReaderVars, eofAt, Sync>>
+    /\ UNCHANGED <<pos, taken, toff, closed, cpc, ReaderVars, eofAt, Sync>>
 
 WriterSigRead ==
     /\ wpc = "sigread"
@@ -184,14 +188,14 @@ WriterSigRead ==
                /\ wpc' = WriterDone
           ELSE /\ wpc' = IF waiters # 0 THEN "siglock" ELSE WriterDone
                /\ UNCHANGED permits
-    /\ UNCHANGED <<buf, pos, avail, written, taken, closed, nextByte, cpc, ReaderVars, eofAt,
+    /\ UNCHANGED <<buf, pos, avail, written, taken, toff, closed, nextByte, cpc, ReaderVars, eofAt,
                    waiters, parked, wl, bl>>
 
 WriterSigLock ==
     /\ wpc = "siglock"
     /\ WakeAll
     /\ wpc' = WriterDone
-    /\ UNCHANGED <<buf, pos, avail, written, taken, closed, nextByte, cpc, want, cur, hold,
+    /\ UNCHANGED <<buf, pos, avail, written, taken, toff, closed, nextByte, cpc, want, cur, hold,
                    left, reads, wres, wclosed, eofAt, permits, waiters, wl, bl>>
 
 WriterStep == WriterWrite \/ WriterSigRead \/ WriterSigLock
@@ -203,7 +207,7 @@ CloserClose ==
     /\ cpc = "close" /\ bl = None
     /\ closed' = TRUE
     /\ cpc' = "sigread"
-    /\ UNCHANGED <<buf, pos, avail, written, taken, nextByte, wpc, ReaderVars, eofAt, Sync>>
+    /\ UNCHANGED <<buf, pos, avail, written, taken, toff, nextByte, wpc, ReaderVars, eofAt, Sync>>
 
 CloserSigRead ==
     /\ cpc = "sigread"
@@ -212,14 +216,14 @@ CloserSigRead ==
                /\ cpc' = "done"
           ELSE /\ cpc' = IF waiters # 0 THEN "siglock" ELSE "done"
                /\ UNCHANGED permits
-    /\ UNCHANGED <<buf, pos, avail, written, taken, closed, nextByte, wpc, ReaderVars, eofAt,
+    /\ UNCHANGED <<buf, pos, avail, written, taken, toff, closed, nextByte, wpc, ReaderVars, eofAt,
                    waiters, parked, wl, bl>>
 
 CloserSigLock ==
     /\ cpc = "siglock"
     /\ WakeAll
     /\ cpc' = "done"
-    /\ UNCHANGED <<buf, pos, avail, written, taken, closed, nextByte, wpc, want, cur, hold,
+    /\ UNCHANGED <<buf, pos, avail, written, taken, toff, closed, nextByte, wpc, want, cur, hold,
                    left, reads, wres, wclosed, eofAt, permits, waiters, wl, bl>>
 
 CloserStep == CloserClose \/ CloserSigRead \/ CloserSigLock
@@ -232,7 +236,7 @@ CloserStep == CloserClose \/ CloserSigRead \/ CloserSigLock
 (***************************************************************************)
 Goto(r, s) == rpc' = [rpc EXCEPT ![r] = s]
 
-Shared == <<buf, pos, avail, written, taken, closed, nextByte, wpc, cpc>>
+Shared == <<buf, pos, avail, written, taken, toff, closed, nextByte, wpc, cpc>>
 
 (* waitForAtLeast returns avail to w; the snapshot also notes streamClosed. *)
 Return(w) ==
@@ -379,7 +383,7 @@ ReaderCopy(r) ==
           /\ avail' = IF CountOnce THEN avail ELSE avail - k
           /\ left' = [left EXCEPT ![r] = @ - k]
           /\ Goto(r, IF left[r] = k THEN "finish" ELSE "copy")
-    /\ UNCHANGED <<written, taken, closed, nextByte, wpc, cpc, want, cur, reads, wres,
+    /\ UNCHANGED <<written, taken, toff, closed, nextByte, wpc, cpc, want, cur, reads, wres,
                    wclosed, eofAt, Sync>>
 
 (* Under bufferLock: commit the copied bytes (since F279 also the count),  *)
@@ -387,6 +391,9 @@ ReaderCopy(r) ==
 ReaderFinish(r) ==
     /\ rpc[r] = "finish" /\ bl = r
     /\ taken' = taken \o hold[r]
+    \* the ghost: a read of a ReadLen-byte record or less (the two-phase read: cur and hold)
+    /\ toff' = IF toff + Len(hold[r]) >= ReadLen THEN toff + Len(hold[r]) - ReadLen
+              ELSE toff + Len(hold[r])
     /\ avail' = IF CountOnce THEN avail - Len(hold[r]) ELSE avail
     /\ LET c == cur[r] \o hold[r] IN
           IF AtomicRead \/ Len(c) = LenOf(r)

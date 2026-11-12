@@ -35,9 +35,10 @@
 #                 close protocol and the reads (src/test/tla/StreamBuffer.tla): the current code
 #                 checks clean, the older code fails with the F278, #212 and F279 counterexamples.
 #
-#   tlaps-proofs  (scheduled/dispatch only) TLAPS proves the A13 inductive invariants and the
+#   tlaps-proofs  (scheduled/dispatch only) TLAPS proves the A13 inductive invariants, the
 #                 liveness of the calls abstraction for any number of threads, writers and
-#                 closers; tlapm is built from a pinned commit and cached.
+#                 closers, and that the model refines it for any number of readers; tlapm is
+#                 built from a pinned commit and cached.
 #
 #   jcstress-default  (scheduled/dispatch only) jcstress in its default mode on x86; every pull
 #                 request runs the quick mode (jcstress.mode in pom.xml) to keep the Test job short.
@@ -496,8 +497,9 @@ jobs:
 
   # ---------------------------------------------------------------------------------------------
   # TLAPS proofs of the A13 invariants -- scheduled/dispatch only. proof.sh fails unless every
-  # obligation of every proof is proved (SafeInv inductive, and the liveness of
-  # StreamBufferWait.tla, for any number of threads, writers and closers). tlapm has no tagged 1.6 release, and the rolling 1.6.0-pre asset is replaced with
+  # obligation of every proof is proved (SafeInv inductive, the liveness of StreamBufferWait.tla,
+  # and the refinement of StreamBuffer.tla into it, for any number of threads, writers and
+  # closers). tlapm has no tagged 1.6 release, and the rolling 1.6.0-pre asset is replaced with
   # every tlapm commit, so a checksum pin would break: tlapm is built from a pinned commit
   # (opam, dune, make release, which downloads its backend provers) and the release tarball is
   # cached per commit and OCaml version. The opam dependencies resolve when the cache is filled.
@@ -506,7 +508,8 @@ jobs:
     name: TLAPS proofs of the A13 invariants
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    timeout-minutes: 60
+    # tlapm build about 10 min, proof.sh with the refinement proof about 30 min on 4 cores (2026-11-12)
+    timeout-minutes: 90
     env:
       # tlaplus/tlapm main of 2026-11-10 ("Add soundness test for ENABLED binder order"); its
       # 1.6.0-pre asset had SHA-256 99db29f119cb6f43ffed653b212ba2d005e5bf8e242c53468876cb0d08da6bcc

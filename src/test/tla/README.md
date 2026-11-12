@@ -107,12 +107,19 @@ writers and closers; its liveness is proved too.
 - **Apalache v0.63.0** (`inductive.sh`): fixed thread counts, with bytes, read sizes, requests and
   the budget of calls symbolic.
 - **TLAPS** (`proof.sh`): any number of threads, writers and closers.
-- **TLC refinement checks** tie each abstraction to the detailed model.
+- **TLC refinement checks** tie each abstraction to the detailed model; for `StreamBufferWait.tla`
+  a TLAPS proof does so for any number of readers (`RefineWaitProof.tla`, in `proof.sh`).
 
-**What this does and does not show.** The unbounded results hold for the abstractions. That
-`StreamBuffer.tla` behaves like them is checked by TLC refinement for its bounded configurations
-only (2 and 3 readers, up to 4 bytes). Each mapped step concerns one thread, so the link very likely
-generalises, but nothing machine-checks that.
+**What this does and does not show.** The unbounded results hold for the abstractions, and the
+safety results carry over to `StreamBuffer.tla` with the current code: `RefineWaitProof.tla` proves
+with TLAPS that it refines `StreamBufferWait.tla` for **any** set of readers (see "The refinement"
+below). The liveness does not carry over: the refinement is of the specifications without
+fairness, and weak fairness of the abstraction's `Next` does not follow from the detailed model's
+fairness by this proof, so the detailed model's liveness rests on TLC's bounded checks. For
+`StreamBufferCounters.tla` and `StreamBufferRecords.tla` the link is TLC's refinement check of the
+bounded configurations (2 and 3 readers, up to 4 bytes); `StreamBufferWait.tla` covers what they
+check about the current code, except the alignment of records, which it states only while every
+read size is the record size.
 
 The abstractions build in the current code where the slice does not vary it: the count lowered once
 per read (F279), and the re-check everywhere but in the `read()` abstraction. `AvailLinearizable` is
@@ -123,7 +130,7 @@ therefore true by construction there, and the F279 defect is only shown by the b
 |---|---|---|---|---|---|
 | `StreamBufferCounters.tla` | `read()`, single-byte writes | N = 2, 3, 4, 8, 12; any bytes (`IndInv`) | `SafeInv`, 216 obligations | `Condition2`, `Condition3` | the empty take without the re-check (F278), 10 steps |
 | `StreamBufferRecords.tla` | `read(b, 0, K)`, several writers and closers, any chunking | 2, 3, 4 readers with 2 writers and 2 closers, 2 readers with 3 and 3; any K and bytes (`SafeModInv`) | `SafeInv`, any readers, writers and closers, 488 obligations | `Records2`, `Chunks2` | a torn record with the two-phase read (#212), 6 steps |
-| `StreamBufferWait.tla` | every thread any number of calls, each `read(b, 0, K[r])` (`K[r] = 1` is `read()`) or `waitForAtLeast(M[r])`; several writers and closers, any chunking | 2, 3, 4 threads with 2 writers and 2 closers, 2 threads with 3 and 3; any read sizes, requests, bytes and calls (`SafeModInv`) | `SafeInv`, any threads, writers and closers, 577 obligations | all seven configurations of the current code (`Condition2`, `Condition3`, `Records2`, `Chunks2`, `Mixed2`, `WaitAndRead2`, `WaitChecked2`) | `waitForAtLeast(M[r]) < M[r]` on an open buffer before `CheckedReturn`, 11 steps |
+| `StreamBufferWait.tla` | every thread any number of calls, each `read(b, 0, K[r])` (`K[r] = 1` is `read()`) or `waitForAtLeast(M[r])`; several writers and closers, any chunking | 2, 3, 4 threads with 2 writers and 2 closers, 2 threads with 3 and 3; any read sizes, requests, bytes and calls (`SafeModInv`) | `SafeInv`, any threads, writers and closers, 577 obligations | TLAPS for any number of readers (`RefineWaitProof.tla`, 2,656 obligations); TLC in all seven configurations of the current code (`Condition2`, `Condition3`, `Records2`, `Chunks2`, `Mixed2`, `WaitAndRead2`, `WaitChecked2`) | `waitForAtLeast(M[r]) < M[r]` on an open buffer before `CheckedReturn`, 11 steps |
 | `StreamBufferWaitLive.tla` | liveness of `StreamBufferWait.tla`: with a closer, every call returns and all finish | 2 threads with 2 writers and 1 closer, 3 with 2 and 2: `LiveInv` inductive, `Pot` goes down with every step, a step until all are done | `FairSpec => <>AllDone`, any threads, writers and closers: 363 + 628 + 919 obligations | as `StreamBufferWait.tla` | without `ClosedNoPark` a state of `SafeInv` has no step |
 
 **The abstractions.** The writer writes the bytes 1, 2, ... in order, and the FIFO hands them out
@@ -177,8 +184,9 @@ use.
 For records, `RecordsAligned` says that up to the close every commit is a whole record. It is stated
 on the ghost `off` (the committed count modulo K), which advances linearly: `off + hold`, less K once
 a record is full. The provers do not handle `%` with a symbolic divisor. That `off = t % K` is
-checked by Apalache (`SafeModInv`, N up to 4) and by the refinement (`off <- Len(taken) % ReadLen`),
-not by TLAPS. In `StreamBufferWait.tla` the ghost counts modulo `RecLen`, and `RecordsAligned`
+checked by Apalache (`SafeModInv`, N up to 4) and by the refinement: the detailed model keeps the
+same ghost (`toff`, advanced the same way, `off <- toff`), and its `TypeOK` says
+`toff = Len(taken) % ReadLen`, which TLC checks in every model; not by TLAPS. In `StreamBufferWait.tla` the ghost counts modulo `RecLen`, and `RecordsAligned`
 speaks only when every read size is `RecLen` (`Uniform`); `off = t % RecLen` holds while every read
 size is at most `RecLen`, as in the detailed model (`RecLen <- ReadLen`).
 
@@ -232,6 +240,23 @@ potential that pays a call with too little, or leaves out the buffered bytes, do
 (checked once, 2026-11-12); without `ClosedNoPark`, a state of `SafeInv` with a closer done and
 the threads parked has no step (in `inductive.sh`).
 
+**The refinement** (`RefineWaitProof.tla`). Every step of `StreamBuffer.tla` keeps a detailed
+invariant `DInv` and is a step of `StreamBufferWait.tla` under the mapping of `RefineWait.tla`, or
+a stuttering step; with `Init` mapped to `Init`, `Spec => W!CSpec` for any finite set of readers.
+The abstraction's own invariant holds in the mapped state (the instantiated `StepSafe`) and gives
+what the detailed one lacks, such as a copying reader having its bytes buffered. `DInv` needs no
+sum over the FIFO: the writer writes the bytes 1, 2, ... in order, so it describes each entry by
+its first byte and its length: the next entry starts where one ends, the last ends at `nextByte`,
+and the head starts, past `pos`, with the byte after those committed and in flight.
+`waitingReaders` is the number of threads between the increment and the return of the wait, so a
+skipped signal (`waitingReaders = 0`) has nobody to wake; that is what maps `sigread` to `siglock`.
+Two changes to `StreamBuffer.tla` make the proof possible, both without new states: `Flat` is a
+recursive function instead of a RECURSIVE operator, which tlapm cannot parse, and the ghost `toff`
+replaces `Len(taken) % ReadLen` in the mapping, since tlapm proves nothing about `%` with a symbolic
+divisor (not even `(a + R) % R = a % R`). Negative control (2026-11-12): with `LEMMA Bad == FALSE`
+added, exactly that obligation fails, so the assumptions are consistent; a wrong mapping (`avail + 1`)
+makes TLC's refinement check fail.
+
 **Found on the way** (2026-11-12, not committed): Apalache's counterexamples to induction named the
 missing conjuncts. These were `Buffered >= 0`, that a reader in `reread` saw the stream closed, and
 for records the bound `hold + left <= K`. The record proof needed an explicit `PICK` of the copy's
@@ -240,8 +265,8 @@ Apalache at every length while TLC found the violation; narrowing it down led to
 above. With the ranges made non-empty, the torn record is found in 6 steps instead of 8.
 
 **Limits of A13:**
-- **Refinement for any number of readers:** that `StreamBuffer.tla` behaves like the abstractions
-  is checked by TLC for its bounded configurations only (above).
+- **Liveness of the detailed model** for any number of readers is not shown; the proof is about
+  the abstraction (above), TLC checks the detailed model's liveness in its bounded configurations.
 - **Liveness needs finite programs.** Every call returns when every thread makes finitely many
   calls. With a thread that calls forever, the others still progress only if the locks are fair to
   them, which the JDK does not promise; that is not shown.
@@ -250,9 +275,8 @@ above. With the ranges made non-empty, the torn record is found in 6 steps inste
     reads them one after the other. This is harmless for safety: `RereadClosed` needs only
     `closed`, and nothing raises the count after the close.
   - Spurious wake-ups of `await` are not modelled. A woken thread checks again either way.
-- **The `sigread -> siglock` mapping** of the refinements relies on `waitingReaders >= |parked|` in
-  the detailed model, so a skipped signal has nobody to wake. That holds, but is checked only in the
-  bounded configurations.
+- **The refinement proof is for the current code** (`Protocol = "condition"` and the four fixes on),
+  the configuration the abstractions model; the older code is shown failing by the bounded models.
 - **The proofs** run every step as `OBVIOUS` under one large `USE DEF`, with `--stretch 3`. On a
   slower machine an obligation may time out. The obligation counts drift with prover versions.
 - **tlapm 1.6.0-pre quirks** the liveness proof works around: its SMT backend proves linear
@@ -269,7 +293,8 @@ above. With the ranges made non-empty, the torn record is found in 6 steps inste
   user without the cache): build about 10 min including the Isabelle download, `proof.sh` 622-1042 s
   in five runs for the three safety proofs, all obligations proved. With the liveness proof
   (2026-11-12, 4 cores, the other cores busy with `inductive.sh`): `proof.sh` 1098 s, all six
-  modules proved; `inductive.sh` about 20 min, which is why `tla-model` has 60 min now. tlapm can
+  modules proved; `inductive.sh` about 20 min, which is why `tla-model` has 60 min now. With the
+  refinement proof: `proof.sh` 2114 s, all seven modules proved, so `tlaps-proofs` has 90 min. tlapm can
   leave backend provers running after it ends, which slowed the next module into timeouts, so
   `proof.sh` runs each tlapm in a process group of its own and kills it afterwards; the ENABLED
   steps run with `--stretch 12`. The 1.6.0-pre asset of that commit had SHA-256

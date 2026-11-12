@@ -106,8 +106,7 @@ annotated, so everything below is genuinely still open.
     would cut that further; possible follow-up.
   - **A9 — Functional proof of the sequential instance core (long-term, months).** The parked
     "Deeper ESC" item below; OpenJML first, KeY only for goals where Z3 answers "unknown".
-  - **A13 — Unbounded safety and liveness of the A5 model. Done but for the refinement for any
-    number of readers (2026-11-12).** Counter abstractions with inductive invariants:
+  - **A13 — Unbounded safety and liveness of the A5 model. Done (2026-11-12).** Counter abstractions with inductive invariants:
     `StreamBufferCounters.tla` (`read()`), `StreamBufferRecords.tla` (`read(b, 0, K)`, any chunking
     of the writes, several writers and closers) and `StreamBufferWait.tla`: every thread any number
     of calls, each a `read(b, 0, K[r])` or a `waitForAtLeast(M[r])` with a read size and request of
@@ -134,16 +133,16 @@ annotated, so everything below is genuinely still open.
     - **Older code:** each older version reaches a violation of the safety property itself in a
       bounded search from `Init`: without the F278 re-check, with the two-phase read before #212,
       and with `waitForAtLeast` reading the count again before `CheckedReturn`.
-    - **Link to the code:** TLC checks that `StreamBuffer.tla` refines all three
-      (`RefineCounters.tla`, `RefineRecords.tla`, `RefineWait.tla`; `StreamBufferWait.tla` in all
-      seven configurations of the current code), for its bounded configurations only. The
-      unbounded results are about the abstractions.
+    - **Link to the code:** TLAPS proves that `StreamBuffer.tla` with the current code refines
+      `StreamBufferWait.tla` for any number of readers (`RefineWaitProof.tla`, 2,656 obligations),
+      so its safety results hold for the detailed model (liveness does not carry over: the
+      refinement is of the specifications without fairness). TLC also checks the
+      refinement of all three abstractions (`RefineCounters.tla`, `RefineRecords.tla`,
+      `RefineWait.tla`) in the bounded configurations.
     - Details and limits in `src/test/tla/README.md`.
 
-    Still open:
-    - a refinement argument for any number of readers;
-    - liveness with a thread that calls forever (needs lock fairness, which the JDK does not
-      promise);
+    Still open: liveness with a thread that calls forever (it needs lock fairness, which the JDK
+    does not promise).
 
     The detailed model covers `read()`, fixed-size `read(b, off, len)` (#212, F279), writes of
     several bytes, readers of two sizes and `waitForAtLeast` (the A5 rest, 2026-11-11).

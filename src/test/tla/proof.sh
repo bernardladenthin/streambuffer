@@ -11,6 +11,10 @@
 # - StreamBufferWaitProof.tla: any set of threads, each making any number of calls, each a
 #   read(b, 0, K[r]) or a waitForAtLeast(M[r]), any numbers of writers and closers, any read sizes,
 #   requests, bytes and chunking (fewer than M[r] only for a closed buffer, whole reads).
+# Refinement, RefineWaitProof.tla: StreamBuffer.tla with the current code refines
+# StreamBufferWait.tla for ANY finite set of readers (every step is a step of the abstraction or
+# stutters), so the safety results above hold for the detailed model too (not the liveness:
+# the refinement is of the specifications without fairness).
 # Liveness, StreamBufferWaitLiveProof.tla: with at least one closer and finitely many threads,
 # every behaviour with weak fairness of Next ends with every call returned and all done; it uses
 # StreamBufferCountLemmas.tla (sums as layers of cardinalities) and StreamBufferWaitEnabled.tla (a
@@ -28,11 +32,11 @@ cp StreamBufferCounters.tla StreamBufferCountersProof.tla \
    StreamBufferRecords.tla StreamBufferRecordsProof.tla \
    StreamBufferWait.tla StreamBufferWaitProof.tla \
    StreamBufferWaitLive.tla StreamBufferCountLemmas.tla StreamBufferWaitEnabled.tla \
-   StreamBufferWaitLiveProof.tla "$work/"
+   StreamBufferWaitLiveProof.tla StreamBuffer.tla RefineWait.tla RefineWaitProof.tla "$work/"
 cd "$work"
 failed=0
 for proof in StreamBufferCountersProof StreamBufferRecordsProof StreamBufferWaitProof \
-             StreamBufferCountLemmas StreamBufferWaitEnabled StreamBufferWaitLiveProof; do
+             StreamBufferCountLemmas StreamBufferWaitEnabled StreamBufferWaitLiveProof RefineWaitProof; do
   # the ENABLED steps need more time on a loaded machine (one timed out at --stretch 3 and 6
   # with the other cores busy, none in three runs at 12; 2026-11-12)
   stretch=3

@@ -29,7 +29,7 @@ W == INSTANCE StreamBufferWait WITH
         calls <- (Bytes - Len(taken)) + Cardinality({r \in Readers : rpc[r] # "done"}),
         hold <- [r \in Readers |-> Len(hold[r])],
         left <- left,
-        off <- Len(taken) % ReadLen,
+        off <- toff,
         wres <- wres, wclosed <- wclosed,
         eofAt <- eofAt,
         parked <- parked,

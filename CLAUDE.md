@@ -122,11 +122,14 @@ deliberately not part of the synchronous Publish pipeline and never a required c
    for any number of threads (the `*Proof.tla`), and the liveness of `StreamBufferWait.tla`
    (`StreamBufferWaitLive.tla`: with a closer, weak fairness of `Next` ends with all done;
    `StreamBufferWaitLiveProof.tla` with `StreamBufferCountLemmas.tla` and
-   `StreamBufferWaitEnabled.tla`); the scheduled/dispatch CI job `tlaps-proofs` builds tlapm from a
+   `StreamBufferWaitEnabled.tla`), and that `StreamBuffer.tla` refines `StreamBufferWait.tla` for
+   any number of readers (`RefineWaitProof.tla`); the scheduled/dispatch CI job `tlaps-proofs` builds tlapm from a
    pinned commit. `tla2tools.jar` v1.7.4 and Apalache are pinned by SHA-256. When the wait/signal
    code changes, change the model with it, and the abstractions, the mappings in the `Refine*.tla`
    modules and the proofs too (a new step of `StreamBufferWait.tla` also needs its rank in
-   `StreamBufferWaitLive.tla` and a witness action in `StreamBufferWaitEnabled.tla`).
+   `StreamBufferWaitLive.tla` and a witness action in `StreamBufferWaitEnabled.tla`; a new step of
+   `StreamBuffer.tla` a lemma in `RefineWaitProof.tla`). `StreamBuffer.tla` must stay free of
+   RECURSIVE operators (tlapm cannot parse them; `Flat` is a recursive function).
    An existential in an abstraction may range only over `a..b` that is never empty
    (`1..Bytes`, `0..left[r]`, `0..calls`, filter inside): Apalache 0.63.0 asserts the bounds of
    `\E c \in a..b` globally, so an empty range silently cuts executions (README, "An Apalache
