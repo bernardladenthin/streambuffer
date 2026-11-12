@@ -60,6 +60,24 @@ annotated, so everything below is genuinely still open.
     section (copying outside the lock) would be the throughput lever, at the cost of the atomic
     `read(b, off, len)` of #212 -- not planned.
 
+    **Larger transfers (2026-11-12).** The benchmark starts new threads for every transfer of a few
+    ms, so thread creation is part of the score above. With 131,072 records per transfer
+    (179 MiB; a local change of `RECORDS`, not committed), JDK 25, two interleaved rounds, the ratios
+    (ReentrantLock / synchronized) are:
+
+    | threads | trim | 1/1 | 1/4 | 4/1 | 4/4 |
+    |---|---|---|---|---|---|
+    | platform | 100 | 0.84 | 0.35 | 0.91 | 0.78 |
+    | platform | off | 0.59 | 0.74 | 0.52 | 0.54 |
+    | virtual | 100 | 1.13 | 1.15 | 1.18 | 1.33 |
+    | virtual | off | 0.62 | 1.76 | 1.35 | 1.41 |
+
+    Platform threads are consistently faster with a `ReentrantLock`, up to 1.9x with trim off.
+    Virtual threads are mostly slower: the monitor spins before it parks, the lock parks sooner,
+    and an unmount and remount costs a virtual thread more. So A8 is a trade-off between the two
+    kinds of thread, not a free gain. It stays parked until a workload decides which kind matters;
+    if it is taken up, measure with large transfers (or persistent threads) and on JDK 21 as well.
+
     Earlier baselines, before A14 (trim-dominated, kept for the record): local x86 2026-11-11,
     platform 1/1 65.4 ± 5.9, 4/1 66.2 ± 5.2, 1/4 49.6 ± 10.5, 4/4 65.2 ± 7.8; virtual 1/1 66.9 ± 7.0,
     4/1 61.6 ± 5.4, 1/4 57.1 ± 8.3, 4/4 52.5 ± 9.6 ms; on Vultr trim 100 32.7-46.7 ms, trim off
@@ -81,7 +99,11 @@ annotated, so everything below is genuinely still open.
     machine, threshold 100, ms per 11 MiB transfer, before → after: platform 1/1 43.9 → 3.7, 4/1
     46.6 → 4.4, 1/4 39.7 → 4.9, 4/4 45.6 → 4.8; virtual 1/1 43.4 → 3.2, 4/1 41.2 → 3.4, 1/4 36.8 →
     3.5, 4/4 32.3 → 3.7 (8-13x); threshold 1000: 3.5-7.5 → 1.6-3.9. Trim off stays 2-4x faster
-    still (0.8-2.0 ms), the price of the entry bound. The TLA+ model does not model trim.
+    still (0.8-2.0 ms), the price of the entry bound. The TLA+ model does not model trim. With a
+    backlog of 179 MiB (131,072 records per transfer, see A8), the default threshold costs 10-20x
+    against trim off (platform 1/1: 277 against 23 ms). That is the O(log n) of the design: each byte
+    is copied about log2(131,072 / 100), about 10, times. A threshold that grows with the backlog
+    would cut that further; possible follow-up.
   - **A9 — Functional proof of the sequential instance core (long-term, months).** The parked
     "Deeper ESC" item below; OpenJML first, KeY only for goals where Z3 answers "unknown".
   - **A13 — Unbounded safety of the A5 model. Done for `read()`, records and `waitForAtLeast`
