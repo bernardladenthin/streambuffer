@@ -130,12 +130,31 @@ number of bytes (`inductive.sh`), and a TLAPS proof shows it for **any number of
   (`RefineCondition2`, `RefineCondition3`). A wrong mapping (`avail + 1`, or `eof` left unmapped)
   makes the check fail.
 
+**Records** (`read(b, 0, K)`, #212): `StreamBufferRecords.tla` is the same kind of abstraction for
+readers of K-byte records, with **any chunking of the writes** (a write puts 1 to the remaining bytes
+into one FIFO entry, a copy step takes 1 to the bytes still to copy) and `K` symbolic as well. Its
+`SafeInv` adds that each read takes a whole record, fewer only from a closed buffer (`WholeRead`),
+and `RecordsAligned`: up to the close every commit is a whole record. The committed count modulo K
+is a ghost variable `off`, advanced linearly (`off + hold`, less K once a record is full), because
+the provers do not handle `%` with a symbolic divisor; Apalache checks `off = t % K` with it
+(`SafeModInv`).
+
+- Apalache: `SafeModInv` holds initially and is inductive for 2, 3 and 4 readers, any K, any number
+  of bytes; for the two-phase read before #212 it is not.
+- TLAPS (`StreamBufferRecordsProof.tla`): `SafeInv` is inductive for **any number of readers, any
+  record size, any number of bytes and any chunking**, all 501 obligations (about 220 s); with
+  `AtomicRead = FALSE` assumed, `WholeRead'` fails in `ReaderDecide` (the old read sets out to copy
+  one byte) and `CurZero'` in `ReaderFinish`.
+- TLC: `StreamBuffer.tla` refines it in the configurations of `Records2` and `Chunks2` (writes of 3
+  and 1 bytes) (`RefineRecords.tla`).
+
 Found on the way (2026-11-12, not committed): the first candidate invariant missed `Buffered >= 0`
 and that a reader in `reread` saw the stream closed; Apalache's counterexamples to induction named
-both. **Limits:** the abstraction covers `read()` with single-byte writes, not records, chunked
-writes or `waitForAtLeast` (TLC covers those in the bounded models above), and only safety, not
-liveness; the refinement to the detailed model is checked by TLC for 2 and 3 readers, so it is
-bounded. `proof.sh` is not in CI yet: tlapm has no tagged 1.6 release, and the rolling 1.6.0-pre
+both; for the records, the bound `hold + left <= K` and, in the proof, an explicit `PICK` of the
+copy's byte count. **Limits:** the abstractions cover `read()` and fixed-size records, not readers of
+different sizes or `waitForAtLeast` (TLC covers those in the bounded models above), and only
+safety, not liveness; the refinement to the detailed model is checked by TLC for its bounded configurations
+(2 and 3 readers). `proof.sh` is not in CI yet: tlapm has no tagged 1.6 release, and the rolling 1.6.0-pre
 asset changes, so a pinned checksum would break the scheduled job.
 
 ## Limits

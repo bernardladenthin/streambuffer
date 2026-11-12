@@ -84,15 +84,16 @@ annotated, so everything below is genuinely still open.
     still (0.8-2.0 ms), the price of the entry bound. The TLA+ model does not model trim.
   - **A9 — Functional proof of the sequential instance core (long-term, months).** The parked
     "Deeper ESC" item below; OpenJML first, KeY only for goals where Z3 answers "unknown".
-  - **A13 — Unbounded safety of the A5 model. Done for `read()` (2026-11-12).** A counter
-    abstraction of the `read()` protocol (`StreamBufferCounters.tla`) has an inductive invariant:
-    Apalache v0.63.0 checks it for 2, 3, 4, 8 and 12 readers and any number of bytes
-    (`inductive.sh`), and **TLAPS proves it for any number of readers and bytes**
-    (`StreamBufferCountersProof.tla`, `proof.sh`, all 216 obligations); without the F278 re-check
-    both fail. TLC checks that `StreamBuffer.tla` refines the abstraction (`RefineCounters.tla`, 2
-    and 3 readers). Details in `src/test/tla/README.md`. Still open: the abstraction for records,
-    chunked writes and `waitForAtLeast` (the detailed model covers them bounded), liveness, and
-    `proof.sh` in CI once tlapm has a tagged 1.6 release. The model covers `read()`, fixed-size `read(b, off, len)` (#212, F279), writes of
+  - **A13 — Unbounded safety of the A5 model. Done for `read()` and records (2026-11-12).**
+    Counter abstractions with inductive invariants: `StreamBufferCounters.tla` (`read()`) and
+    `StreamBufferRecords.tla` (`read(b, 0, K)`, any chunking of the writes). Apalache v0.63.0 checks
+    them for fixed reader counts with bytes and record size symbolic (`inductive.sh`), **TLAPS proves
+    them for any number of readers, bytes and record size** (`proof.sh`: 216 and 501 obligations);
+    without the F278 re-check, or with the two-phase read before #212, they fail. TLC checks that
+    `StreamBuffer.tla` refines both (`RefineCounters.tla`, `RefineRecords.tla`). Details in
+    `src/test/tla/README.md`. Still open: readers of different sizes and `waitForAtLeast` in an
+    abstraction (the detailed model covers them bounded), liveness, and `proof.sh` in CI once tlapm
+    has a tagged 1.6 release. The model covers `read()`, fixed-size `read(b, off, len)` (#212, F279), writes of
     several bytes, readers of two sizes and `waitForAtLeast` (the A5 rest, 2026-11-11).
   - **Considered 2026-11 and not planned:** `StructuredTaskScope` inside the library (Java 8
     target, a caller-side API; preview in JDK 27 as JEP 533, final planned for JDK 28 with JEP 543 —

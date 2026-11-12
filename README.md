@@ -535,7 +535,9 @@ verified in a separate CI pipeline
   a waiter, before #212 a torn record, before F279 a count from the middle of a read. For `read()`,
   an inductive invariant removes the bounds: **Apalache** checks it for up to 12 readers and any
   number of bytes, a **TLAPS proof** shows it for any number of readers and bytes, and the detailed
-  model is checked to refine that abstraction.
+  model is checked to refine that abstraction. The same for fixed-size records with
+  `read(b, off, len)`: whole aligned records for any number of readers, record size, bytes and
+  chunking of the writes.
 
 Concurrency itself is outside the deductive scope by JML doctrine (JML specifies sequential
 behavior; OpenJML does not model `volatile` or monitors) and is covered empirically by the

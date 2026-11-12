@@ -16,7 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no write after the end, the end only from a closed and empty buffer). Without the re-check of
   F278 the inductive step fails exactly there, in Apalache and in the TLAPS proof. TLC checks that the detailed `StreamBuffer.tla`
   refines the abstraction (`RefineCounters.tla`), so it is the model the bounded checks use; a
-  wrong mapping fails that check. In the scheduled `tla-model` job.
+  wrong mapping fails that check. The same for **fixed-size records** (`StreamBufferRecords.tla`,
+  `read(b, 0, K)` with any chunking of the writes, K symbolic): every commit up to the close is a
+  whole aligned record, for any number of readers, record size and bytes (TLAPS, 501 obligations;
+  Apalache for 2 to 4 readers); the two-phase read before #212 fails it. In the scheduled
+  `tla-model` job (Apalache and the refinements; the TLAPS proofs by `proof.sh`, not in CI).
 - **A TLA+ model of the wait/wake-up/close protocol (roadmap A5).** `src/test/tla/StreamBuffer.tla`,
   checked with TLC (v1.7.4, pinned by SHA-256) in the scheduled job `tla-model`. The code since F278
   checks clean with 1, 2 and 3 readers, safety and liveness (every reader returns). The code before it
