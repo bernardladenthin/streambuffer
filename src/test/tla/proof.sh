@@ -7,8 +7,9 @@
 # - StreamBufferCountersProof.tla: read(), ANY number of readers and bytes;
 # - StreamBufferRecordsProof.tla: read(b, 0, K), any number of readers, record size K, bytes and
 #   chunking of the writes (whole aligned records, #212);
-# - StreamBufferWaitProof.tla: read() readers next to waitForAtLeast(M) callers, any numbers of
-#   both, any M, bytes and chunking (fewer than M only for a closed buffer).
+# - StreamBufferWaitProof.tla: read(b, 0, K) readers next to waitForAtLeast(M) callers, any
+#   numbers of both and of writers, any K, M, bytes and chunking (fewer than M only for a closed
+#   buffer, whole records).
 # Fails unless every obligation of every proof is proved. Not in CI yet: tlapm has no tagged 1.6
 # release, and the rolling 1.6.0-pre asset changes, so a pinned checksum would break; see README.md.
 #

@@ -119,14 +119,15 @@ therefore true by construction there, and the F279 defect is only shown by the b
 
 | Abstraction | Slice | Apalache (fixed N) | TLAPS (any N) | Refinement (TLC) | Older code reaches a violation |
 |---|---|---|---|---|---|
-| `StreamBufferCounters.tla` | `read()`, single-byte writes | N = 2, 3, 4, 8, 12; any bytes (`IndInv`) | `SafeInv`, 216 obligations | `Condition2`, `Condition3` | the empty take without the re-check (F278), 9 steps |
-| `StreamBufferRecords.tla` | `read(b, 0, K)`, several writers, any chunking | 2, 3, 4 readers with 2 writers, 2 readers with 3; any K and bytes (`SafeModInv`) | `SafeInv`, any readers and writers, 445 obligations | `Records2`, `Chunks2` | a torn record with the two-phase read (#212), 8 steps |
-| `StreamBufferWait.tla` | `waitForAtLeast(M)` next to `read()` readers, several writers, any chunking | 1+1, 2+2, 3+1 readers+waiters with 2 writers; any M and bytes | `SafeInv`, any readers, waiters and writers, 541 obligations | `WaitAndRead2`, `WaitChecked2` | `waitForAtLeast(M) < M` on an open buffer before `CheckedReturn`, 11 steps |
+| `StreamBufferCounters.tla` | `read()`, single-byte writes | N = 2, 3, 4, 8, 12; any bytes (`IndInv`) | `SafeInv`, 216 obligations | `Condition2`, `Condition3` | the empty take without the re-check (F278), 10 steps |
+| `StreamBufferRecords.tla` | `read(b, 0, K)`, several writers, any chunking | 2, 3, 4 readers with 2 writers, 2 readers with 3; any K and bytes (`SafeModInv`) | `SafeInv`, any readers and writers, 475 obligations | `Records2`, `Chunks2` | a torn record with the two-phase read (#212), 6 steps |
+| `StreamBufferWait.tla` | `waitForAtLeast(M)` next to `read(b, 0, K)` readers (`K = 1` is `read()`), several writers, any chunking | 1+1, 2+2, 3+1 readers+waiters with 2 writers; any K, M and bytes (`SafeModInv`) | `SafeInv`, any readers, waiters and writers, 599 obligations | `WaitAndRead2`, `WaitChecked2` | `waitForAtLeast(M) < M` on an open buffer before `CheckedReturn`, 11 steps |
 
 **The abstractions.** The writer writes the bytes 1, 2, ... in order, and the FIFO hands them out
 in order, so the byte sequences reduce to counts:
 - `w` written, `t` committed, `hold[r]` copied in the current hold of `bufferLock`;
-- for records, also `left[r]` (bytes still to copy) and the ghost `off`.
+- for records (and the record readers next to the waiters), also `left[r]` (bytes still to copy)
+  and the ghost `off`.
 
 The records and wait abstractions have NW writers sharing the budget of `Bytes` bytes; a writer
 that finds it used up is done. With `K = 1` the records abstraction is the `read()` protocol, so
@@ -160,8 +161,21 @@ use.
 For records, `RecordsAligned` says that up to the close every commit is a whole record. It is stated
 on the ghost `off` (the committed count modulo K), which advances linearly: `off + hold`, less K once
 a record is full. The provers do not handle `%` with a symbolic divisor. That `off = t % K` is
-checked by Apalache (`SafeModInv`, N up to 4) and by the refinement (`off <- Len(taken) % ReadLen`),
-not by TLAPS.
+checked by Apalache (`SafeModInv`, N up to 4) and by the refinement (`off <- Len(taken) % ReadLen`;
+`off <- 0` in the wait refinement, whose detailed configurations read single bytes), not by TLAPS.
+
+**An Apalache pitfall: ranges that can be empty.** Apalache 0.63.0 rewrites a skolemizable
+`\E c \in a..b : P` to a fresh constant `c` and asserts `a <= c` and `c <= b` as **global** facts
+(`QuantRule.skolemExistsInRange`), not as part of the formula. When the range depends on the state
+and is empty in some state, every execution through that state becomes unsatisfiable, even one that
+takes another action there. The search then misses violations, and an inductive step skips
+pre-states. With `\E c \in 1..(Bytes - w)` the step never saw `w = Bytes`. With
+`\E k \in 1..left[r]` it never saw a state where no reader copies, since some thread then had to
+have `left[r] >= 1`. The abstractions therefore use ranges that are never empty and filter inside:
+`\E c \in 1..Bytes : c <= Bytes - w /\ ...` and `\E k \in 0..left[r] : k >= 1 /\ ...` (equivalent,
+since `w` and `left[r]` are naturals). `inductive.sh` fails on any other existential over a range.
+The known-issues page of Apalache lists non-constant ranges as an encoding that fails with an
+error; this path fails silently. A 15-line reproduction is ready to report upstream (TODO.md, A13).
 
 **Negative controls.** Each older code version reaches a violation of the **safety property
 itself** in a bounded Apalache search from `Init`, with the symbolic constants left free. The steps
@@ -174,12 +188,13 @@ makes a refinement check fail (`avail + 1`, or `eof` left unmapped).
 **Found on the way** (2026-11-12, not committed): Apalache's counterexamples to induction named the
 missing conjuncts. These were `Buffered >= 0`, that a reader in `reread` saw the stream closed, and
 for records the bound `hold + left <= K`. The record proof needed an explicit `PICK` of the copy's
-byte count.
+byte count. The negative control of `waitForAtLeast` next to record readers stayed clean in
+Apalache at every length while TLC found the violation; narrowing it down led to the range pitfall
+above. With the ranges made non-empty, the torn record is found in 6 steps instead of 8.
 
 **Limits of A13:**
 - **Not covered:** one closer only (`close()` is idempotent, and every close path ends the same way);
-  `waitForAtLeast` next to record readers; waiters
-  with different M; a waiter that calls more than once or also reads; record readers of different
+  waiters with different M; a waiter that calls more than once or also reads; record readers of different
   sizes next to each other (TLC covers that, bounded, in `Mixed2`); liveness.
 - **Inherited from `StreamBuffer.tla`:**
   - A reader's lock-free read of `availableBytes` and of `streamClosed` is one step, where Java

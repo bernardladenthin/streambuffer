@@ -111,7 +111,10 @@ WriterWrite(i) ==
           THEN /\ WGo(i, "failed") /\ UNCHANGED <<w, avail>>
           ELSE IF w >= Bytes
                   THEN /\ WGo(i, "done") /\ UNCHANGED <<w, avail>>
-                  ELSE /\ \E c \in 1..(Bytes - w) : w' = w + c /\ avail' = avail + c
+                  \* a range that is never empty: Apalache 0.63.0 asserts the bounds of \E c \in a..b
+                  \* globally, so a range empty in some state (1..(Bytes - w) at w = Bytes) cut every
+                  \* path through that state, whichever action it took (README, A13)
+                  ELSE /\ \E c \in 1..Bytes : c <= Bytes - w /\ w' = w + c /\ avail' = avail + c
                        /\ WGo(i, "siglock")
     /\ UNCHANGED <<off, t, closed, cpc, rpc, hold, left, cur, eofAt, parked, wl, bl>>
 
@@ -176,8 +179,9 @@ ReaderCopy(r) ==
     /\ rpc[r] = "copy" /\ bl = r
     /\ IF Buffered = 0
           THEN /\ Go(r, "nsee") /\ UNCHANGED <<hold, left>>
-          ELSE \E k \in 1..left[r] :
-                  /\ k <= Buffered
+          \* 0..left[r] is never empty (left is a Nat), unlike 1..left[r] (see WriterWrite)
+          ELSE \E k \in 0..left[r] :
+                  /\ k >= 1 /\ k <= Buffered
                   /\ hold' = [hold EXCEPT ![r] = @ + k] /\ left' = [left EXCEPT ![r] = @ - k]
                   /\ Go(r, IF left[r] = k THEN "finish" ELSE "copy")
     /\ UNCHANGED <<off, w, t, avail, closed, wpc, cpc, cur, eofAt, parked, wl, bl>>

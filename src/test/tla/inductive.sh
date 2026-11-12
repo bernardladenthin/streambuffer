@@ -7,9 +7,13 @@
 # - Apalache: IndInv of StreamBufferCounters.tla (read()) holds initially (Init => IndInv) and is
 #   inductive (IndInv /\ Next => IndInv'), for N readers and any number of written bytes (Bytes
 #   symbolic); it implies the safety properties. The same for SafeModInv of StreamBufferRecords.tla
-#   (read(b, 0, K): any record size K, any chunking of the writes, several writers) and SafeInv
-#   of StreamBufferWait.tla (read() readers next to waitForAtLeast(M) callers, any M, several
-#   writers).
+#   (read(b, 0, K): any record size K, any chunking of the writes, several writers) and of
+#   StreamBufferWait.tla (read(b, 0, K) readers next to waitForAtLeast(M) callers, any K and M,
+#   several writers).
+# - No existential of the abstractions ranges over a set a..b that can be empty: Apalache 0.63.0
+#   asserts a <= c <= b of \E c \in a..b as a global fact, so a range empty in some state cut
+#   every path through that state, whichever action it took (missed violations, an inductive step
+#   that skipped pre-states; README, A13).
 # - Apalache, the older code: a bounded search from Init reaches a violation of the safety
 #   property itself (not just of a helper conjunct): the empty take without the re-check of F278,
 #   a torn record with the two-phase read before #212, waitForAtLeast(M) < M on an open buffer
@@ -60,6 +64,19 @@ refine() { # module, config
   expect "$2" "Model checking completed. No error has been found." "$log"
 }
 
+# only ranges that are never empty: 1..Bytes (Bytes >= 1) and 0..left[r] (left is a Nat)
+for m in StreamBufferCounters StreamBufferRecords StreamBufferWait; do
+  bad="$(sed 's/\\\*.*$//' "$m.tla" | grep -nE '\\E [A-Za-z_]+ \\in [^:]*\.\.' \
+    | grep -vE '\\in (1\.\.Bytes|0\.\.left\[r\]) :' || true)"
+  if [ -n "$bad" ]; then
+    echo "FAIL $m: an existential over a range that can be empty"
+    echo "$bad" | sed 's/^/     /'
+    failed=1
+  else
+    echo "OK   $m: no existential over a range that can be empty"
+  fi
+done
+
 C=StreamBufferCounters
 for n in "" 3 4 8 12; do
   label="N=${n:-2}"
@@ -82,8 +99,8 @@ W=StreamBufferWait
 for c in "" 22 31; do
   case "$c" in "") label="1 reader, 1 waiter" ;; 22) label="2 readers, 2 waiters" ;; 31) label="3 readers, 1 waiter" ;; esac
   label="$label, 2 writers"
-  apa "waitForAtLeast: init $label, any M" $W SafeInv "ConstInit$c" Init 0 NoError
-  apa "waitForAtLeast: inductive $label, any M" $W SafeInv "ConstInit$c" SafeInit 1 NoError
+  apa "waitForAtLeast: init $label, any K and M" $W SafeModInv "ConstInit$c" Init 0 NoError
+  apa "waitForAtLeast: inductive $label, any K and M" $W SafeModInv "ConstInit$c" SafeModInit 1 NoError
 done
 # the code before CheckedReturn reaches waitForAtLeast(M) < M on an open buffer
 apa "waitForAtLeast: short result on an open buffer reachable before CheckedReturn" $W WaitEnoughOrClosed ConstInitUnchecked Init 14 Error

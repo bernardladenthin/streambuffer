@@ -109,11 +109,19 @@ annotated, so everything below is genuinely still open.
   - **A13 — Unbounded safety of the A5 model. Done for `read()`, records and `waitForAtLeast`
     (2026-11-12).** Counter abstractions with inductive invariants: `StreamBufferCounters.tla`
     (`read()`), `StreamBufferRecords.tla` (`read(b, 0, K)`, any chunking of the writes) and
-    `StreamBufferWait.tla` (`waitForAtLeast(M)` next to `read()` readers).
+    `StreamBufferWait.tla` (`waitForAtLeast(M)` next to `read(b, 0, K)` readers).
     - **Apalache v0.63.0** (`inductive.sh`): fixed reader counts, with the bytes, the record size
       and M symbolic.
     - **TLAPS** (`proof.sh`): any number of readers, and for records and `waitForAtLeast` any
-      number of writers (sharing the bytes); 216, 445 and 541 obligations.
+      number of writers (sharing the bytes); 216, 475 and 599 obligations.
+    - **Apalache soundness bug, found 2026-11-12:** a skolemized `\E c \in a..b` asserts its bounds
+      globally, so a range empty in some state cut every execution through it. Missed violations,
+      and inductive steps that skipped pre-states (`w = Bytes`, no reader copying). The
+      abstractions now use ranges that are never empty, and `inductive.sh` rejects any other
+      (README "An Apalache pitfall"). Open: the upstream issue (a 15-line reproduction; Apalache
+      wants the issue confirmed before a fix PR, and issue and PR text written by a person), then
+      the prepared fix (`QuantRule.skolemExistsInRange`, the bounds as a conjunct of the result,
+      with a regression test that fails on 0.63.0).
     - **Older code:** each older version reaches a violation of the safety property itself in a
       bounded search from `Init`: without the F278 re-check, with the two-phase read before #212,
       and with `waitForAtLeast` reading the count again before `CheckedReturn`.
@@ -124,8 +132,7 @@ annotated, so everything below is genuinely still open.
 
     Still open:
     - one closer only (several writers are covered by the records and wait abstractions);
-    - `waitForAtLeast` next to record readers, waiters with different M, a waiter that calls more
-      than once or also reads;
+    - waiters with different M, a waiter that calls more than once or also reads;
     - record readers of different sizes next to each other (the detailed model covers that,
       bounded);
     - liveness;
