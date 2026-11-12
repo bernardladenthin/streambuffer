@@ -542,6 +542,9 @@ verified in a separate CI pipeline
   - **The link:** TLC checks that the detailed model refines each abstraction, in its bounded
     configurations.
   - **Older code:** each older version reaches a violation in a bounded search.
+  - **Trace validation:** recorded runs of the code (an instrumented copy of the class in the tests,
+    every access to shared state logged in order) are checked against the model with TLC; 990 runs
+    were accepted, and models of older code, a mutated model and corrupted runs are rejected.
 
 Concurrency itself is outside the deductive scope by JML doctrine (JML specifies sequential
 behavior; OpenJML does not model `volatile` or monitors) and is covered empirically by the

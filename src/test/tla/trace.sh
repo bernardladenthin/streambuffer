@@ -17,13 +17,19 @@
 # the first line no placement could consume.
 set -euo pipefail
 
-jar="$1"
-dir="$2"
+# absolute paths: the loop below runs in the trace directory
+jar="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
+dir="$(cd "$2" && pwd)"
 expect="${3:-accept}"
 here="$(cd "$(dirname "$0")" && pwd)"
 for f in StreamBuffer.tla TraceStreamBuffer.tla; do
   [ -f "$dir/$f" ] || cp "$here/$f" "$dir/$f"
 done
+
+# a temporary directory of its own: TLC extracts its standard modules into java.io.tmpdir, and two
+# runs in parallel (shards, the controls) truncated each other's copies
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
 
 accepted=0
 rejected=0
@@ -33,20 +39,23 @@ cd "$dir"
 for t in Trace_*.tla; do
   m="${t%.tla}"
   total=$((total + 1))
-  out=$(java -XX:+UseParallelGC -cp "$jar" tlc2.TLC -workers 1 -metadir "md_$m" -config "$m.cfg" "$m.tla" 2>&1 || true)
+  # TLC's output goes to a file: here-strings of it hung Git Bash on Windows when it was large
+  out="$tmp/tlc.out"
+  java -XX:+UseParallelGC -Djava.io.tmpdir="$tmp" -cp "$jar" tlc2.TLC -workers 1 -metadir "md_$m"     -config "$m.cfg" "$m.tla" > "$out" 2>&1 || true
   lines=$(grep -c '\[t |->' "$t" || true)
-  states=$(echo "$out" | grep -oE '[0-9]+ distinct states found' | grep -oE '^[0-9]+' | tail -1)
-  if grep -q "Invariant TraceNotDone is violated" <<< "$out"; then
+  states=$(grep -oE '[0-9]+ distinct states found' "$out" | grep -oE '^[0-9]+' | tail -1 || true)
+  if grep -q "Invariant TraceNotDone is violated" "$out"; then
     accepted=$((accepted + 1))
     echo "ACCEPT $m ($lines lines, ${states:-?} states)"
-  elif grep -qE "^Error|error:|Exception" <<< "$out"; then
-    echo "ERROR  $m"
-    echo "$out" | grep -E "^Error|error:|Exception" | head -5
-    exit 2
-  else
+  elif grep -q "Model checking completed. No error has been found." "$out"; then
     rejected=$((rejected + 1))
-    reached=$(echo "$out" | grep -oE '<<"line", [0-9]+>>' | grep -oE '[0-9]+' | sort -n | tail -1)
+    reached=$(grep -oE '<<"line", [0-9]+>>' "$out" | grep -oE '[0-9]+' | sort -n | tail -1 || true)
     echo "REJECT $m ($lines lines, first line no placement consumes: ${reached:-1})"
+  else
+    # neither verdict: a parse error, a crash, a JVM that did not start
+    echo "ERROR  $m"
+    grep -E "Error|error|Exception" "$out" | head -5 || true
+    exit 2
   fi
 done
 echo "traces: $total, accepted: $accepted, rejected: $rejected, $(( $(date +%s) - start )) s"

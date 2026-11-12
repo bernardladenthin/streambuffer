@@ -37,9 +37,9 @@ copy() {  # copy <name> <glob>: the traces matching the glob into $work/<name>
 
 control() {  # control <label> <dir>: at least one trace rejected
   if out=$(bash "$here/trace.sh" "$jar" "$2" reject 2>&1); then
-    echo "OK    $1: $(tail -n 1 <<< "$out")"
+    echo "OK    $1: $(printf '%s\n' "$out" | tail -n 1)"
   else
-    echo "FAIL  $1: $(tail -n 1 <<< "$out")"
+    echo "FAIL  $1: $(printf '%s\n' "$out" | tail -n 1)"
     failed=1
   fi
 }
@@ -82,7 +82,7 @@ print(n)
 EOF
 )
 out=$(bash "$here/trace.sh" "$jar" "$d" reject 2>&1 || true)
-rejected=$(grep -c '^REJECT' <<< "$out" || true)
+rejected=$(printf '%s\n' "$out" | grep -c "^REJECT" || true)
 if [ "$corrupted" -gt 0 ] && [ "$rejected" = "$corrupted" ]; then
   echo "OK    corrupted traces (first returned byte + 1): $rejected/$corrupted rejected"
 else

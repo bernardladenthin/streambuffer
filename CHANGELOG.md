@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Trace validation of the TLA+ model (roadmap A6).** Recorded runs of the code are checked
+  against `StreamBuffer.tla` with TLC (the approach of Cirstea, Kuppe, Merz et al. 2024):
+  - **Recording:** a test-side class loader (`net.ladenthin.streambuffer.trace`, ASM) rewrites the
+    bytecode of `StreamBuffer` so that every access to shared state is logged in the order it
+    happens; the source and the shipped jar are untouched.
+  - **Matching:** `TraceStreamBuffer.tla` extends the model unchanged and accepts a run if the
+    model's steps can be placed among its accesses so that every value read and written, every
+    lock holder and every call's result agree (the model is coarser than the code in three places,
+    README).
+  - **Results:** 990 recorded runs of 11 scenarios (up to 3 readers, records across writes,
+    `waitForAtLeast` next to readers) are all accepted.
+  - **Negative controls (`trace-controls.sh`):** models of older code with fewer behaviours
+    (`read(b, off, len)` before #212, the semaphore wait and the missing re-check before F278), a
+    model whose writer never signals, and runs with a changed returned byte are rejected.
+  - **CI:** the `tla-model` job records 3 runs per scenario and runs both scripts.
 - **Unbounded safety and liveness of the protocol (roadmap A13).** Counter abstractions of
   `read()` (`StreamBufferCounters.tla`), of fixed-size records with `read(b, off, len)`
   (`StreamBufferRecords.tla`, any chunking of the writes, several writers and closers) and of the

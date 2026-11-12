@@ -5,6 +5,7 @@ package net.ladenthin.streambuffer.trace;
 
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 import java.io.Closeable;
 import java.io.InputStream;
@@ -22,6 +23,8 @@ class TraceRecorderTest {
 
     @Test
     void singleThreadedWriteReadCloseGivesTheExpectedEvents() throws Exception {
+        // under -Pjml-rac the class file is RAC's, which reads the fields in its checks too
+        assumeFalse(Boolean.getBoolean("streambuffer.test.rac"), "RAC-instrumented StreamBuffer");
         final Class<?> c = new TracingClassLoader().loadClass("net.ladenthin.streambuffer.StreamBuffer");
         final Object sb = c.getConstructor().newInstance();
         final InputStream in = (InputStream) c.getMethod("getInputStream").invoke(sb);

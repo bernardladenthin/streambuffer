@@ -64,9 +64,12 @@ annotated, so everything below is genuinely still open.
       FALSE allow more behaviours and accept, see the script): at least two wrong specs (e.g. `ReCheck = FALSE`, `CheckedReturn =
       FALSE`, a mutated action) reject recorded traces; a corrupted trace is rejected by the
       correct spec.
-    - [ ] Numbers (traces, events, states, time) and the mismatches found in
-      `src/test/tla/README.md`; CI step in `formal-verification.yml`; CHANGELOG, CLAUDE.md.
-    - [ ] Wider runs: more seeds and larger scenarios (3 readers, 8 bytes, two waiters), the numbers.
+    - [x] Numbers (traces, events, states, time) and the mismatches found in
+      `src/test/tla/README.md`; CI step in `formal-verification.yml`; CHANGELOG, CLAUDE.md. No
+      mismatch between model and code; the three places where the model is coarser are in the README.
+    - [x] Wider runs: 990 traces (11 scenarios x 30 seeds x 3 yield rates), all accepted. On the way:
+      TLC runs in parallel truncated each other's standard modules in `java.io.tmpdir`, and a large
+      here-string hung Git Bash; `trace.sh` gives each run its own temp directory and an output file.
     - [ ] Review, one push, PR, CI green.
   - **A8 — `ReentrantLock` instead of `synchronized (bufferLock)` — measured 2026-11-12: no
     throughput reason, parked.** The waiting part landed with F278 (`waitLock`, a `Condition`,

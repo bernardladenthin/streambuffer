@@ -32,7 +32,13 @@ public final class TraceGenerator {
             new TraceScenario("Mixed2", 4, 1, 2, 1, 1, 0),
             // waitForAtLeast(2) next to a reader (WaitAndRead2, WaitChecked2)
             new TraceScenario("WaitAndRead2", 4, 1, 2, 1, 0, 1),
-            new TraceScenario("WaitChecked2", 4, 2, 2, 0, 1, 1));
+            new TraceScenario("WaitChecked2", 4, 2, 2, 0, 1, 1),
+            // larger: three read() readers of 8 bytes, three record readers of writes of 3
+            // bytes, two waiters next to a reader, a waiter next to a reader of 3-byte records
+            new TraceScenario("Bytes3x8", 8, 1, 1, 3, 0, 0),
+            new TraceScenario("Records3", 8, 3, 2, 0, 3, 0),
+            new TraceScenario("Wait2", 6, 1, 2, 1, 0, 2),
+            new TraceScenario("WaitRecords", 6, 2, 3, 0, 1, 1));
 
     private TraceGenerator() {}
 

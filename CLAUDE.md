@@ -134,6 +134,16 @@ deliberately not part of the synchronous Publish pipeline and never a required c
    (`1..Bytes`, `0..left[r]`, `0..calls`, filter inside): Apalache 0.63.0 asserts the bounds of
    `\E c \in a..b` globally, so an empty range silently cuts executions (README, "An Apalache
    pitfall"); `inductive.sh` fails otherwise, and on a constant init without a writer or a closer.
+   **Trace validation** (A6, `tla-model` job): `net.ladenthin.streambuffer.trace` (test code) loads
+   `StreamBuffer` through `TracingClassLoader`, which rewrites with ASM every access to
+   `availableBytes`, `streamClosed`, `waitingReaders`, `bufferLock`, `waitLock` and `modified`
+   into calls of `TraceRecorder`; `TraceGenerator` runs the scenarios and writes each trace as a
+   TLA+ module, `trace.sh` checks them against `TraceStreamBuffer.tla` (every trace must be
+   accepted) and `trace-controls.sh` checks that wrong models and corrupted traces are rejected.
+   The lines name a method and its n-th access of a kind (`waitForAtLeast.getAvail#0`), so when
+   one of those methods changes, `TraceStreamBuffer.tla` (`WaitPc`) and the expected list of
+   `TraceRecorderTest` change with it; a new access to shared state needs its rewrite in
+   `TracingClassLoader`.
 
 The `@GuardedBy("bufferLock")` lock discipline is gated separately by Error Prone in the default
 build. The Checker Framework Lock Checker was evaluated as a further layer and deferred — see
