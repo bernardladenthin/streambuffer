@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Unbounded safety of the `read()` protocol (roadmap A13).** `src/test/tla/inductive.sh`: a
+  counter abstraction of the `read()` configuration (`StreamBufferCounters.tla`) has an inductive
+  invariant, proven with Apalache v0.63.0 (pinned by SHA-256) for 2, 3, 4, 8 and 12 readers and any
+  number of written bytes; it implies the safety properties (no empty take, a linearizable count,
+  no write after the end, the end only from a closed and empty buffer). Without the re-check of
+  F278 the inductive step fails exactly there. TLC checks that the detailed `StreamBuffer.tla`
+  refines the abstraction (`RefineCounters.tla`), so it is the model the bounded checks use; a
+  wrong mapping fails that check. In the scheduled `tla-model` job.
 - **A TLA+ model of the wait/wake-up/close protocol (roadmap A5).** `src/test/tla/StreamBuffer.tla`,
   checked with TLC (v1.7.4, pinned by SHA-256) in the scheduled job `tla-model`. The code since F278
   checks clean with 1, 2 and 3 readers, safety and liveness (every reader returns). The code before it

@@ -437,13 +437,16 @@ jobs:
   # SHA-256 (computed from the release asset, which GitHub lists without a digest for v1.7.4).
   # ---------------------------------------------------------------------------------------------
   tla-model:
-    name: TLA+ model of the protocol (TLC)
+    name: TLA+ model of the protocol (TLC, Apalache)
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       TLA_TOOLS_VERSION: "v1.7.4"
       TLA_TOOLS_SHA256: "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88"
+      APALACHE_VERSION: "0.63.0"
+      # SHA-256 of apalache-0.63.0.tgz, from the release's sha256sum.txt
+      APALACHE_SHA256: "a756e96af249bf33cd7629667a49472cb26ac8227c48583da139b414834d59df"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
@@ -463,6 +466,25 @@ jobs:
             echo "### TLA+ model (TLC $TLA_TOOLS_VERSION)"
             echo '```'
             cat tla-check.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Download Apalache (pinned, checksum-verified)
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 -o "$RUNNER_TEMP/apalache.tgz" \
+            "https://github.com/apalache-mc/apalache/releases/download/v$APALACHE_VERSION/apalache-$APALACHE_VERSION.tgz"
+          echo "$APALACHE_SHA256  $RUNNER_TEMP/apalache.tgz" | sha256sum --check --strict
+          mkdir -p "$RUNNER_TEMP/apalache"
+          tar xzf "$RUNNER_TEMP/apalache.tgz" -C "$RUNNER_TEMP/apalache" --strip-components=1
+      - name: Unbounded safety of read() -- inductive invariant (Apalache) and refinement (TLC), A13
+        run: |
+          set -euo pipefail
+          bash src/test/tla/inductive.sh "$RUNNER_TEMP/tla2tools.jar" \
+            "$RUNNER_TEMP/apalache/bin/apalache-mc" | tee tla-inductive.log
+          {
+            echo "### Inductive invariant (Apalache $APALACHE_VERSION) and refinement (TLC)"
+            echo '```'
+            cat tla-inductive.log
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 

@@ -14,7 +14,7 @@ annotated, so everything below is genuinely still open.
 - **Verification roadmap 2026-11 — packages A6–A14.** Each package is closed on its own, ends in a
   machine-checked result and is listed with its acceptance criterion. The contract every package
   checks: several readers and writers are supported, without fairness (decided with bug-hunt finding
-  F278). Order: A13 (Apalache) and A6 on the A5 spec; A8 is measured and parked (no throughput
+  F278). Order: A6 on the A5 spec (A13 is done for `read()`); A8 is measured and parked (no throughput
   reason, see there); A9 is long-term. A6 also builds infrastructure that a later memory-model project can reuse (jcstress on
   several architectures, formal tools pinned in CI, checking real executions against a formal model)
   — so pinned tool setups belong in a composite action of bernardladenthin/actions rather than in
@@ -84,11 +84,16 @@ annotated, so everything below is genuinely still open.
     still (0.8-2.0 ms), the price of the entry bound. The TLA+ model does not model trim.
   - **A9 — Functional proof of the sequential instance core (long-term, months).** The parked
     "Deeper ESC" item below; OpenJML first, KeY only for goals where Z3 answers "unknown".
-  - **A13 — Unbounded safety of the A5 model (weeks).** TLC checks fixed constants only (up to 3
-    readers, 2 bytes): check an inductive invariant of `src/test/tla/StreamBuffer.tla` with Apalache
-    (unbounded byte counts and runs, fixed readers), or prove it with TLAPS for any number of readers.
-    The model covers `read()`, fixed-size `read(b, off, len)` (#212, F279), writes of several bytes,
-    readers of two sizes and `waitForAtLeast` (the A5 rest, 2026-11-11).
+  - **A13 — Unbounded safety of the A5 model. Done for `read()` with a fixed reader count
+    (2026-11-12).** `src/test/tla/inductive.sh`: a counter abstraction of the `read()` protocol
+    (`StreamBufferCounters.tla`) has an inductive invariant that Apalache v0.63.0 proves for 2, 3, 4,
+    8 and 12 readers and **any number of bytes**; without the F278 re-check it is not inductive; TLC
+    checks that `StreamBuffer.tla` refines the abstraction (`RefineCounters.tla`, 2 and 3 readers).
+    Details in `src/test/tla/README.md`. Still open: any number of readers (TLAPS; the invariant
+    has a `Cardinality` conjunct for `waitingReaders`, which needs `FiniteSetTheorems`), and the
+    abstraction for records, chunked writes and `waitForAtLeast` (the detailed model covers them
+    bounded). The model covers `read()`, fixed-size `read(b, off, len)` (#212, F279), writes of
+    several bytes, readers of two sizes and `waitForAtLeast` (the A5 rest, 2026-11-11).
   - **Considered 2026-11 and not planned:** `StructuredTaskScope` inside the library (Java 8
     target, a caller-side API; preview in JDK 27 as JEP 533, final planned for JDK 28 with JEP 543 —
     at most an example once JDK 28 is released); fuzzing with Jazzer (jqwik properties plus PIT at

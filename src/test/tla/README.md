@@ -97,6 +97,36 @@ head entry, a copy across two entries, completed reads of both sizes, `waitForAt
 returning through the waiting branch. Moving the FIFO from bytes to entries left the state counts of
 the clean single-byte models unchanged.
 
+## Unbounded safety: an inductive invariant (roadmap A13)
+
+TLC checks fixed constants: up to 3 readers and a few bytes. For the `read()` protocol, an
+inductive invariant removes the bound on the bytes (`inductive.sh`, Apalache v0.63.0):
+
+- **`StreamBufferCounters.tla`** is a counter abstraction of the `read()` configuration: the
+  writer writes the bytes 1, 2, ... in order and the FIFO hands them out in order, so the byte
+  sequences reduce to counts (`w` written, `t` committed, `hold[r]` the byte a reader copies).
+  Readers are `1..N`; `Bytes` stays **symbolic**, so every result holds for any number of bytes.
+- **`IndInv`**: the safety properties (`NoEmptyTake`, `AvailLinearizable`, `NoWriteAfterEof`,
+  `EofOnlyWhenClosedAndEmpty`) plus what makes them inductive: `bufferLock` is held exactly by
+  the reader deciding, copying or finishing; the bytes in flight are buffered (`Buffered >= 0`);
+  a reader copying has a byte to copy; `waitLock`, `parked` and `waitingReaders` match the reader
+  states; a reader at the end of the stream saw it closed and empty; no write follows a close.
+- **Apalache proves** `Init => IndInv` and `IndInv /\ Next => IndInv'` for N = 2, 3, 4, 8 and 12
+  readers (N = 12 in about 40 s; 2026-11-12). Without the re-check of F278 the inductive step
+  fails exactly there: a reader in `decide` with an empty FIFO takes from it (`nsee`).
+- **TLC checks the abstraction against the detailed model:** `RefineCounters.tla` maps
+  `StreamBuffer.tla` onto the counters (`w = Len(written)`, `hold[r] = Len(hold[r])`, the reader
+  states one to one, `eof` onto `ret0`), and in the configurations of `Condition2` and `Condition3`
+  every step of the detailed model is a step of the abstraction or a stuttering step
+  (`RefineCondition2`, `RefineCondition3`). A wrong mapping (`avail + 1`, or `eof` left unmapped)
+  makes the check fail.
+
+Found on the way (2026-11-12, not committed): the first candidate invariant missed `Buffered >= 0`
+and that a reader in `reread` saw the stream closed; Apalache's counterexamples to induction named
+both. **Limits:** the reader count stays fixed (any N needs TLAPS), and the abstraction covers
+`read()` with single-byte writes, not records, chunked writes or `waitForAtLeast`; TLC covers those
+in the bounded models above.
+
 ## Limits
 
 - **Not in the model:** several writers (each write is atomic under the lock, so they interleave
@@ -107,8 +137,8 @@ the clean single-byte models unchanged.
 - **Sequential consistency.** TLC explores interleavings of atomic steps. That this matches the Java
   memory model rests on the data-race-freedom argument in the README ("Data-Race Freedom").
 - **Model vs. code.** The model is written by hand from the code; nothing checks that they agree.
-  Trace validation (roadmap A6) closes that gap, an inductive invariant checked with Apalache
-  (roadmap A13) removes the bound on the configuration.
+  Trace validation (roadmap A6) closes that gap. The inductive invariant above (roadmap A13)
+  removes the bound on the bytes for the `read()` protocol, for a fixed number of readers.
 
 ## Run it
 
@@ -116,6 +146,12 @@ the clean single-byte models unchanged.
 curl -fLo tla2tools.jar https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar
 sha256sum tla2tools.jar   # 936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88
 bash src/test/tla/check.sh "$PWD/tla2tools.jar"
+
+# A13: Apalache (needs JDK 17+)
+curl -fLo apalache.tgz https://github.com/apalache-mc/apalache/releases/download/v0.63.0/apalache-0.63.0.tgz
+sha256sum apalache.tgz   # a756e96af249bf33cd7629667a49472cb26ac8227c48583da139b414834d59df
+mkdir apalache && tar xzf apalache.tgz -C apalache --strip-components=1
+bash src/test/tla/inductive.sh "$PWD/tla2tools.jar" "$PWD/apalache/bin/apalache-mc"
 ```
 
 One model by hand, with its error trace: `java -cp tla2tools.jar tlc2.TLC -config Semaphore2.cfg
