@@ -6,11 +6,13 @@
 # Unbounded safety (TODO roadmap A13), each check against its expected outcome:
 # - Apalache: IndInv of StreamBufferCounters.tla (read()) holds initially (Init => IndInv) and is
 #   inductive (IndInv /\ Next => IndInv'), for N readers and any number of written bytes (Bytes
-#   symbolic); it implies the safety properties. Without the re-check of F278 it is not inductive.
-#   The same for SafeModInv of StreamBufferRecords.tla (read(b, 0, K): any record size K, any
-#   chunking of the writes); for the two-phase read before #212 it is not inductive. And SafeInv
-#   of StreamBufferWait.tla (read() readers next to waitForAtLeast(M) callers, any M); before
-#   CheckedReturn (waitForAtLeast read availableBytes again for its result) it is not inductive.
+#   symbolic); it implies the safety properties. The same for SafeModInv of StreamBufferRecords.tla
+#   (read(b, 0, K): any record size K, any chunking of the writes) and SafeInv of
+#   StreamBufferWait.tla (read() readers next to waitForAtLeast(M) callers, any M).
+# - Apalache, the older code: a bounded search from Init reaches a violation of the safety
+#   property itself (not just of a helper conjunct): the empty take without the re-check of F278,
+#   a torn record with the two-phase read before #212, waitForAtLeast(M) < M on an open buffer
+#   before CheckedReturn.
 # - TLC: StreamBuffer.tla refines the abstractions in its read(), record and wait configurations, so
 #   they are the protocol the detailed model checks, not separate hand-written ones.
 # The TLAPS proofs for any number of readers are in proof.sh.
@@ -42,6 +44,10 @@ apa() { # name, module, invariant, constant init, init, length, expected outcome
     "$2.tla" > "$log" 2>&1
   set -e
   expect "$1" "The outcome is: $7" "$log"
+  # an expected violation must be the checked invariant itself, not a tool or parse error
+  if [ "$7" = Error ]; then
+    expect "$1" "state invariant 0 violated" "$log"
+  fi
 }
 
 refine() { # module, config
@@ -59,7 +65,8 @@ for n in "" 3 4 8 12; do
   apa "read(): init $label" $C IndInv "ConstInit$n" Init 0 NoError
   apa "read(): inductive $label" $C IndInv "ConstInit$n" IndInit 1 NoError
 done
-apa "read(): inductive without the re-check (before F278)" $C IndInv ConstInitNoReCheck IndInit 1 Error
+# the code before F278 reaches an empty take: a bounded search from Init finds it
+apa "read(): empty take reachable without the re-check (before F278)" $C NoEmptyTake ConstInitNoReCheck Init 14 Error
 
 R=StreamBufferRecords
 for n in "" 3 4; do
@@ -67,7 +74,8 @@ for n in "" 3 4; do
   apa "records: init $label" $R SafeModInv "ConstInit$n" Init 0 NoError
   apa "records: inductive $label" $R SafeModInv "ConstInit$n" SafeModInit 1 NoError
 done
-apa "records: inductive for the two-phase read (before #212)" $R SafeModInv ConstInitTwoPhase SafeModInit 1 Error
+# the two-phase read before #212 reaches a torn record
+apa "records: torn record reachable with the two-phase read (before #212)" $R RecordsAligned ConstInitTwoPhase Init 16 Error
 
 W=StreamBufferWait
 for c in "" 22 31; do
@@ -75,7 +83,8 @@ for c in "" 22 31; do
   apa "waitForAtLeast: init $label, any M" $W SafeInv "ConstInit$c" Init 0 NoError
   apa "waitForAtLeast: inductive $label, any M" $W SafeInv "ConstInit$c" SafeInit 1 NoError
 done
-apa "waitForAtLeast: inductive before CheckedReturn" $W SafeInv ConstInitUnchecked SafeInit 1 Error
+# the code before CheckedReturn reaches waitForAtLeast(M) < M on an open buffer
+apa "waitForAtLeast: short result on an open buffer reachable before CheckedReturn" $W WaitEnoughOrClosed ConstInitUnchecked Init 14 Error
 
 refine RefineCounters RefineCondition2
 refine RefineCounters RefineCondition3

@@ -8,22 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Unbounded safety of the `read()` protocol (roadmap A13).** A counter abstraction of the
-  `read()` configuration (`StreamBufferCounters.tla`) has an inductive invariant: Apalache v0.63.0
-  (pinned by SHA-256, `inductive.sh`) checks it for 2, 3, 4, 8 and 12 readers and any number of
-  written bytes, and a **TLAPS proof** (`StreamBufferCountersProof.tla`, `proof.sh`, 216
-  obligations) shows it for **any number of readers and bytes**; it implies the safety properties (no empty take, a linearizable count,
-  no write after the end, the end only from a closed and empty buffer). Without the re-check of
-  F278 the inductive step fails exactly there, in Apalache and in the TLAPS proof. TLC checks that the detailed `StreamBuffer.tla`
-  refines the abstraction (`RefineCounters.tla`), so it is the model the bounded checks use; a
-  wrong mapping fails that check. The same for **fixed-size records** (`StreamBufferRecords.tla`,
-  `read(b, 0, K)` with any chunking of the writes, K symbolic): every commit up to the close is a
-  whole aligned record, for any number of readers, record size and bytes (TLAPS, 501 obligations;
-  Apalache for 2 to 4 readers); the two-phase read before #212 fails it. And for
-  **`waitForAtLeast`** (`StreamBufferWait.tla`, next to `read()` readers, M symbolic): fewer than M
-  bytes only for a closed buffer, for any number of readers and waiters (TLAPS, 531 obligations);
-  without the fix of this release (`CheckedReturn`) it fails. In the scheduled
-  `tla-model` job (Apalache and the refinements; the TLAPS proofs by `proof.sh`, not in CI).
+- **Unbounded safety of three slices of the protocol (roadmap A13).** Counter abstractions of
+  `read()` (`StreamBufferCounters.tla`), of fixed-size records with `read(b, off, len)`
+  (`StreamBufferRecords.tla`, any chunking of the writes) and of `waitForAtLeast` next to `read()`
+  readers (`StreamBufferWait.tla`) have inductive invariants containing the safety properties:
+  - **Safety properties:** no empty take, a linearizable count, no write after the end, the end only
+    from a closed and empty buffer; whole aligned records up to the close; `waitForAtLeast(M)` short
+    only for a closed buffer.
+  - **Apalache v0.63.0** (pinned by SHA-256, `inductive.sh`) checks them for fixed reader counts
+    (up to 12 for `read()`) with the bytes, the record size and M symbolic.
+  - **TLAPS proofs** (`proof.sh`: 216, 501 and 531 obligations) show them for any number of
+    readers.
+  - **Older code:** each older version reaches a violation of the property itself in a bounded
+    search from the initial state: the empty take without the F278 re-check, a torn record with
+    the two-phase read before #212, a short `waitForAtLeast` result before this release's fix.
+  - **Link to the code:** TLC checks that the detailed `StreamBuffer.tla` refines each abstraction,
+    for its bounded configurations (2 and 3 readers). The unbounded results are about the
+    abstractions; the abstractions build in the count lowered once per read, so F279 stays shown by
+    the bounded model only.
+  - **CI:** the scheduled `tla-model` job runs Apalache and the refinements; the TLAPS proofs are
+    not in CI yet.
 - **A TLA+ model of the wait/wake-up/close protocol (roadmap A5).** `src/test/tla/StreamBuffer.tla`,
   checked with TLC (v1.7.4, pinned by SHA-256) in the scheduled job `tla-model`. The code since F278
   checks clean with 1, 2 and 3 readers, safety and liveness (every reader returns). The code before it

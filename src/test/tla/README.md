@@ -97,77 +97,98 @@ head entry, a copy across two entries, completed reads of both sizes, `waitForAt
 returning through the waiting branch. Moving the FIFO from bytes to entries left the state counts of
 the clean single-byte models unchanged.
 
-## Unbounded safety: an inductive invariant (roadmap A13)
+## Unbounded safety: inductive invariants (roadmap A13)
 
-TLC checks fixed constants: up to 3 readers and a few bytes. For `read()`, fixed-size records and
-`waitForAtLeast`, inductive invariants remove both bounds: Apalache v0.63.0 checks it for fixed reader counts and any
-number of bytes (`inductive.sh`), and a TLAPS proof shows it for **any number of readers and bytes**
-(`proof.sh`):
+TLC checks fixed constants, up to 3 readers and a few bytes. For three slices of the protocol,
+counter abstractions with inductive invariants remove those bounds:
 
-- **`StreamBufferCounters.tla`** is a counter abstraction of the `read()` configuration: the
-  writer writes the bytes 1, 2, ... in order and the FIFO hands them out in order, so the byte
-  sequences reduce to counts (`w` written, `t` committed, `hold[r]` the byte a reader copies).
-  Readers are `1..N`; `Bytes` stays **symbolic**, so every result holds for any number of bytes.
-- **`SafeInv`**: the safety properties (`NoEmptyTake`, `AvailLinearizable`, `NoWriteAfterEof`,
-  `EofOnlyWhenClosedAndEmpty`) plus what makes them inductive, each a named conjunct: `bufferLock`
-  is held exactly by the reader deciding, copying or finishing (`BufLock`); the bytes in flight are
-  buffered (`BufNonNeg`); a reader copying has a byte to copy (`CopyHasByte`); `waitLock` and
-  `parked` match the reader states; a reader at the end of the stream saw it closed and empty; no
-  write follows a close. **`IndInv`** adds the `waitingReaders` count, which steers only whether a
-  write signals (liveness), so `SafeInv` is inductive without it.
-- **Apalache proves** `Init => IndInv` and `IndInv /\ Next => IndInv'` for N = 2, 3, 4, 8 and 12
-  readers (N = 12 in about 40 s; 2026-11-12). Without the re-check of F278 the inductive step
-  fails exactly there: a reader in `decide` with an empty FIFO takes from it (`nsee`).
-- **TLAPS proves** (`StreamBufferCountersProof.tla`, tlapm 1.6.0-pre `ff40755`, 2026-11-12) that
-  `SafeInv` holds initially and is preserved by every action, for any `N >= 1` and `Bytes >= 1`, and
-  so `Spec => []Safety`: all 216 obligations, about 100 s on 16 vCPUs, one case per action and the
-  five reader actions with many updates split by conjunct. With `ReCheck = FALSE` assumed instead,
-  3 obligations fail, all in `ReaderDecide` (`Safety'` and `BufLock'`): the proof needs the re-check.
-- **TLC checks the abstraction against the detailed model:** `RefineCounters.tla` maps
-  `StreamBuffer.tla` onto the counters (`w = Len(written)`, `hold[r] = Len(hold[r])`, the reader
-  states one to one, `eof` onto `ret0`), and in the configurations of `Condition2` and `Condition3`
-  every step of the detailed model is a step of the abstraction or a stuttering step
-  (`RefineCondition2`, `RefineCondition3`). A wrong mapping (`avail + 1`, or `eof` left unmapped)
-  makes the check fail.
+- **Apalache v0.63.0** (`inductive.sh`): fixed reader counts, with bytes, record size and the
+  `waitForAtLeast` request symbolic.
+- **TLAPS** (`proof.sh`): any number of readers.
+- **TLC refinement checks** tie each abstraction to the detailed model.
 
-**Records** (`read(b, 0, K)`, #212): `StreamBufferRecords.tla` is the same kind of abstraction for
-readers of K-byte records, with **any chunking of the writes** (a write puts 1 to the remaining bytes
-into one FIFO entry, a copy step takes 1 to the bytes still to copy) and `K` symbolic as well. Its
-`SafeInv` adds that each read takes a whole record, fewer only from a closed buffer (`WholeRead`),
-and `RecordsAligned`: up to the close every commit is a whole record. The committed count modulo K
-is a ghost variable `off`, advanced linearly (`off + hold`, less K once a record is full), because
-the provers do not handle `%` with a symbolic divisor; Apalache checks `off = t % K` with it
-(`SafeModInv`).
+**What this does and does not show.** The unbounded results hold for the abstractions. That
+`StreamBuffer.tla` behaves like them is checked by TLC refinement for its bounded configurations
+only (2 and 3 readers, up to 4 bytes). Each mapped step concerns one thread, so the link very likely
+generalises, but nothing machine-checks that.
 
-- Apalache: `SafeModInv` holds initially and is inductive for 2, 3 and 4 readers, any K, any number
-  of bytes; for the two-phase read before #212 it is not.
-- TLAPS (`StreamBufferRecordsProof.tla`): `SafeInv` is inductive for **any number of readers, any
-  record size, any number of bytes and any chunking**, all 501 obligations (about 220 s); with
-  `AtomicRead = FALSE` assumed, `WholeRead'` fails in `ReaderDecide` (the old read sets out to copy
-  one byte) and `CurZero'` in `ReaderFinish`.
-- TLC: `StreamBuffer.tla` refines it in the configurations of `Records2` and `Chunks2` (writes of 3
-  and 1 bytes) (`RefineRecords.tla`).
+The abstractions build in the current code where the slice does not vary it: the count lowered once
+per read (F279), and the re-check everywhere but in the `read()` abstraction. `AvailLinearizable` is
+therefore true by construction there, and the F279 defect is only shown by the bounded model
+`RecordsCountPerEntry2`.
 
-**`waitForAtLeast`** (the fix of 2026-11-12): `StreamBufferWait.tla` puts `read()` readers next to
-callers of `waitForAtLeast(M)`, with any chunking of the writes and `M` symbolic, and its `SafeInv`
-contains `WaitEnoughOrClosed`: the call returns fewer than M only for a closed buffer (the JML
-postcondition the old code broke).
+| Abstraction | Slice | Apalache (fixed N) | TLAPS (any N) | Refinement (TLC) | Older code reaches a violation |
+|---|---|---|---|---|---|
+| `StreamBufferCounters.tla` | `read()`, single-byte writes | N = 2, 3, 4, 8, 12; any bytes (`IndInv`) | `SafeInv`, 216 obligations | `Condition2`, `Condition3` | the empty take without the re-check (F278), 9 steps |
+| `StreamBufferRecords.tla` | `read(b, 0, K)`, any chunking of the writes | N = 2, 3, 4; any K and bytes (`SafeModInv`) | `SafeInv`, 501 obligations | `Records2`, `Chunks2` | a torn record with the two-phase read (#212), 8 steps |
+| `StreamBufferWait.tla` | `waitForAtLeast(M)` next to `read()` readers, any chunking | 1+1, 2+2, 3+1 readers+waiters; any M and bytes | `SafeInv`, 531 obligations | `WaitAndRead2`, `WaitChecked2` | `waitForAtLeast(M) < M` on an open buffer before `CheckedReturn`, 11 steps |
 
-- Apalache: inductive for 1 reader and 1 waiter, 2 and 2, 3 and 1; before `CheckedReturn` it is not.
-- TLAPS (`StreamBufferWaitProof.tla`): inductive for **any number of readers and waiters, any M,
-  bytes and chunking**, all 531 obligations (about 270 s); with `CheckedReturn = FALSE` assumed,
-  `WaiterStates'` fails in `ThreadTest` (a waiter with enough bytes goes on to read the count again).
-- TLC: `StreamBuffer.tla` refines it in the configurations of `WaitAndRead2` and `WaitChecked2`
-  (`RefineWait.tla`).
+**The abstractions.** The writer writes the bytes 1, 2, ... in order, and the FIFO hands them out
+in order, so the byte sequences reduce to counts:
+- `w` written, `t` committed, `hold[r]` copied in the current hold of `bufferLock`;
+- for records, also `left[r]` (bytes still to copy) and the ghost `off`.
 
-Found on the way (2026-11-12, not committed): the first candidate invariant missed `Buffered >= 0`
-and that a reader in `reread` saw the stream closed; Apalache's counterexamples to induction named
-both; for the records, the bound `hold + left <= K` and, in the proof, an explicit `PICK` of the
-copy's byte count. **Limits:** the abstractions cover `read()`, fixed-size records and `waitForAtLeast`
-next to `read()`, not record readers of different sizes next to each other (TLC covers that in the
-bounded `Mixed2`), and only safety, not liveness; the refinement to the detailed model is checked by TLC for its bounded configurations
-(2 and 3 readers). `proof.sh` is not in CI yet: tlapm has no tagged 1.6 release, and the rolling 1.6.0-pre
-asset changes, so a pinned checksum would break the scheduled job.
+Two simplifications, both weaker than the detailed model, so they over-approximate it:
+- **Chunks:** a write puts 1 to the remaining bytes into one entry, and a copy step takes 1 to the
+  bytes still to copy. This covers every chunking, and trim, which only merges entries.
+- **Signals:** without a parked reader a signal does nothing and needs no lock, since the code
+  skips it then. The records and wait abstractions have no `waitingReaders` count at all.
+
+The bounded TLC models above show that each older code version fails.
+
+**The invariants.** `SafeInv` is the safety properties plus what makes them inductive, each part
+a named conjunct:
+- **Safety properties:** `NoEmptyTake`, `AvailLinearizable`, `NoWriteAfterEof`,
+  `EofOnlyWhenClosedAndEmpty`; `RecordsAligned` for records, `WaitEnoughOrClosed` for
+  `waitForAtLeast`.
+- **`bufferLock`:** held exactly by the thread deciding, copying or finishing.
+- **Bytes in flight:** they are buffered (`BufNonNeg`), and a copy has the bytes it still copies.
+- **Waiting:** `waitLock` and `parked` match the thread states.
+- **End of stream:** a reader that sees it saw the buffer closed and empty, and no write follows a
+  close.
+- **Records:** `WholeRead` (each read takes a whole record, fewer only from a closed buffer) and
+  `hold + left <= K`.
+
+`IndInv` (in `read()`) adds the `waitingReaders` count. That count only decides whether a signal is
+skipped, which is liveness, so `SafeInv` is inductive without it. That is the form the TLAPS proofs
+use.
+
+For records, `RecordsAligned` says that up to the close every commit is a whole record. It is stated
+on the ghost `off` (the committed count modulo K), which advances linearly: `off + hold`, less K once
+a record is full. The provers do not handle `%` with a symbolic divisor. That `off = t % K` is
+checked by Apalache (`SafeModInv`, N up to 4) and by the refinement (`off <- Len(taken) % ReadLen`),
+not by TLAPS.
+
+**Negative controls.** Each older code version reaches a violation of the **safety property
+itself** in a bounded Apalache search from `Init`, with the symbolic constants left free. The steps
+are in the table above. In the TLAPS proofs, assuming the older code makes obligations fail: without
+the re-check, `Safety'` and `BufLock'` in `ReaderDecide`; with the two-phase read, `WholeRead'` and
+`CurZero'`; without `CheckedReturn`, `WaiterStates'` in `ThreadTest`. Those failures are in helper
+conjuncts that encode the fix, which is why the bounded searches are the evidence. A wrong mapping
+makes a refinement check fail (`avail + 1`, or `eof` left unmapped).
+
+**Found on the way** (2026-11-12, not committed): Apalache's counterexamples to induction named the
+missing conjuncts. These were `Buffered >= 0`, that a reader in `reread` saw the stream closed, and
+for records the bound `hold + left <= K`. The record proof needed an explicit `PICK` of the copy's
+byte count.
+
+**Limits of A13:**
+- **Not covered:** one writer and one closer only; `waitForAtLeast` next to record readers; waiters
+  with different M; a waiter that calls more than once or also reads; record readers of different
+  sizes next to each other (TLC covers that, bounded, in `Mixed2`); liveness.
+- **Inherited from `StreamBuffer.tla`:**
+  - A reader's lock-free read of `availableBytes` and of `streamClosed` is one step, where Java
+    reads them one after the other. This is harmless for safety: `RereadClosed` needs only
+    `closed`, and nothing raises the count after the close.
+  - Spurious wake-ups of `await` are not modelled. A woken thread checks again either way.
+- **The `sigread -> siglock` mapping** of the refinements relies on `waitingReaders >= |parked|` in
+  the detailed model, so a skipped signal has nobody to wake. That holds, but is checked only in the
+  bounded configurations.
+- **The proofs** run every step as `OBVIOUS` under one large `USE DEF`, with `--stretch 3`. On a
+  slower machine an obligation may time out. The obligation counts drift with prover versions.
+- **Not in CI yet:** `proof.sh`, because tlapm has no tagged 1.6 release and the rolling 1.6.0-pre
+  asset changes. The run of 2026-11-12 used the asset with SHA-256
+  `99db29f119cb6f43ffed653b212ba2d005e5bf8e242c53468876cb0d08da6bcc` (tlapm `ff40755`).
 
 ## Limits
 
@@ -179,8 +200,9 @@ asset changes, so a pinned checksum would break the scheduled job.
 - **Sequential consistency.** TLC explores interleavings of atomic steps. That this matches the Java
   memory model rests on the data-race-freedom argument in the README ("Data-Race Freedom").
 - **Model vs. code.** The model is written by hand from the code; nothing checks that they agree.
-  Trace validation (roadmap A6) closes that gap. The inductive invariant above (roadmap A13)
-  removes the bound on the bytes for the `read()` protocol, for a fixed number of readers.
+  Trace validation (roadmap A6) closes that gap. The inductive invariants above (roadmap A13)
+  remove the bounds on readers, bytes and record size for three slices of the protocol, for
+  abstractions that TLC ties to this model in its bounded configurations.
 
 ## Run it
 

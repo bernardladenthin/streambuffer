@@ -532,13 +532,15 @@ verified in a separate CI pipeline
   `read(b, off, len)` (also across the entries of multi-byte writes and next to a `read()` reader)
   and for `waitForAtLeast`. The same model with the older code fails exactly as that code did:
   before bug-hunt finding F278 an empty take and a reader waiting forever after the close or next to
-  a waiter, before #212 a torn record, before F279 a count from the middle of a read. For `read()`,
-  an inductive invariant removes the bounds: **Apalache** checks it for up to 12 readers and any
-  number of bytes, a **TLAPS proof** shows it for any number of readers and bytes, and the detailed
-  model is checked to refine that abstraction. The same for fixed-size records with
-  `read(b, off, len)`: whole aligned records for any number of readers, record size, bytes and
-  chunking of the writes; and for `waitForAtLeast` next to readers: fewer bytes than requested only
-  from a closed buffer.
+  a waiter, before #212 a torn record, before F279 a count from the middle of a read. Inductive
+  invariants of counter abstractions remove the bounds for `read()`, for fixed-size records with
+  `read(b, off, len)` and for `waitForAtLeast` next to readers:
+  - **Apalache** checks them for fixed reader counts, with any number of bytes, record size and
+    `waitForAtLeast` request.
+  - **TLAPS proofs** show them for any number of readers.
+  - **The link:** TLC checks that the detailed model refines each abstraction, in its bounded
+    configurations.
+  - **Older code:** each older version reaches a violation in a bounded search.
 
 Concurrency itself is outside the deductive scope by JML doctrine (JML specifies sequential
 behavior; OpenJML does not model `volatile` or monitors) and is covered empirically by the

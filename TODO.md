@@ -87,15 +87,29 @@ annotated, so everything below is genuinely still open.
   - **A13 — Unbounded safety of the A5 model. Done for `read()`, records and `waitForAtLeast`
     (2026-11-12).** Counter abstractions with inductive invariants: `StreamBufferCounters.tla`
     (`read()`), `StreamBufferRecords.tla` (`read(b, 0, K)`, any chunking of the writes) and
-    `StreamBufferWait.tla` (`waitForAtLeast(M)` next to `read()` readers). Apalache v0.63.0 checks
-    them for fixed reader counts with bytes and record size symbolic (`inductive.sh`), **TLAPS proves
-    them for any number of readers, bytes and record size** (`proof.sh`: 216, 501 and 531
-    obligations); without the F278 re-check, with the two-phase read before #212, or with
-    `waitForAtLeast` reading the count again (before `CheckedReturn`), they fail. TLC checks that
-    `StreamBuffer.tla` refines all three (`RefineCounters.tla`, `RefineRecords.tla`,
-    `RefineWait.tla`). Details in `src/test/tla/README.md`. Still open: record readers of different
-    sizes next to each other in an abstraction (the detailed model covers it bounded), liveness, and
-    `proof.sh` in CI once tlapm has a tagged 1.6 release. The model covers `read()`, fixed-size `read(b, off, len)` (#212, F279), writes of
+    `StreamBufferWait.tla` (`waitForAtLeast(M)` next to `read()` readers).
+    - **Apalache v0.63.0** (`inductive.sh`): fixed reader counts, with the bytes, the record size
+      and M symbolic.
+    - **TLAPS** (`proof.sh`): any number of readers; 216, 501 and 531 obligations.
+    - **Older code:** each older version reaches a violation of the safety property itself in a
+      bounded search from `Init`: without the F278 re-check, with the two-phase read before #212,
+      and with `waitForAtLeast` reading the count again before `CheckedReturn`.
+    - **Link to the code:** TLC checks that `StreamBuffer.tla` refines all three
+      (`RefineCounters.tla`, `RefineRecords.tla`, `RefineWait.tla`), for its bounded
+      configurations only. The unbounded results are about the abstractions.
+    - Details and limits in `src/test/tla/README.md`.
+
+    Still open:
+    - one writer and one closer only;
+    - `waitForAtLeast` next to record readers, waiters with different M, a waiter that calls more
+      than once or also reads;
+    - record readers of different sizes next to each other (the detailed model covers that,
+      bounded);
+    - liveness;
+    - a refinement argument for any number of readers;
+    - `proof.sh` in CI once tlapm has a tagged 1.6 release.
+
+    The detailed model covers `read()`, fixed-size `read(b, off, len)` (#212, F279), writes of
     several bytes, readers of two sizes and `waitForAtLeast` (the A5 rest, 2026-11-11).
   - **Considered 2026-11 and not planned:** `StructuredTaskScope` inside the library (Java 8
     target, a caller-side API; preview in JDK 27 as JEP 533, final planned for JDK 28 with JEP 543 —

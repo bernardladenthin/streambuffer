@@ -150,14 +150,19 @@ ReaderLock(r) ==
 ReaderDecide(r) ==
     /\ rpc[r] = "decide" /\ bl = r
     /\ IF ~ReCheck
-          THEN /\ Go(r, IF Buffered = 0 THEN "nsee" ELSE "copy") /\ UNCHANGED bl
+          \* before F278: getFirst() without a check; an empty FIFO shows in the copy
+          THEN /\ Go(r, "copy") /\ UNCHANGED bl
           ELSE IF avail >= 1
                   THEN /\ Go(r, "copy") /\ UNCHANGED bl
                   ELSE /\ Go(r, "start") /\ bl' = None
     /\ UNCHANGED <<w, t, avail, closed, wpc, cpc, hold, eofAt, waiters, parked, wl>>
 
+\* under bufferLock: take the head byte -- from an empty FIFO that is the NoSuchElementException
 ReaderCopy(r) ==
-    /\ rpc[r] = "copy" /\ bl = r /\ hold' = [hold EXCEPT ![r] = 1] /\ Go(r, "finish")
+    /\ rpc[r] = "copy" /\ bl = r
+    /\ IF Buffered = 0
+          THEN /\ Go(r, "nsee") /\ UNCHANGED hold
+          ELSE /\ hold' = [hold EXCEPT ![r] = 1] /\ Go(r, "finish")
     /\ UNCHANGED <<w, t, avail, closed, wpc, cpc, eofAt, waiters, parked, wl, bl>>
 
 ReaderFinish(r) ==
