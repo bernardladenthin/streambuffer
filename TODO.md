@@ -55,16 +55,18 @@ annotated, so everything below is genuinely still open.
       - **Scenarios** = the model's: one writer of `Bytes` bytes (values 1, 2, ...) in writes of
         `ChunkLen`, one closer, readers of `read()` or `read(b, 0, ReadLen)`, `waitForAtLeast`
         callers; `maxBufferElements` above the number of writes (trim is not modeled).
-    - [ ] Tracer and instrumenting class loader, unit test: a single-threaded write/read gives the
+    - [x] Tracer and instrumenting class loader, unit test (`ebac6b8`): a single-threaded write/read gives the
       expected event list.
-    - [ ] Trace spec for the writer and the closer, then the readers; first trace accepted.
-    - [ ] Trace generator test: scenarios x seeds, traces written to `target/traces/`; a script
+    - [x] Trace spec for the writer and the closer, then the readers; first trace accepted (`ebac6b8`).
+    - [x] Trace generator (`ebac6b8`, a main class run by the script, not a test): scenarios x seeds, traces written to `target/traces/`; a script
       `src/test/tla/trace.sh` runs TLC over them.
-    - [ ] Negative controls: at least two wrong specs (e.g. `ReCheck = FALSE`, `CheckedReturn =
+    - [x] Negative controls (`ebac6b8`, `trace-controls.sh`; CountOnce = FALSE and CheckedReturn =
+      FALSE allow more behaviours and accept, see the script): at least two wrong specs (e.g. `ReCheck = FALSE`, `CheckedReturn =
       FALSE`, a mutated action) reject recorded traces; a corrupted trace is rejected by the
       correct spec.
     - [ ] Numbers (traces, events, states, time) and the mismatches found in
       `src/test/tla/README.md`; CI step in `formal-verification.yml`; CHANGELOG, CLAUDE.md.
+    - [ ] Wider runs: more seeds and larger scenarios (3 readers, 8 bytes, two waiters), the numbers.
     - [ ] Review, one push, PR, CI green.
   - **A8 — `ReentrantLock` instead of `synchronized (bufferLock)` — measured 2026-11-12: no
     throughput reason, parked.** The waiting part landed with F278 (`waitLock`, a `Condition`,
