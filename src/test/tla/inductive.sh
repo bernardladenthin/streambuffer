@@ -8,8 +8,10 @@
 #   inductive (IndInv /\ Next => IndInv'), for N readers and any number of written bytes (Bytes
 #   symbolic); it implies the safety properties. Without the re-check of F278 it is not inductive.
 #   The same for SafeModInv of StreamBufferRecords.tla (read(b, 0, K): any record size K, any
-#   chunking of the writes); for the two-phase read before #212 it is not inductive.
-# - TLC: StreamBuffer.tla refines both abstractions in its read() and record configurations, so
+#   chunking of the writes); for the two-phase read before #212 it is not inductive. And SafeInv
+#   of StreamBufferWait.tla (read() readers next to waitForAtLeast(M) callers, any M); before
+#   CheckedReturn (waitForAtLeast read availableBytes again for its result) it is not inductive.
+# - TLC: StreamBuffer.tla refines the abstractions in its read(), record and wait configurations, so
 #   they are the protocol the detailed model checks, not separate hand-written ones.
 # The TLAPS proofs for any number of readers are in proof.sh.
 #
@@ -67,8 +69,18 @@ for n in "" 3 4; do
 done
 apa "records: inductive for the two-phase read (before #212)" $R SafeModInv ConstInitTwoPhase SafeModInit 1 Error
 
+W=StreamBufferWait
+for c in "" 22 31; do
+  case "$c" in "") label="1 reader, 1 waiter" ;; 22) label="2 readers, 2 waiters" ;; 31) label="3 readers, 1 waiter" ;; esac
+  apa "waitForAtLeast: init $label, any M" $W SafeInv "ConstInit$c" Init 0 NoError
+  apa "waitForAtLeast: inductive $label, any M" $W SafeInv "ConstInit$c" SafeInit 1 NoError
+done
+apa "waitForAtLeast: inductive before CheckedReturn" $W SafeInv ConstInitUnchecked SafeInit 1 Error
+
 refine RefineCounters RefineCondition2
 refine RefineCounters RefineCondition3
 refine RefineRecords RefineRecordsRecords2
 refine RefineRecords RefineRecordsChunks2
+refine RefineWait RefineWaitWaitAndRead2
+refine RefineWait RefineWaitWaitChecked2
 exit "$failed"

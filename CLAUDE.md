@@ -113,14 +113,13 @@ deliberately not part of the synchronous Publish pipeline and never a required c
    `CheckedReturn`: `waitForAtLeast(2)` returning 1 on an open buffer). Constants `Protocol`,
    `ReCheck`, `AtomicRead`, `CountOnce`, `CheckedReturn` select the code version; `ChunkLen`,
    `ByteReaders`, `WaitCallers` the scenario. A13: counter abstractions of `read()`
-   (`StreamBufferCounters.tla`) and of fixed-size records (`StreamBufferRecords.tla`) have inductive
-   invariants -- `inductive.sh` checks them with Apalache v0.63.0 (fixed readers, any bytes and
-   record size) and checks with TLC that the model refines them (`RefineCounters.tla`,
-   `RefineRecords.tla`); `proof.sh` proves them with TLAPS for any number of readers
-   (`StreamBufferCountersProof.tla`, `StreamBufferRecordsProof.tla`, not in CI). `tla2tools.jar`
-   v1.7.4 and Apalache are pinned by SHA-256. When the wait/signal code changes, change the model
-   with it, and the abstractions, the mappings in `RefineCounters.tla`/`RefineRecords.tla` and the
-   proofs too.
+   (`StreamBufferCounters.tla`), of fixed-size records (`StreamBufferRecords.tla`) and of
+   `waitForAtLeast` next to readers (`StreamBufferWait.tla`) have inductive invariants --
+   `inductive.sh` checks them with Apalache v0.63.0 (fixed readers, any bytes and record size) and
+   checks with TLC that the model refines them (`RefineCounters.tla`, `RefineRecords.tla`,
+   `RefineWait.tla`); `proof.sh` proves them with TLAPS for any number of readers (the three
+   `*Proof.tla`, not in CI). `tla2tools.jar` v1.7.4 and Apalache are pinned by SHA-256. When the wait/signal code changes, change the model
+   with it, and the abstractions, the mappings in the `Refine*.tla` modules and the proofs too.
 
 The `@GuardedBy("bufferLock")` lock discipline is gated separately by Error Prone in the default
 build. The Checker Framework Lock Checker was evaluated as a further layer and deferred — see

@@ -537,7 +537,8 @@ verified in a separate CI pipeline
   number of bytes, a **TLAPS proof** shows it for any number of readers and bytes, and the detailed
   model is checked to refine that abstraction. The same for fixed-size records with
   `read(b, off, len)`: whole aligned records for any number of readers, record size, bytes and
-  chunking of the writes.
+  chunking of the writes; and for `waitForAtLeast` next to readers: fewer bytes than requested only
+  from a closed buffer.
 
 Concurrency itself is outside the deductive scope by JML doctrine (JML specifies sequential
 behavior; OpenJML does not model `volatile` or monitors) and is covered empirically by the

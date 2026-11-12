@@ -99,8 +99,8 @@ the clean single-byte models unchanged.
 
 ## Unbounded safety: an inductive invariant (roadmap A13)
 
-TLC checks fixed constants: up to 3 readers and a few bytes. For the `read()` protocol, an
-inductive invariant removes both bounds: Apalache v0.63.0 checks it for fixed reader counts and any
+TLC checks fixed constants: up to 3 readers and a few bytes. For `read()`, fixed-size records and
+`waitForAtLeast`, inductive invariants remove both bounds: Apalache v0.63.0 checks it for fixed reader counts and any
 number of bytes (`inductive.sh`), and a TLAPS proof shows it for **any number of readers and bytes**
 (`proof.sh`):
 
@@ -148,12 +148,24 @@ the provers do not handle `%` with a symbolic divisor; Apalache checks `off = t 
 - TLC: `StreamBuffer.tla` refines it in the configurations of `Records2` and `Chunks2` (writes of 3
   and 1 bytes) (`RefineRecords.tla`).
 
+**`waitForAtLeast`** (the fix of 2026-11-12): `StreamBufferWait.tla` puts `read()` readers next to
+callers of `waitForAtLeast(M)`, with any chunking of the writes and `M` symbolic, and its `SafeInv`
+contains `WaitEnoughOrClosed`: the call returns fewer than M only for a closed buffer (the JML
+postcondition the old code broke).
+
+- Apalache: inductive for 1 reader and 1 waiter, 2 and 2, 3 and 1; before `CheckedReturn` it is not.
+- TLAPS (`StreamBufferWaitProof.tla`): inductive for **any number of readers and waiters, any M,
+  bytes and chunking**, all 531 obligations (about 270 s); with `CheckedReturn = FALSE` assumed,
+  `WaiterStates'` fails in `ThreadTest` (a waiter with enough bytes goes on to read the count again).
+- TLC: `StreamBuffer.tla` refines it in the configurations of `WaitAndRead2` and `WaitChecked2`
+  (`RefineWait.tla`).
+
 Found on the way (2026-11-12, not committed): the first candidate invariant missed `Buffered >= 0`
 and that a reader in `reread` saw the stream closed; Apalache's counterexamples to induction named
 both; for the records, the bound `hold + left <= K` and, in the proof, an explicit `PICK` of the
-copy's byte count. **Limits:** the abstractions cover `read()` and fixed-size records, not readers of
-different sizes or `waitForAtLeast` (TLC covers those in the bounded models above), and only
-safety, not liveness; the refinement to the detailed model is checked by TLC for its bounded configurations
+copy's byte count. **Limits:** the abstractions cover `read()`, fixed-size records and `waitForAtLeast`
+next to `read()`, not record readers of different sizes next to each other (TLC covers that in the
+bounded `Mixed2`), and only safety, not liveness; the refinement to the detailed model is checked by TLC for its bounded configurations
 (2 and 3 readers). `proof.sh` is not in CI yet: tlapm has no tagged 1.6 release, and the rolling 1.6.0-pre
 asset changes, so a pinned checksum would break the scheduled job.
 

@@ -19,7 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wrong mapping fails that check. The same for **fixed-size records** (`StreamBufferRecords.tla`,
   `read(b, 0, K)` with any chunking of the writes, K symbolic): every commit up to the close is a
   whole aligned record, for any number of readers, record size and bytes (TLAPS, 501 obligations;
-  Apalache for 2 to 4 readers); the two-phase read before #212 fails it. In the scheduled
+  Apalache for 2 to 4 readers); the two-phase read before #212 fails it. And for
+  **`waitForAtLeast`** (`StreamBufferWait.tla`, next to `read()` readers, M symbolic): fewer than M
+  bytes only for a closed buffer, for any number of readers and waiters (TLAPS, 531 obligations);
+  without the fix of this release (`CheckedReturn`) it fails. In the scheduled
   `tla-model` job (Apalache and the refinements; the TLAPS proofs by `proof.sh`, not in CI).
 - **A TLA+ model of the wait/wake-up/close protocol (roadmap A5).** `src/test/tla/StreamBuffer.tla`,
   checked with TLC (v1.7.4, pinned by SHA-256) in the scheduled job `tla-model`. The code since F278
