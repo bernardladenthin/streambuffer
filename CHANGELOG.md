@@ -55,7 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   zero or less does not wait. Cancellation by deadline instead of only by interrupt
   (`Condition.awaitNanos` on the wait condition of F278). JML contract, the static boundary
   `hasTimeLeft` in the ESC scope (15 proofs).
-- **API compatibility gate.** `mvn verify` runs japicmp 0.26.5 against the last release on Maven
+- **API compatibility gate.** `mvn verify` runs japicmp 0.27.0 against the last release on Maven
   Central (`japicmp.baseline.version`, 1.2.0) and fails when the version step is too small for the
   change under semantic versioning (a binary-incompatible change needs a new major version). Its
   first run found the four methods under "Removed", hence 2.0.0.

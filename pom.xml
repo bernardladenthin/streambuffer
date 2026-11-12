@@ -44,7 +44,7 @@ SPDX-License-Identifier: Apache-2.0
         <concurrentunit.version>0.4.6</concurrentunit.version>
         <lincheck.version>3.7</lincheck.version>
         <vmlens.version>1.2.28</vmlens.version>
-        <japicmp.version>0.26.5</japicmp.version>
+        <japicmp.version>0.27.0</japicmp.version>
         <!-- Extra JVM arguments for the forked test JVM, empty by default. Set on the command line
              (-Dstreambuffer.test.jvmArgs=...): JaCoCo's prepare-agent owns argLine and sets it to
              empty when skipped, so -DargLine does not reach the fork. Used by the
