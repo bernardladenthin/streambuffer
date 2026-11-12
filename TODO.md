@@ -14,8 +14,8 @@ annotated, so everything below is genuinely still open.
 - **Verification roadmap 2026-11 — packages A6–A14.** Each package is closed on its own, ends in a
   machine-checked result and is listed with its acceptance criterion. The contract every package
   checks: several readers and writers are supported, without fairness (decided with bug-hunt finding
-  F278). Order: A13 (Apalache) and A6 on the A5 spec; A8 only if a new measurement shows the lock
-  matters now that A14 (done) removed the trim cost; A9 is long-term. A6 also builds infrastructure that a later memory-model project can reuse (jcstress on
+  F278). Order: A13 (Apalache) and A6 on the A5 spec; A8 is measured and parked (no throughput
+  reason, see there); A9 is long-term. A6 also builds infrastructure that a later memory-model project can reuse (jcstress on
   several architectures, formal tools pinned in CI, checking real executions against a formal model)
   — so pinned tool setups belong in a composite action of bernardladenthin/actions rather than in
   this workflow.
@@ -25,49 +25,45 @@ annotated, so everything below is genuinely still open.
     A5 spec (`src/test/tla/StreamBuffer.tla`) with TLC (the approach of Cirstea, Kuppe, Merz et al.,
     2024). Closes the gap between model and code. Done when: a deliberately wrong spec rejects
     recorded traces.
-  - **A8 — `ReentrantLock` instead of `synchronized (bufferLock)` (optional, ~1 week).** The waiting
-    part landed with F278: a separate `waitLock` with a `Condition`, `signalAll` on write and close,
-    the re-check under `bufferLock`, so a waiting reader no longer pins a carrier. Still on
-    `synchronized`: every FIFO access including `trim()`, which copies the whole buffer, so a
-    virtual reader or writer blocked at the monitor pins its carrier on JDK 21–23. One lock for both
-    would also save the second lock per write. The lock-free `available()` path stays `volatile`,
-    the external semaphore signal API stays. Check Error Prone's `@GuardedBy` support for `Lock`
-    fields; the A3/A4 checks (vmlens, jcstress, Lincheck, JPF) and A7 (virtual threads, arm64) are
-    the safety net; the `StreamBufferContendedBenchmark` comparison is mandatory. Baseline (local
-    x86, 16 cores, JDK 25.0.4, 2026-11-11; ms per 11 MiB transfer in 1429-byte records,
-    writers/readers): platform 1/1 65.4 ± 5.9, 4/1 66.2 ± 5.2, 1/4 49.6 ± 10.5, 4/4 65.2 ± 7.8;
-    virtual 1/1 66.9 ± 7.0, 4/1 61.6 ± 5.4, 1/4 57.1 ± 8.3, 4/4 52.5 ± 9.6 (about 170–225 MiB/s).
-    Likely dominated by `trim()` copying the whole buffer under the lock once more than 100 entries
-    queue up; measure that before attributing a gain to the lock. **Measured 2026-11-11: it is
-    `trim()`, not the lock.** Vultr `voc-c-16c-32gb` (16 dedicated vCPUs, AMD EPYC Milan, 8 cores
-    with SMT, JDK 25.0.5), `StreamBufferContendedBenchmark` with the new `maxBufferElements` parameter,
-    ms per 11 MiB transfer, writers/readers:
+  - **A8 — `ReentrantLock` instead of `synchronized (bufferLock)` — measured 2026-11-12: no
+    throughput reason, parked.** The waiting part landed with F278 (`waitLock`, a `Condition`,
+    `signalAll`, the re-check under `bufferLock`). Still on `synchronized`: every FIFO access, so a
+    virtual thread blocked at the monitor holds its carrier on JDK 21–23, which
+    `jdk.VirtualThreadPinned` does not show (it covers parking while pinned).
 
-    | threads | w/r | trim 100 (default) | trim off (0) | trim 1000 |
+    **What the time goes to now** (Vultr `voc-c-16c-32gb`, AMD EPYC Milan, 8 cores with SMT,
+    JDK 25.0.5, main with A14, `StreamBufferContendedBenchmark`, platform threads, async-profiler
+    wall clock of the writer and reader threads): blocked on `bufferLock` 43 / 66 / 51 / 78 % of
+    thread time at trim 100 (writers/readers 1/1, 4/1, 1/4, 4/4), 33 % (1/1) and 58 % (4/4) with trim
+    off; lock profile (total wait time): 18-47 % at trim 100, 0.5-26 % with trim off. The first
+    measurement (A14, below) found trim at 82-89 % of the CPU; now the threads queue at the lock.
+
+    **A/B with a prototype** (all six `synchronized (bufferLock)` blocks as `lock()`/`unlock()`,
+    otherwise unchanged; two interleaved rounds each, round-to-round spread a few percent;
+    ReentrantLock / synchronized, below 1 = faster):
+
+    | JDK | threads | trim 100: 1/1, 4/1, 1/4, 4/4 | trim off: 1/1, 4/1, 1/4, 4/4 | trim 1000: 1/1, 4/1, 1/4, 4/4 |
     |---|---|---|---|---|
-    | platform | 1/1 | 42.7 ± 3.9 | 1.13 ± 0.13 | 5.4 ± 0.4 |
-    | platform | 4/1 | 46.7 ± 5.9 | 0.97 ± 0.09 | 6.3 ± 1.3 |
-    | platform | 1/4 | 33.7 ± 13.6 | 2.01 ± 0.32 | 5.0 ± 1.4 |
-    | platform | 4/4 | 43.6 ± 5.1 | 1.54 ± 0.22 | 6.8 ± 0.6 |
-    | virtual | 1/1 | 40.0 ± 3.7 | 1.54 ± 0.82 | 4.2 ± 0.6 |
-    | virtual | 4/1 | 39.8 ± 3.2 | 0.84 ± 0.10 | 4.9 ± 0.5 |
-    | virtual | 1/4 | 37.0 ± 4.2 | 2.04 ± 0.38 | 3.9 ± 2.0 |
-    | virtual | 4/4 | 32.7 ± 3.7 | 1.39 ± 0.27 | 4.3 ± 1.0 |
+    | 25 | platform | 1.00, 1.03, 0.76, 0.91 | 0.69, 1.02, 0.64, 0.80 | 1.00, 1.05, 0.93, 0.90 |
+    | 25 | virtual | 1.03, 1.25, 1.40, 1.52 | 0.67, 1.13, 1.39, 1.26 | 1.11, 1.07, 1.31, 1.77 |
+    | 21 | virtual | 1.08, 1.04, 1.11, 1.14 | 0.75, 0.99, 0.93, 0.76 | 0.88, 1.03, 0.94, 1.21 |
 
-    With the default threshold a transfer is 17-48x slower than without trimming (about 260-340 MiB/s
-    against 5.5-13 GiB/s). async-profiler (CPU, platform threads, trim 100): 82-89 % of all samples
-    in `trim()`, 44-48 % in its `System.arraycopy`; with trim off, 0 %. A writer faster than its
-    readers keeps the FIFO above 100 entries, and each trim copies everything buffered again, so the
-    cost grows with the backlog. A lock change (A8) cannot win much here; the lever is the trim
-    policy, a design decision with a memory trade-off and not an A8 sub-step (see the next item).
+    Mixed: up to 1.5x faster for platform threads, up to 1.8x slower for virtual threads on JDK 25,
+    on JDK 21 between 0.75 and 1.21. The lock kind does not shorten the critical section the threads
+    queue for. Three tests of the suite wait for `Thread.State.BLOCKED` (a monitor); a thread parked on
+    a `ReentrantLock` is `WAITING`, so a real A8 would rewrite them
+    (`StreamBufferConcurrentReadersTest`, `close_fromAnotherThreadDuringAWrite`). Error Prone's
+    `NonAtomicVolatileUpdate` knows `synchronized` blocks but not `Lock` regions, so the read and
+    write methods would need a suppression. Not covered: more virtual threads than carriers on JDK
+    21–23 (the benchmark has at most 8 threads on 16 carriers), the case where a monitor holding a
+    carrier matters; reconsider A8 only for that, with a benchmark of its own. A shorter critical
+    section (copying outside the lock) would be the throughput lever, at the cost of the atomic
+    `read(b, off, len)` of #212 -- not planned.
 
-    On arm64 (cfarm424, Neoverse-N1, JDK 21, shared load ~33 of 64 cores, 2026-11-11): platform 1/1
-    68.0 ± 44.0, 4/1 92.1 ± 36.6, 1/4 91.1 ± 28.5, 4/4 69.0 ± 26.0; virtual 1/1 84.5 ± 45.8, 4/1
-    86.3 ± 31.0, 1/4 72.6 ± 88.8, 4/4 75.4 ± 49.7 -- too noisy to compare; the
-    `arm64-jcstress-benchmark` job gives a quieter machine.
-    Also for A8: on JDK 21 a virtual thread blocked entering the contended `bufferLock` monitor
-    holds its carrier, which `jdk.VirtualThreadPinned` does not show (it covers parking while
-    pinned); one `ReentrantLock` removes the monitor.
+    Earlier baselines, before A14 (trim-dominated, kept for the record): local x86 2026-11-11,
+    platform 1/1 65.4 ± 5.9, 4/1 66.2 ± 5.2, 1/4 49.6 ± 10.5, 4/4 65.2 ± 7.8; virtual 1/1 66.9 ± 7.0,
+    4/1 61.6 ± 5.4, 1/4 57.1 ± 8.3, 4/4 52.5 ± 9.6 ms; on Vultr trim 100 32.7-46.7 ms, trim off
+    0.84-2.04 ms, trim 1000 3.9-6.8 ms; arm64 (cfarm424, shared) too noisy to compare.
   - ~~**A14 — Trim policy: stop recopying the backlog.**~~ **Done 2026-11-11.** A trim used to merge
     every buffered byte into one array and, 100 writes later, copy that array again with the new
     entries: a backlog cost quadratic copying (measurement under A8). Now it merges geometrically:

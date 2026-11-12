@@ -53,8 +53,10 @@ mvn test-compile exec:java \
 reports on 21-23, see the `virtual-threads-jdk21` job) and the Lincheck tests (`StreamBufferLincheckTest`,
 `StreamBufferTrimLincheckTest` with `maxBufferElements` 2; reads in one `nonParallelGroup`).
 The contended JMH benchmark `StreamBufferContendedBenchmark` (platform vs virtual threads, 1/4 writers
-and readers, trim threshold `maxBufferElements` 100/0/1000) is a report, the baseline for roadmap A8;
-the 2026-11-11 measurement (TODO.md, A8) shows the default trim, not the lock, dominates its time.
+and readers, trim threshold `maxBufferElements` 100/0/1000) is a report. Measured on dedicated cores
+(TODO.md, A8 and A14): before A14 the trim took most of the time; since A14 the threads queue at
+`bufferLock`, and a `ReentrantLock` A/B was mixed (A8 parked). It starts new threads for every
+transfer of a few ms, so thread creation is part of the score.
 
 `mvn test` also runs:
 - **jqwik properties** (`StreamBufferProperties`) — a JUnit Platform engine; Surefire runs the class

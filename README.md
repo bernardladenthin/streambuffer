@@ -483,9 +483,9 @@ Test coverage includes:
   concurrent `close`
 - Exhaustive thread-interleaving model check of the read/write/close protocol with Java PathFinder
   (`src/test/jpf/`, scheduled CI job + local Docker recipe) — the erschöpfende counterpart to the
-  jcstress stress tests; six harnesses: writer and reader, writer racing a closer, two readers,
-  two readers of fixed-size records, a `waitForAtLeast` caller next to a reader, trim re-entrancy
-  through a trim signal
+  jcstress stress tests; seven harnesses: writer and reader, writer racing a closer, two readers,
+  two readers of fixed-size records, a `waitForAtLeast` caller next to a reader, the same next to a
+  2-byte write (what `waitForAtLeast` returns), trim re-entrancy through a trim signal
 - Signal/slot notification via external semaphores on write and all close paths
 - `removeSignal(null)` returning `false` without throwing
 - `addSignal(null)` throwing `NullPointerException`

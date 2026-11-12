@@ -252,7 +252,8 @@ jobs:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     # TwoReaders.jpf explores about 3.5 million states (18 minutes locally, 2026-11-11),
     # RecordReaders.jpf about 2.4 million (12 minutes), WaitAndRead.jpf about 0.3 million
-    # (1.5 minutes), the other three about 2 minutes together.
+    # (1.5 minutes), WaitSnapshot.jpf about 0.13 million (30 s), the other three about 2 minutes
+    # together.
     timeout-minutes: 90
     env:
       # Pinned jpf-core commit (no upstream releases exist). Bump deliberately; re-validate the
