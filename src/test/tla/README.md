@@ -120,13 +120,17 @@ therefore true by construction there, and the F279 defect is only shown by the b
 | Abstraction | Slice | Apalache (fixed N) | TLAPS (any N) | Refinement (TLC) | Older code reaches a violation |
 |---|---|---|---|---|---|
 | `StreamBufferCounters.tla` | `read()`, single-byte writes | N = 2, 3, 4, 8, 12; any bytes (`IndInv`) | `SafeInv`, 216 obligations | `Condition2`, `Condition3` | the empty take without the re-check (F278), 9 steps |
-| `StreamBufferRecords.tla` | `read(b, 0, K)`, any chunking of the writes | N = 2, 3, 4; any K and bytes (`SafeModInv`) | `SafeInv`, 501 obligations | `Records2`, `Chunks2` | a torn record with the two-phase read (#212), 8 steps |
-| `StreamBufferWait.tla` | `waitForAtLeast(M)` next to `read()` readers, any chunking | 1+1, 2+2, 3+1 readers+waiters; any M and bytes | `SafeInv`, 531 obligations | `WaitAndRead2`, `WaitChecked2` | `waitForAtLeast(M) < M` on an open buffer before `CheckedReturn`, 11 steps |
+| `StreamBufferRecords.tla` | `read(b, 0, K)`, several writers, any chunking | 2, 3, 4 readers with 2 writers, 2 readers with 3; any K and bytes (`SafeModInv`) | `SafeInv`, any readers and writers, 445 obligations | `Records2`, `Chunks2` | a torn record with the two-phase read (#212), 8 steps |
+| `StreamBufferWait.tla` | `waitForAtLeast(M)` next to `read()` readers, several writers, any chunking | 1+1, 2+2, 3+1 readers+waiters with 2 writers; any M and bytes | `SafeInv`, any readers, waiters and writers, 541 obligations | `WaitAndRead2`, `WaitChecked2` | `waitForAtLeast(M) < M` on an open buffer before `CheckedReturn`, 11 steps |
 
 **The abstractions.** The writer writes the bytes 1, 2, ... in order, and the FIFO hands them out
 in order, so the byte sequences reduce to counts:
 - `w` written, `t` committed, `hold[r]` copied in the current hold of `bufferLock`;
 - for records, also `left[r]` (bytes still to copy) and the ghost `off`.
+
+The records and wait abstractions have NW writers sharing the budget of `Bytes` bytes; a writer
+that finds it used up is done. With `K = 1` the records abstraction is the `read()` protocol, so
+`read()` with several writers is covered there; `StreamBufferCounters.tla` keeps one writer.
 
 Two simplifications, both weaker than the detailed model, so they over-approximate it:
 - **Chunks:** a write puts 1 to the remaining bytes into one entry, and a copy step takes 1 to the
@@ -173,7 +177,8 @@ for records the bound `hold + left <= K`. The record proof needed an explicit `P
 byte count.
 
 **Limits of A13:**
-- **Not covered:** one writer and one closer only; `waitForAtLeast` next to record readers; waiters
+- **Not covered:** one closer only (`close()` is idempotent, and every close path ends the same way);
+  `waitForAtLeast` next to record readers; waiters
   with different M; a waiter that calls more than once or also reads; record readers of different
   sizes next to each other (TLC covers that, bounded, in `Mixed2`); liveness.
 - **Inherited from `StreamBuffer.tla`:**

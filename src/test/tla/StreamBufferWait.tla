@@ -6,8 +6,9 @@
 (***************************************************************************)
 (* A counter abstraction of waitForAtLeast next to readers (TODO roadmap   *)
 (* A13): threads 1..NR call read() until -1, threads NR+1..N each call      *)
-(* waitForAtLeast(M) once; one writer of Bytes bytes in any chunking (one   *)
-(* FIFO entry per write), a closer; the current code (Condition, re-check   *)
+(* waitForAtLeast(M) once; NW writers sharing Bytes bytes in any chunking  *)
+(* (one FIFO entry per write), a closer; the current code (Condition,       *)
+(* re-check                                                                 *)
 (* under bufferLock, the count lowered once per read). M and Bytes stay     *)
 (* symbolic. CheckedReturn: the waiting branch returns the count it checked *)
 (* (since 2026-11-12); without it, it read availableBytes again.            *)
@@ -17,6 +18,8 @@ EXTENDS Integers, FiniteSets
 CONSTANTS
     \* @type: Int;
     N,
+    \* @type: Int;
+    NW,
     \* @type: Int;
     NR,
     \* @type: Int;
@@ -35,7 +38,7 @@ VARIABLES
     avail,
     \* @type: Bool;
     closed,
-    \* @type: Str;
+    \* @type: Int -> Str;
     wpc,
     \* @type: Str;
     cpc,
@@ -59,15 +62,16 @@ VARIABLES
 vars == <<w, t, avail, closed, wpc, cpc, rpc, hold, wres, wclosed, eofAt, parked, wl, bl>>
 
 Threads == 1..N
+Writers == 1..NW
 IsWaiter(r) == r > NR
 None == 0
 
 \* Apalache: the constants of a check -- readers and waiters fixed, M and Bytes symbolic
-ConstInit == N = 2 /\ NR = 1 /\ Bytes \in Nat /\ Bytes >= 1 /\ M \in Nat /\ M >= 1 /\ CheckedReturn = TRUE
-ConstInit22 == N = 4 /\ NR = 2 /\ Bytes \in Nat /\ Bytes >= 1 /\ M \in Nat /\ M >= 1 /\ CheckedReturn = TRUE
-ConstInit31 == N = 4 /\ NR = 3 /\ Bytes \in Nat /\ Bytes >= 1 /\ M \in Nat /\ M >= 1 /\ CheckedReturn = TRUE
+ConstInit == N = 2 /\ NW = 2 /\ NR = 1 /\ Bytes \in Nat /\ Bytes >= 1 /\ M \in Nat /\ M >= 1 /\ CheckedReturn = TRUE
+ConstInit22 == N = 4 /\ NW = 2 /\ NR = 2 /\ Bytes \in Nat /\ Bytes >= 1 /\ M \in Nat /\ M >= 1 /\ CheckedReturn = TRUE
+ConstInit31 == N = 4 /\ NW = 2 /\ NR = 3 /\ Bytes \in Nat /\ Bytes >= 1 /\ M \in Nat /\ M >= 1 /\ CheckedReturn = TRUE
 \* the waiting branch before 2026-11-12: the invariant is not inductive
-ConstInitUnchecked == N = 2 /\ NR = 1 /\ Bytes \in Nat /\ Bytes >= 1 /\ M \in Nat /\ M >= 1 /\ CheckedReturn = FALSE
+ConstInitUnchecked == N = 2 /\ NW = 2 /\ NR = 1 /\ Bytes \in Nat /\ Bytes >= 1 /\ M \in Nat /\ M >= 1 /\ CheckedReturn = FALSE
 
 States == {"start", "reread", "lockwait", "inc", "test", "parked", "woken", "wret", "lock",
            "decide", "copy", "finish", "ret0", "done", "nsee"}
@@ -78,13 +82,14 @@ Want(r) == IF IsWaiter(r) THEN M ELSE 1
 
 Init ==
     /\ w = 0 /\ t = 0 /\ avail = 0 /\ closed = FALSE
-    /\ wpc = "write" /\ cpc = "close"
+    /\ wpc = [i \in Writers |-> "write"] /\ cpc = "close"
     /\ rpc = [r \in Threads |-> "start"] /\ hold = [r \in Threads |-> 0]
     /\ wres = [r \in Threads |-> -1] /\ wclosed = [r \in Threads |-> FALSE]
     /\ eofAt = -1 /\ parked = {} /\ wl = None /\ bl = None
 
 \* with nobody parked the signal does nothing and needs no lock (the code skips it then)
 WriterNext == IF w >= Bytes THEN "done" ELSE "write"
+WGo(i, s) == wpc' = [wpc EXCEPT ![i] = s]
 WakeAll ==
     IF parked = {}
        THEN UNCHANGED <<rpc, parked>>
@@ -92,17 +97,19 @@ WakeAll ==
             /\ rpc' = [r \in Threads |-> IF r \in parked THEN "woken" ELSE rpc[r]]
             /\ parked' = {}
 
-WriterWrite ==
-    /\ wpc = "write" /\ bl = None
+\* writer i: one write of c bytes, one FIFO entry -- any chunking, the writers sharing the budget
+WriterWrite(i) ==
+    /\ wpc[i] = "write" /\ bl = None
     /\ IF closed
-          THEN /\ wpc' = "failed" /\ UNCHANGED <<w, avail>>
-          \* one write of c bytes, one FIFO entry: any chunking
-          ELSE /\ \E c \in 1..(Bytes - w) : w' = w + c /\ avail' = avail + c
-               /\ wpc' = "siglock"
+          THEN /\ WGo(i, "failed") /\ UNCHANGED <<w, avail>>
+          ELSE IF w >= Bytes
+                  THEN /\ WGo(i, "done") /\ UNCHANGED <<w, avail>>
+                  ELSE /\ \E c \in 1..(Bytes - w) : w' = w + c /\ avail' = avail + c
+                       /\ WGo(i, "siglock")
     /\ UNCHANGED <<t, closed, cpc, rpc, hold, wres, wclosed, eofAt, parked, wl, bl>>
 
-WriterSigLock ==
-    /\ wpc = "siglock" /\ WakeAll /\ wpc' = WriterNext
+WriterSigLock(i) ==
+    /\ wpc[i] = "siglock" /\ WakeAll /\ WGo(i, WriterNext)
     /\ UNCHANGED <<w, t, avail, closed, cpc, hold, wres, wclosed, eofAt, wl, bl>>
 
 CloserClose ==
@@ -201,7 +208,8 @@ ThreadStep(r) ==
     \/ ThreadCopy(r) \/ ThreadFinish(r) \/ ThreadRet0(r)
 
 Next ==
-    \/ WriterWrite \/ WriterSigLock \/ CloserClose \/ CloserSigLock
+    \/ \E i \in Writers : WriterWrite(i) \/ WriterSigLock(i)
+    \/ CloserClose \/ CloserSigLock
     \/ \E r \in Threads : ThreadStep(r)
 
 CSpec == Init /\ [][Next]_vars
@@ -219,7 +227,7 @@ Safety == NoEmptyTake /\ AvailLinearizable /\ WaitEnoughOrClosed /\ NoWriteAfter
 
 TypeOK ==
     /\ w \in Nat /\ w <= Bytes /\ t \in Nat /\ t <= w /\ avail \in Nat /\ closed \in BOOLEAN
-    /\ wpc \in {"write", "siglock", "done", "failed"}
+    /\ wpc \in [Writers -> {"write", "siglock", "done", "failed"}]
     /\ cpc \in {"close", "siglock", "done"}
     /\ rpc \in [Threads -> States] /\ hold \in [Threads -> {0, 1}]
     /\ wres \in [Threads -> Int] /\ wclosed \in [Threads -> BOOLEAN]
@@ -242,9 +250,8 @@ RereadClosed == \A r \in Threads : rpc[r] = "reread" => closed
 Ret0Empty == \A r \in Threads : rpc[r] = "ret0" => closed /\ avail = 0
 DoneEof == \A r \in Threads : ~IsWaiter(r) /\ rpc[r] = "done" => eofAt # -1
 CloserInv == (cpc = "close") <=> ~closed
-WriterInv == /\ (wpc = "write" => w < Bytes)
-             /\ (wpc = "done" => w = Bytes)
-             /\ (wpc = "siglock" => w >= 1)
+WriterInv == \A i \in Writers : /\ (wpc[i] = "done" => w = Bytes)
+                                 /\ (wpc[i] = "siglock" => w >= 1)
 
 SafeInv ==
     /\ TypeOK /\ Safety
@@ -254,7 +261,7 @@ SafeInv ==
 
 Domains ==
     /\ w \in Nat /\ t \in Nat /\ avail \in Nat /\ closed \in BOOLEAN
-    /\ wpc \in {"write", "siglock", "done", "failed"}
+    /\ wpc \in [Writers -> {"write", "siglock", "done", "failed"}]
     /\ cpc \in {"close", "siglock", "done"}
     /\ rpc \in [Threads -> States] /\ hold \in [Threads -> {0, 1}]
     /\ wres \in [Threads -> Int] /\ wclosed \in [Threads -> BOOLEAN]

@@ -537,7 +537,8 @@ verified in a separate CI pipeline
   `read(b, off, len)` and for `waitForAtLeast` next to readers:
   - **Apalache** checks them for fixed reader counts, with any number of bytes, record size and
     `waitForAtLeast` request.
-  - **TLAPS proofs** show them for any number of readers.
+  - **TLAPS proofs** show them for any number of readers, and of writers for records and
+    `waitForAtLeast`.
   - **The link:** TLC checks that the detailed model refines each abstraction, in its bounded
     configurations.
   - **Older code:** each older version reaches a violation in a bounded search.

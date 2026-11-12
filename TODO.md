@@ -90,7 +90,8 @@ annotated, so everything below is genuinely still open.
     `StreamBufferWait.tla` (`waitForAtLeast(M)` next to `read()` readers).
     - **Apalache v0.63.0** (`inductive.sh`): fixed reader counts, with the bytes, the record size
       and M symbolic.
-    - **TLAPS** (`proof.sh`): any number of readers; 216, 501 and 531 obligations.
+    - **TLAPS** (`proof.sh`): any number of readers, and for records and `waitForAtLeast` any
+      number of writers (sharing the bytes); 216, 445 and 541 obligations.
     - **Older code:** each older version reaches a violation of the safety property itself in a
       bounded search from `Init`: without the F278 re-check, with the two-phase read before #212,
       and with `waitForAtLeast` reading the count again before `CheckedReturn`.
@@ -100,7 +101,7 @@ annotated, so everything below is genuinely still open.
     - Details and limits in `src/test/tla/README.md`.
 
     Still open:
-    - one writer and one closer only;
+    - one closer only (several writers are covered by the records and wait abstractions);
     - `waitForAtLeast` next to record readers, waiters with different M, a waiter that calls more
       than once or also reads;
     - record readers of different sizes next to each other (the detailed model covers that,

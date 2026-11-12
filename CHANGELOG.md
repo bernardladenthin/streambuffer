@@ -17,8 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     only for a closed buffer.
   - **Apalache v0.63.0** (pinned by SHA-256, `inductive.sh`) checks them for fixed reader counts
     (up to 12 for `read()`) with the bytes, the record size and M symbolic.
-  - **TLAPS proofs** (`proof.sh`: 216, 501 and 531 obligations) show them for any number of
-    readers.
+  - **TLAPS proofs** (`proof.sh`: 216, 445 and 541 obligations) show them for any number of
+    readers, and for records and `waitForAtLeast` for any number of writers too.
   - **Older code:** each older version reaches a violation of the property itself in a bounded
     search from the initial state: the empty take without the F278 re-check, a torn record with
     the two-phase read before #212, a short `waitForAtLeast` result before this release's fix.

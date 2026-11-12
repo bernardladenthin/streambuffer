@@ -7,8 +7,9 @@
 # - Apalache: IndInv of StreamBufferCounters.tla (read()) holds initially (Init => IndInv) and is
 #   inductive (IndInv /\ Next => IndInv'), for N readers and any number of written bytes (Bytes
 #   symbolic); it implies the safety properties. The same for SafeModInv of StreamBufferRecords.tla
-#   (read(b, 0, K): any record size K, any chunking of the writes) and SafeInv of
-#   StreamBufferWait.tla (read() readers next to waitForAtLeast(M) callers, any M).
+#   (read(b, 0, K): any record size K, any chunking of the writes, several writers) and SafeInv
+#   of StreamBufferWait.tla (read() readers next to waitForAtLeast(M) callers, any M, several
+#   writers).
 # - Apalache, the older code: a bounded search from Init reaches a violation of the safety
 #   property itself (not just of a helper conjunct): the empty take without the re-check of F278,
 #   a torn record with the two-phase read before #212, waitForAtLeast(M) < M on an open buffer
@@ -69,10 +70,10 @@ done
 apa "read(): empty take reachable without the re-check (before F278)" $C NoEmptyTake ConstInitNoReCheck Init 14 Error
 
 R=StreamBufferRecords
-for n in "" 3 4; do
-  label="N=${n:-2}, any K"
-  apa "records: init $label" $R SafeModInv "ConstInit$n" Init 0 NoError
-  apa "records: inductive $label" $R SafeModInv "ConstInit$n" SafeModInit 1 NoError
+for c in "" 3 4 W3; do
+  case "$c" in "") label="2 readers, 2 writers" ;; 3) label="3 readers, 2 writers" ;; 4) label="4 readers, 2 writers" ;; W3) label="2 readers, 3 writers" ;; esac
+  apa "records: init $label, any K" $R SafeModInv "ConstInit$c" Init 0 NoError
+  apa "records: inductive $label, any K" $R SafeModInv "ConstInit$c" SafeModInit 1 NoError
 done
 # the two-phase read before #212 reaches a torn record
 apa "records: torn record reachable with the two-phase read (before #212)" $R RecordsAligned ConstInitTwoPhase Init 16 Error
@@ -80,6 +81,7 @@ apa "records: torn record reachable with the two-phase read (before #212)" $R Re
 W=StreamBufferWait
 for c in "" 22 31; do
   case "$c" in "") label="1 reader, 1 waiter" ;; 22) label="2 readers, 2 waiters" ;; 31) label="3 readers, 1 waiter" ;; esac
+  label="$label, 2 writers"
   apa "waitForAtLeast: init $label, any M" $W SafeInv "ConstInit$c" Init 0 NoError
   apa "waitForAtLeast: inductive $label, any M" $W SafeInv "ConstInit$c" SafeInit 1 NoError
 done
