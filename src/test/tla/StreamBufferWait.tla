@@ -6,11 +6,12 @@
 (***************************************************************************)
 (* A counter abstraction of waitForAtLeast next to readers (TODO roadmap   *)
 (* A13): threads 1..NR call read(b, 0, K) until -1 (K = 1 is read()),       *)
-(* threads NR+1..N each call waitForAtLeast(M) once; NW writers sharing     *)
-(* Bytes bytes in any chunking (one FIFO entry per write), a closer; the    *)
-(* current code (Condition, re-check under bufferLock, all the bytes of a   *)
-(* read in one hold, the count lowered once per read). K, M and Bytes stay  *)
-(* symbolic. CheckedReturn: the waiting branch returns the count it checked *)
+(* each thread r in NR+1..N calls waitForAtLeast(M[r]) once, each with its *)
+(* own request; NW writers sharing Bytes bytes in any chunking (one FIFO    *)
+(* entry per write), a closer; the current code (Condition, re-check under *)
+(* bufferLock, all the bytes of a read in one hold, the count lowered once  *)
+(* per read). K, every M[r] and Bytes stay symbolic. CheckedReturn: the     *)
+(* waiting branch returns the count it checked                              *)
 (* (since 2026-11-12); without it, it read availableBytes again.            *)
 (***************************************************************************)
 EXTENDS Integers, FiniteSets
@@ -24,7 +25,7 @@ CONSTANTS
     NR,
     \* @type: Int;
     Bytes,
-    \* @type: Int;
+    \* @type: Int -> Int;
     M,
     \* @type: Int;
     K,
@@ -73,19 +74,22 @@ IsWaiter(r) == r > NR
 None == 0
 Min(a, b) == IF a < b THEN a ELSE b
 
-\* Apalache: the constants of a check -- readers and waiters fixed, M and Bytes symbolic
-ConstInit == N = 2 /\ NW = 2 /\ NR = 1 /\ Bytes \in Nat /\ Bytes >= 1 /\ M \in Nat /\ M >= 1 /\ K \in Nat /\ K >= 1 /\ CheckedReturn = TRUE
-ConstInit22 == N = 4 /\ NW = 2 /\ NR = 2 /\ Bytes \in Nat /\ Bytes >= 1 /\ M \in Nat /\ M >= 1 /\ K \in Nat /\ K >= 1 /\ CheckedReturn = TRUE
-ConstInit31 == N = 4 /\ NW = 2 /\ NR = 3 /\ Bytes \in Nat /\ Bytes >= 1 /\ M \in Nat /\ M >= 1 /\ K \in Nat /\ K >= 1 /\ CheckedReturn = TRUE
+\* Apalache: the constants of a check -- readers and waiters fixed; Bytes, K and each waiter's
+\* request M[r] symbolic (the function domain must be a literal range here: Threads is not
+\* constant yet inside --cinit)
+ConstInit == N = 2 /\ NW = 2 /\ NR = 1 /\ Bytes \in Nat /\ Bytes >= 1 /\ M \in [1..2 -> Nat] /\ (\A r \in 1..2 : M[r] >= 1) /\ K \in Nat /\ K >= 1 /\ CheckedReturn = TRUE
+ConstInit22 == N = 4 /\ NW = 2 /\ NR = 2 /\ Bytes \in Nat /\ Bytes >= 1 /\ M \in [1..4 -> Nat] /\ (\A r \in 1..4 : M[r] >= 1) /\ K \in Nat /\ K >= 1 /\ CheckedReturn = TRUE
+ConstInit13 == N = 4 /\ NW = 2 /\ NR = 1 /\ Bytes \in Nat /\ Bytes >= 1 /\ M \in [1..4 -> Nat] /\ (\A r \in 1..4 : M[r] >= 1) /\ K \in Nat /\ K >= 1 /\ CheckedReturn = TRUE
+ConstInit31 == N = 4 /\ NW = 2 /\ NR = 3 /\ Bytes \in Nat /\ Bytes >= 1 /\ M \in [1..4 -> Nat] /\ (\A r \in 1..4 : M[r] >= 1) /\ K \in Nat /\ K >= 1 /\ CheckedReturn = TRUE
 \* the waiting branch before 2026-11-12: the invariant is not inductive
-ConstInitUnchecked == N = 2 /\ NW = 2 /\ NR = 1 /\ Bytes \in Nat /\ Bytes >= 1 /\ M \in Nat /\ M >= 1 /\ K \in Nat /\ K >= 1 /\ CheckedReturn = FALSE
+ConstInitUnchecked == N = 2 /\ NW = 2 /\ NR = 1 /\ Bytes \in Nat /\ Bytes >= 1 /\ M \in [1..2 -> Nat] /\ (\A r \in 1..2 : M[r] >= 1) /\ K \in Nat /\ K >= 1 /\ CheckedReturn = FALSE
 
 States == {"start", "reread", "lockwait", "inc", "test", "parked", "woken", "wret", "lock",
            "decide", "copy", "finish", "ret0", "done", "nsee"}
 
 InFlight == IF bl = None THEN 0 ELSE hold[bl]
 Buffered == w - t - InFlight
-Want(r) == IF IsWaiter(r) THEN M ELSE K
+Want(r) == IF IsWaiter(r) THEN M[r] ELSE K
 
 Init ==
     /\ w = 0 /\ t = 0 /\ avail = 0 /\ closed = FALSE
@@ -237,8 +241,8 @@ CSpec == Init /\ [][Next]_vars
 (* Safety *)
 NoEmptyTake == \A r \in Threads : rpc[r] # "nsee"
 AvailLinearizable == avail = w - t
-\* waitForAtLeast(M) returns fewer than M only for a closed buffer (its JML postcondition)
-WaitEnoughOrClosed == \A r \in Threads : IsWaiter(r) /\ wres[r] # -1 => wres[r] >= M \/ wclosed[r]
+\* waitForAtLeast(M[r]) returns fewer than M[r] only for a closed buffer (its JML postcondition)
+WaitEnoughOrClosed == \A r \in Threads : IsWaiter(r) /\ wres[r] # -1 => wres[r] >= M[r] \/ wclosed[r]
 \* every commit up to the close is a whole record (#212); off is t % K (OffMod)
 RecordsAligned == off = 0 \/ closed
 OffMod == off = t % K

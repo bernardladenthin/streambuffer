@@ -109,11 +109,12 @@ annotated, so everything below is genuinely still open.
   - **A13 — Unbounded safety of the A5 model. Done for `read()`, records and `waitForAtLeast`
     (2026-11-12).** Counter abstractions with inductive invariants: `StreamBufferCounters.tla`
     (`read()`), `StreamBufferRecords.tla` (`read(b, 0, K)`, any chunking of the writes) and
-    `StreamBufferWait.tla` (`waitForAtLeast(M)` next to `read(b, 0, K)` readers).
+    `StreamBufferWait.tla` (`waitForAtLeast(M[r])` next to `read(b, 0, K)` readers, each waiter
+    with a request of its own).
     - **Apalache v0.63.0** (`inductive.sh`): fixed reader counts, with the bytes, the record size
       and M symbolic.
     - **TLAPS** (`proof.sh`): any number of readers, and for records and `waitForAtLeast` any
-      number of writers (sharing the bytes); 216, 475 and 599 obligations.
+      number of writers (sharing the bytes); 216, 484 and 599 obligations.
     - **Apalache soundness bug, found 2026-11-12:** a skolemized `\E c \in a..b` asserts its bounds
       globally, so a range empty in some state cut every execution through it. Missed violations,
       and inductive steps that skipped pre-states (`w = Bytes`, no reader copying). The
@@ -132,12 +133,11 @@ annotated, so everything below is genuinely still open.
 
     Still open:
     - one closer only (several writers are covered by the records and wait abstractions);
-    - waiters with different M, a waiter that calls more than once or also reads;
+    - a waiter that calls more than once or also reads;
     - record readers of different sizes next to each other (the detailed model covers that,
       bounded);
     - liveness;
     - a refinement argument for any number of readers;
-    - `proof.sh` in CI once tlapm has a tagged 1.6 release.
 
     The detailed model covers `read()`, fixed-size `read(b, off, len)` (#212, F279), writes of
     several bytes, readers of two sizes and `waitForAtLeast` (the A5 rest, 2026-11-11).

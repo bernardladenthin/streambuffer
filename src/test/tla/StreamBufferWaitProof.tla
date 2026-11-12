@@ -6,15 +6,17 @@
 (***************************************************************************)
 (* TLAPS proof (TODO roadmap A13): SafeInv of StreamBufferWait is an        *)
 (* inductive invariant for ANY number of read(b, 0, K) readers and         *)
-(* waitForAtLeast callers and writers, any K, M, number of bytes and       *)
-(* chunking of the writes, so waitForAtLeast(M) returns fewer than M only  *)
-(* for a closed buffer, and every read takes a whole record.               *)
+(* waitForAtLeast callers and writers, any K, any request M[r] per waiter, *)
+(* number of bytes and chunking of the writes, so waitForAtLeast(M[r])     *)
+(* returns fewer than M[r] only for a closed buffer, and every read takes  *)
+(* a whole record.                                                         *)
 (***************************************************************************)
 EXTENDS StreamBufferWait, TLAPS
 
 ASSUME ConstAssump == /\ N \in Nat /\ N >= 1 /\ NR \in Nat /\ NR <= N /\ NW \in Nat /\ NW >= 1
                       /\ Bytes \in Nat /\ Bytes >= 1
-                      /\ M \in Nat /\ M >= 1 /\ K \in Nat /\ K >= 1
+                      /\ M \in [Threads -> Nat] /\ \A r \in Threads : M[r] >= 1
+                      /\ K \in Nat /\ K >= 1
                       /\ CheckedReturn = TRUE
 
 LEMMA InitSafe == Init => SafeInv

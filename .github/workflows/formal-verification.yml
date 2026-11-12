@@ -35,6 +35,9 @@
 #                 close protocol and the reads (src/test/tla/StreamBuffer.tla): the current code
 #                 checks clean, the older code fails with the F278, #212 and F279 counterexamples.
 #
+#   tlaps-proofs  (scheduled/dispatch only) TLAPS proves the A13 inductive invariants for any
+#                 number of readers and writers; tlapm is built from a pinned commit and cached.
+#
 #   jcstress-default  (scheduled/dispatch only) jcstress in its default mode on x86; every pull
 #                 request runs the quick mode (jcstress.mode in pom.xml) to keep the Test job short.
 #
@@ -485,6 +488,79 @@ jobs:
             echo "### Inductive invariant (Apalache $APALACHE_VERSION) and refinement (TLC)"
             echo '```'
             cat tla-inductive.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------------------------
+  # TLAPS proofs of the A13 invariants -- scheduled/dispatch only. proof.sh fails unless every
+  # obligation of every proof is proved (SafeInv inductive for any number of readers and
+  # writers). tlapm has no tagged 1.6 release, and the rolling 1.6.0-pre asset is replaced with
+  # every tlapm commit, so a checksum pin would break: tlapm is built from a pinned commit
+  # (opam, dune, make release, which downloads its backend provers) and the release tarball is
+  # cached per commit and OCaml version. The opam dependencies resolve when the cache is filled.
+  # ---------------------------------------------------------------------------------------------
+  tlaps-proofs:
+    name: TLAPS proofs of the A13 invariants
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    timeout-minutes: 60
+    env:
+      # tlaplus/tlapm main of 2026-11-10 ("Add soundness test for ENABLED binder order"); its
+      # 1.6.0-pre asset had SHA-256 99db29f119cb6f43ffed653b212ba2d005e5bf8e242c53468876cb0d08da6bcc
+      TLAPM_SHA: "ff40755301b84455d368f9f8b13fe9fdb0bc9407"
+      OCAML_VERSION: "5.2.1"
+      # the Isabelle archive deps/isabelle/dune.mk of that commit names (ISABELLE_VSN Isabelle2025)
+      ISABELLE_ARCHIVE: "Isabelle2025_linux.tar.gz"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Display CPU Info
+        uses: bernardladenthin/actions/common/print-host-info@379fb9448915b8ce7153f6ec5fa65544205196db # v1.2.2
+      - name: Cache the tlapm release
+        id: tlapm-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: tlapm-release.tar.gz
+          key: tlapm-release-${{ env.TLAPM_SHA }}-ocaml-${{ env.OCAML_VERSION }}
+      - name: Build tlapm from the pinned commit
+        if: steps.tlapm-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          sudo apt-get update -q
+          sudo apt-get install -y -q opam zlib1g-dev gawk time wget
+          opam init -y --disable-sandboxing --bare
+          opam switch create -y tlapm "ocaml-base-compiler.$OCAML_VERSION"
+          eval "$(opam env --switch=tlapm)"
+          src="$RUNNER_TEMP/tlapm-src"
+          git init -q "$src"
+          git -C "$src" fetch -q --depth 1 https://github.com/tlaplus/tlapm.git "$TLAPM_SHA"
+          git -C "$src" checkout -q --detach FETCH_HEAD
+          # The Isabelle archive (1 GB, one university server) with retries: tlapm's build fetches it
+          # with a single wget, and skips the download for an archive already in _build_cache whose
+          # SHA-256 matches the one pinned in deps/isabelle/dune.mk (it checks it either way)
+          mkdir -p "$src/_build_cache"
+          curl --fail --location --retry 5 --retry-all-errors --retry-delay 30 \
+            -o "$src/_build_cache/$ISABELLE_ARCHIVE" \
+            "https://isabelle.in.tum.de/website-Isabelle2025/dist/$ISABELLE_ARCHIVE"
+          make -C "$src" opam-deps
+          # dune build also builds the LSP server, which needs these
+          make -C "$src" opam-deps-opt
+          make -C "$src" release
+          # make release checks the relocated tarball and names it tlapm-<version>-<host>.tar.gz
+          cp "$src"/_build/tlapm-*-x86_64-linux-gnu.tar.gz tlapm-release.tar.gz
+      - name: Unpack tlapm
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/tlapm"
+          tar xzf tlapm-release.tar.gz -C "$RUNNER_TEMP/tlapm"
+          "$RUNNER_TEMP/tlapm/tlapm/bin/tlapm" --version
+      - name: Prove the A13 invariants (TLAPS)
+        run: |
+          set -euo pipefail
+          bash src/test/tla/proof.sh "$RUNNER_TEMP/tlapm/tlapm/bin/tlapm" | tee tlaps-proofs.log
+          {
+            echo "### TLAPS proofs (tlapm ${TLAPM_SHA:0:7})"
+            echo '```'
+            cat tlaps-proofs.log
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
