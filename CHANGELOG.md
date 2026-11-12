@@ -36,11 +36,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Older code:** each older version reaches a violation of the property itself in a bounded
     search from the initial state: the empty take without the F278 re-check, a torn record with
     the two-phase read before #212, a short `waitForAtLeast` result before this release's fix.
-  - **Link to the code:** TLC checks that the detailed `StreamBuffer.tla` refines each abstraction,
-    for its bounded configurations (2 and 3 readers; `StreamBufferWait.tla` in all seven
-    configurations of the current code). The unbounded results are about the abstractions; the
+  - **Link to the code:** TLAPS proves that the detailed `StreamBuffer.tla` with the current code
+    refines `StreamBufferWait.tla` for any number of readers (`RefineWaitProof.tla`, 2,656
+    obligations), so the unbounded safety holds for the detailed model (not the liveness: the
+    refinement is of the specifications without fairness); TLC checks the
+    refinement of each abstraction in the bounded configurations (2 and 3 readers). The
     abstractions build in the count lowered once per read, so F279 stays shown by the bounded model
-    only.
+    only. For the proof, `StreamBuffer.tla` defines `Flat` as a recursive function (tlapm cannot
+    parse a RECURSIVE operator) and keeps the ghost `toff` (`Len(taken) % ReadLen`, checked by TLC).
   - **CI:** the scheduled `tla-model` job runs Apalache and the refinements, the scheduled
     `tlaps-proofs` job the TLAPS proofs, with tlapm built from a pinned commit (no tagged 1.6
     release exists; the rolling 1.6.0-pre asset is replaced with every tlapm commit).

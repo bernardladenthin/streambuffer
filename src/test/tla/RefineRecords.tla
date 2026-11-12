@@ -25,7 +25,7 @@ R == INSTANCE StreamBufferRecords WITH
         hold <- [i \in 1..N0 |-> Len(hold[Rd(i)])],
         left <- [i \in 1..N0 |-> left[Rd(i)]],
         cur <- [i \in 1..N0 |-> Len(cur[Rd(i)])],
-        off <- Len(taken) % ReadLen,
+        off <- toff,
         eofAt <- eofAt,
         parked <- {Idx[r] : r \in parked},
         wl <- MapLock(wl), bl <- MapLock(bl)
