@@ -43,6 +43,7 @@ SPDX-License-Identifier: Apache-2.0
         <awaitility.version>4.3.0</awaitility.version>
         <concurrentunit.version>0.4.6</concurrentunit.version>
         <lincheck.version>3.7</lincheck.version>
+        <asm.version>9.9.1</asm.version>
         <vmlens.version>1.2.28</vmlens.version>
         <japicmp.version>0.27.0</japicmp.version>
         <!-- Extra JVM arguments for the forked test JVM, empty by default. Set on the command line
@@ -225,6 +226,17 @@ SPDX-License-Identifier: Apache-2.0
             <groupId>org.jetbrains.lincheck</groupId>
             <artifactId>lincheck</artifactId>
             <version>${lincheck.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!--
+            ASM for the A6 trace validation (net.ladenthin.streambuffer.trace): a test-side class
+            loader rewrites StreamBuffer's accesses to shared state into calls of a tracer. The
+            version is the one Lincheck brings, so the convergence check stays quiet.
+        -->
+        <dependency>
+            <groupId>org.ow2.asm</groupId>
+            <artifactId>asm</artifactId>
+            <version>${asm.version}</version>
             <scope>test</scope>
         </dependency>
         <!--
