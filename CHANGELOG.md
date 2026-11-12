@@ -8,6 +8,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Unbounded safety of three slices of the protocol (roadmap A13).** Counter abstractions of
+  `read()` (`StreamBufferCounters.tla`), of fixed-size records with `read(b, off, len)`
+  (`StreamBufferRecords.tla`, any chunking of the writes) and of `waitForAtLeast` next to
+  `read(b, off, len)` record readers (`StreamBufferWait.tla`) have inductive invariants containing
+  the safety properties:
+  - **Safety properties:** no empty take, a linearizable count, no write after the end, the end only
+    from a closed and empty buffer; whole aligned records up to the close; `waitForAtLeast(M)` short
+    only for a closed buffer.
+  - **Apalache v0.63.0** (pinned by SHA-256, `inductive.sh`) checks them for fixed reader counts
+    (up to 12 for `read()`) with the bytes, the record size and M symbolic.
+  - **TLAPS proofs** (`proof.sh`: 216, 475 and 599 obligations) show them for any number of
+    readers, and for records and `waitForAtLeast` for any number of writers too.
+  - **An Apalache soundness bug, worked around:** Apalache 0.63.0 asserts the bounds of a
+    skolemized `\E c \in a..b` globally, so a range that is empty in some state silently cuts every
+    execution through it. The abstractions use ranges that are never empty, and `inductive.sh`
+    rejects any other.
+  - **Older code:** each older version reaches a violation of the property itself in a bounded
+    search from the initial state: the empty take without the F278 re-check, a torn record with
+    the two-phase read before #212, a short `waitForAtLeast` result before this release's fix.
+  - **Link to the code:** TLC checks that the detailed `StreamBuffer.tla` refines each abstraction,
+    for its bounded configurations (2 and 3 readers). The unbounded results are about the
+    abstractions; the abstractions build in the count lowered once per read, so F279 stays shown by
+    the bounded model only.
+  - **CI:** the scheduled `tla-model` job runs Apalache and the refinements; the TLAPS proofs are
+    not in CI yet.
 - **A TLA+ model of the wait/wake-up/close protocol (roadmap A5).** `src/test/tla/StreamBuffer.tla`,
   checked with TLC (v1.7.4, pinned by SHA-256) in the scheduled job `tla-model`. The code since F278
   checks clean with 1, 2 and 3 readers, safety and liveness (every reader returns). The code before it

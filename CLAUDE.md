@@ -111,8 +111,19 @@ deliberately not part of the synchronous Publish pipeline and never a required c
    the older code fails with its counterexamples (F278: an empty take, a deadlock after the close or
    next to a waiter; #212: a torn record; F279: a count from the middle of a read; before
    `CheckedReturn`: `waitForAtLeast(2)` returning 1 on an open buffer). Constants `Protocol`,
-   `ReCheck`, `AtomicRead`, `CountOnce`, `CheckedReturn` select the code version; `ChunkLen`, `ByteReaders`, `WaitCallers` the scenario. `tla2tools.jar` v1.7.4 is
-   pinned by SHA-256. When the wait/signal code changes, change the model with it.
+   `ReCheck`, `AtomicRead`, `CountOnce`, `CheckedReturn` select the code version; `ChunkLen`,
+   `ByteReaders`, `WaitCallers` the scenario. A13: counter abstractions of `read()`
+   (`StreamBufferCounters.tla`), of fixed-size records (`StreamBufferRecords.tla`) and of
+   `waitForAtLeast` next to readers (`StreamBufferWait.tla`) have inductive invariants --
+   `inductive.sh` checks them with Apalache v0.63.0 (fixed readers, any bytes and record size) and
+   checks with TLC that the model refines them (`RefineCounters.tla`, `RefineRecords.tla`,
+   `RefineWait.tla`); `proof.sh` proves them with TLAPS for any number of readers (the three
+   `*Proof.tla`, not in CI). `tla2tools.jar` v1.7.4 and Apalache are pinned by SHA-256. When the wait/signal code changes, change the model
+   with it, and the abstractions, the mappings in the `Refine*.tla` modules and the proofs too.
+   An existential in an abstraction may range only over `a..b` that is never empty
+   (`1..Bytes`, `0..left[r]`, filter inside): Apalache 0.63.0 asserts the bounds of `\E c \in a..b`
+   globally, so an empty range silently cuts executions (README, "An Apalache pitfall");
+   `inductive.sh` fails otherwise.
 
 The `@GuardedBy("bufferLock")` lock discipline is gated separately by Error Prone in the default
 build. The Checker Framework Lock Checker was evaluated as a further layer and deferred — see

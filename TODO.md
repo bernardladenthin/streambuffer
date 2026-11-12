@@ -14,7 +14,7 @@ annotated, so everything below is genuinely still open.
 - **Verification roadmap 2026-11 — packages A6–A14.** Each package is closed on its own, ends in a
   machine-checked result and is listed with its acceptance criterion. The contract every package
   checks: several readers and writers are supported, without fairness (decided with bug-hunt finding
-  F278). Order: A13 (Apalache) and A6 on the A5 spec; A8 is measured and parked (no throughput
+  F278). Order: A6 on the A5 spec (A13 is done for `read()`); A8 is measured and parked (no throughput
   reason, see there); A9 is long-term. A6 also builds infrastructure that a later memory-model project can reuse (jcstress on
   several architectures, formal tools pinned in CI, checking real executions against a formal model)
   — so pinned tool setups belong in a composite action of bernardladenthin/actions rather than in
@@ -60,6 +60,24 @@ annotated, so everything below is genuinely still open.
     section (copying outside the lock) would be the throughput lever, at the cost of the atomic
     `read(b, off, len)` of #212 -- not planned.
 
+    **Larger transfers (2026-11-12).** The benchmark starts new threads for every transfer of a few
+    ms, so thread creation is part of the score above. With 131,072 records per transfer
+    (179 MiB; a local change of `RECORDS`, not committed), JDK 25, two interleaved rounds, the ratios
+    (ReentrantLock / synchronized) are:
+
+    | threads | trim | 1/1 | 1/4 | 4/1 | 4/4 |
+    |---|---|---|---|---|---|
+    | platform | 100 | 0.84 | 0.35 | 0.91 | 0.78 |
+    | platform | off | 0.59 | 0.74 | 0.52 | 0.54 |
+    | virtual | 100 | 1.13 | 1.15 | 1.18 | 1.33 |
+    | virtual | off | 0.62 | 1.76 | 1.35 | 1.41 |
+
+    Platform threads are consistently faster with a `ReentrantLock`, up to 1.9x with trim off.
+    Virtual threads are mostly slower: the monitor spins before it parks, the lock parks sooner,
+    and an unmount and remount costs a virtual thread more. So A8 is a trade-off between the two
+    kinds of thread, not a free gain. It stays parked until a workload decides which kind matters;
+    if it is taken up, measure with large transfers (or persistent threads) and on JDK 21 as well.
+
     Earlier baselines, before A14 (trim-dominated, kept for the record): local x86 2026-11-11,
     platform 1/1 65.4 ± 5.9, 4/1 66.2 ± 5.2, 1/4 49.6 ± 10.5, 4/4 65.2 ± 7.8; virtual 1/1 66.9 ± 7.0,
     4/1 61.6 ± 5.4, 1/4 57.1 ± 8.3, 4/4 52.5 ± 9.6 ms; on Vultr trim 100 32.7-46.7 ms, trim off
@@ -81,14 +99,48 @@ annotated, so everything below is genuinely still open.
     machine, threshold 100, ms per 11 MiB transfer, before → after: platform 1/1 43.9 → 3.7, 4/1
     46.6 → 4.4, 1/4 39.7 → 4.9, 4/4 45.6 → 4.8; virtual 1/1 43.4 → 3.2, 4/1 41.2 → 3.4, 1/4 36.8 →
     3.5, 4/4 32.3 → 3.7 (8-13x); threshold 1000: 3.5-7.5 → 1.6-3.9. Trim off stays 2-4x faster
-    still (0.8-2.0 ms), the price of the entry bound. The TLA+ model does not model trim.
+    still (0.8-2.0 ms), the price of the entry bound. The TLA+ model does not model trim. With a
+    backlog of 179 MiB (131,072 records per transfer, see A8), the default threshold costs 10-20x
+    against trim off (platform 1/1: 277 against 23 ms). That is the O(log n) of the design: each byte
+    is copied about log2(131,072 / 100), about 10, times. A threshold that grows with the backlog
+    would cut that further; possible follow-up.
   - **A9 — Functional proof of the sequential instance core (long-term, months).** The parked
     "Deeper ESC" item below; OpenJML first, KeY only for goals where Z3 answers "unknown".
-  - **A13 — Unbounded safety of the A5 model (weeks).** TLC checks fixed constants only (up to 3
-    readers, 2 bytes): check an inductive invariant of `src/test/tla/StreamBuffer.tla` with Apalache
-    (unbounded byte counts and runs, fixed readers), or prove it with TLAPS for any number of readers.
-    The model covers `read()`, fixed-size `read(b, off, len)` (#212, F279), writes of several bytes,
-    readers of two sizes and `waitForAtLeast` (the A5 rest, 2026-11-11).
+  - **A13 — Unbounded safety of the A5 model. Done for `read()`, records and `waitForAtLeast`
+    (2026-11-12).** Counter abstractions with inductive invariants: `StreamBufferCounters.tla`
+    (`read()`), `StreamBufferRecords.tla` (`read(b, 0, K)`, any chunking of the writes) and
+    `StreamBufferWait.tla` (`waitForAtLeast(M)` next to `read(b, 0, K)` readers).
+    - **Apalache v0.63.0** (`inductive.sh`): fixed reader counts, with the bytes, the record size
+      and M symbolic.
+    - **TLAPS** (`proof.sh`): any number of readers, and for records and `waitForAtLeast` any
+      number of writers (sharing the bytes); 216, 475 and 599 obligations.
+    - **Apalache soundness bug, found 2026-11-12:** a skolemized `\E c \in a..b` asserts its bounds
+      globally, so a range empty in some state cut every execution through it. Missed violations,
+      and inductive steps that skipped pre-states (`w = Bytes`, no reader copying). The
+      abstractions now use ranges that are never empty, and `inductive.sh` rejects any other
+      (README "An Apalache pitfall"). Open: the upstream issue (a 15-line reproduction; Apalache
+      wants the issue confirmed before a fix PR, and issue and PR text written by a person), then
+      the prepared fix (`QuantRule.skolemExistsInRange`, the bounds as a conjunct of the result,
+      with a regression test that fails on 0.63.0).
+    - **Older code:** each older version reaches a violation of the safety property itself in a
+      bounded search from `Init`: without the F278 re-check, with the two-phase read before #212,
+      and with `waitForAtLeast` reading the count again before `CheckedReturn`.
+    - **Link to the code:** TLC checks that `StreamBuffer.tla` refines all three
+      (`RefineCounters.tla`, `RefineRecords.tla`, `RefineWait.tla`), for its bounded
+      configurations only. The unbounded results are about the abstractions.
+    - Details and limits in `src/test/tla/README.md`.
+
+    Still open:
+    - one closer only (several writers are covered by the records and wait abstractions);
+    - waiters with different M, a waiter that calls more than once or also reads;
+    - record readers of different sizes next to each other (the detailed model covers that,
+      bounded);
+    - liveness;
+    - a refinement argument for any number of readers;
+    - `proof.sh` in CI once tlapm has a tagged 1.6 release.
+
+    The detailed model covers `read()`, fixed-size `read(b, off, len)` (#212, F279), writes of
+    several bytes, readers of two sizes and `waitForAtLeast` (the A5 rest, 2026-11-11).
   - **Considered 2026-11 and not planned:** `StructuredTaskScope` inside the library (Java 8
     target, a caller-side API; preview in JDK 27 as JEP 533, final planned for JDK 28 with JEP 543 —
     at most an example once JDK 28 is released); fuzzing with Jazzer (jqwik properties plus PIT at
