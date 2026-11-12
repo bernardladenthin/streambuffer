@@ -252,7 +252,8 @@ jobs:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     # TwoReaders.jpf explores about 3.5 million states (18 minutes locally, 2026-11-11),
     # RecordReaders.jpf about 2.4 million (12 minutes), WaitAndRead.jpf about 0.3 million
-    # (1.5 minutes), the other three about 2 minutes together.
+    # (1.5 minutes), WaitSnapshot.jpf about 0.13 million (30 s), the other three about 2 minutes
+    # together.
     timeout-minutes: 90
     env:
       # Pinned jpf-core commit (no upstream releases exist). Bump deliberately; re-validate the
@@ -314,12 +315,13 @@ jobs:
           (cd jpf-core && ./gradlew --no-daemon buildJars -x test)
       - name: Model-check the harnesses (JDK 11)
         # RunJPF exits 0 even when it reports "error #N", so the result is gated on the logs below,
-        # never on the exit code. Six harnesses: StreamBuffer.jpf (writer that also closes, reader),
+        # never on the exit code. Seven harnesses: StreamBuffer.jpf (writer that also closes, reader),
         # WriteClose.jpf (writer, closer and reader in three threads -- the order of write and close,
         # bug hunt F149, which the first one cannot see), TwoReaders.jpf (writer that also closes,
         # two readers on one stream -- bug hunt F278), RecordReaders.jpf (two readers of 2-byte
         # records, written fragmented across the record boundary -- each read takes a whole record),
-        # WaitAndRead.jpf (a waitForAtLeast(2) caller next to a reader -- F278) and
+        # WaitAndRead.jpf (a waitForAtLeast(2) caller next to a reader -- F278),
+        # WaitSnapshot.jpf (the same next to a 2-byte write: fewer than 2 only once closed) and
         # TrimReentrancy.jpf (a trim start signal writing from inside the trim, a reader).
         run: |
           set -euo pipefail
@@ -333,6 +335,7 @@ jobs:
             net/ladenthin/streambuffer/jpf/JpfTwoReadersHarness.java \
             net/ladenthin/streambuffer/jpf/JpfRecordReadersHarness.java \
             net/ladenthin/streambuffer/jpf/JpfWaitAndReadHarness.java \
+            net/ladenthin/streambuffer/jpf/JpfWaitSnapshotHarness.java \
             net/ladenthin/streambuffer/jpf/JpfTrimReentrancyHarness.java
           "$JAVA_HOME/bin/java" -jar "$GITHUB_WORKSPACE/jpf-core/build/RunJPF.jar" StreamBuffer.jpf \
             | tee jpf-output.log
@@ -344,6 +347,8 @@ jobs:
             | tee jpf-output-record-readers.log
           "$JAVA_HOME/bin/java" -jar "$GITHUB_WORKSPACE/jpf-core/build/RunJPF.jar" WaitAndRead.jpf \
             | tee jpf-output-wait-and-read.log
+          "$JAVA_HOME/bin/java" -jar "$GITHUB_WORKSPACE/jpf-core/build/RunJPF.jar" WaitSnapshot.jpf \
+            | tee jpf-output-wait-snapshot.log
           "$JAVA_HOME/bin/java" -jar "$GITHUB_WORKSPACE/jpf-core/build/RunJPF.jar" TrimReentrancy.jpf \
             | tee jpf-output-trim-reentrancy.log
       - name: Gate on the JPF results
@@ -352,7 +357,8 @@ jobs:
           echo "### JPF exhaustive interleavings" >> "$GITHUB_STEP_SUMMARY"
           for log in src/test/jpf/jpf-output.log src/test/jpf/jpf-output-write-close.log \
                      src/test/jpf/jpf-output-two-readers.log src/test/jpf/jpf-output-record-readers.log \
-                     src/test/jpf/jpf-output-wait-and-read.log src/test/jpf/jpf-output-trim-reentrancy.log; do
+                     src/test/jpf/jpf-output-wait-and-read.log src/test/jpf/jpf-output-wait-snapshot.log \
+                     src/test/jpf/jpf-output-trim-reentrancy.log; do
             if grep -qE '^error #' "$log"; then
               echo "::error::JPF reported an interleaving defect (see $log)."
               exit 1

@@ -340,7 +340,7 @@ public class StreamBuffer implements Closeable
 | `removeTrimStartSignal(Semaphore)` | Removes a trim-start semaphore |
 | `addTrimEndSignal(Semaphore)` | Registers a semaphore released when trim ends |
 | `removeTrimEndSignal(Semaphore)` | Removes a trim-end semaphore |
-| `waitForAtLeast(long)` | Blocks until at least the given number of bytes are available (or the stream closes) |
+| `waitForAtLeast(long)` | Blocks until at least the given number of bytes are available (or the stream closes); returns fewer only for a closed stream |
 | `waitForAtLeast(long, long, TimeUnit)` | Like `waitForAtLeast(long)`, but waits at most the given time; returns the available bytes, fewer on timeout or close (`isClosed()` tells which) |
 | `waitForAnyData()` | Blocks until at least one byte is available (or the stream closes) |
 
@@ -483,9 +483,9 @@ Test coverage includes:
   concurrent `close`
 - Exhaustive thread-interleaving model check of the read/write/close protocol with Java PathFinder
   (`src/test/jpf/`, scheduled CI job + local Docker recipe) — the erschöpfende counterpart to the
-  jcstress stress tests; six harnesses: writer and reader, writer racing a closer, two readers,
-  two readers of fixed-size records, a `waitForAtLeast` caller next to a reader, trim re-entrancy
-  through a trim signal
+  jcstress stress tests; seven harnesses: writer and reader, writer racing a closer, two readers,
+  two readers of fixed-size records, a `waitForAtLeast` caller next to a reader, the same next to a
+  2-byte write (what `waitForAtLeast` returns), trim re-entrancy through a trim signal
 - Signal/slot notification via external semaphores on write and all close paths
 - `removeSignal(null)` returning `false` without throwing
 - `addSignal(null)` throwing `NullPointerException`

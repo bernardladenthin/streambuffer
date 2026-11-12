@@ -5,8 +5,7 @@
 #
 # Runs every TLC model of StreamBuffer.tla and compares each with its expected outcome: the models
 # of the current code must check clean, the models of older code must fail with exactly the error
-# that shows the defect (so the spec can fail, and fails for the right reason), and WaitSnapshot2
-# must show the documented snapshot of waitForAtLeast.
+# that shows the defect (so the spec can fail, and fails for the right reason).
 #
 # Usage: src/test/tla/check.sh <path to tla2tools.jar>   (run from anywhere; needs java on PATH)
 set -euo pipefail
@@ -32,6 +31,7 @@ models=(
   "WaitAndRead2|Model checking completed. No error has been found."
   "SemaphoreWaitAndRead2|Error: Deadlock reached."
   "WaitSnapshot2|Error: Invariant WaitEnoughOrClosed is violated."
+  "WaitChecked2|Model checking completed. No error has been found."
 )
 
 failed=0

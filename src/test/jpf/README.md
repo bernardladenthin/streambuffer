@@ -77,6 +77,15 @@ errors detected**, 24,972 states (24,880 before the geometric trim of A14, 2026-
 readers). It uses named static classes: with an anonymous `Semaphore` subclass next to lambdas,
 jpf-core's `Thread.start` peer failed with a `NullPointerException`.
 
+A seventh harness (`JpfWaitSnapshotHarness.java`, `WaitSnapshot.jpf`) checks what `waitForAtLeast`
+returns next to a reader: a writer writes two bytes in one write and closes, one thread calls
+`waitForAtLeast(2)`, another `read()`. The result may be fewer than two only once the close has
+begun (the writer sets a flag right before `close()`, so a later close cannot excuse a short
+result). Before 2026-11-12 the waiting branch read `availableBytes` again after its check and the
+reader could take a byte in between: against `main` at `0ac6180` JPF reports `waitForAtLeast(2)
+returned 1 before the close began` after 4,845 states (1 s). With the fix: **no errors detected**,
+127,525 states, maxDepth 97, 27 s (Vultr, 2026-11-12).
+
 ## Files
 
 | File | Role |
@@ -93,6 +102,8 @@ jpf-core's `Thread.start` peer failed with a `NullPointerException`.
 | `WaitAndRead.jpf` | its JPF run configuration (same classpath) |
 | `net/ladenthin/streambuffer/jpf/JpfTrimReentrancyHarness.java` | a trim start signal writing from inside the trim |
 | `TrimReentrancy.jpf` | its JPF run configuration (same classpath) |
+| `net/ladenthin/streambuffer/jpf/JpfWaitSnapshotHarness.java` | what `waitForAtLeast(2)` returns next to a reader and a 2-byte write |
+| `WaitSnapshot.jpf` | its JPF run configuration (same classpath) |
 | `jpf-model/java/util/concurrent/atomic/AtomicLong.java` | a completed `AtomicLong` model that patches a jpf-core stub (see below) |
 
 ## Why the AtomicLong patch
@@ -138,6 +149,7 @@ docker run --rm -v "$WORK/jpf-core:/jpf" -v "$SB:/sb" -w /jpf eclipse-temurin:11
   java -jar /jpf/build/RunJPF.jar RecordReaders.jpf   # about 12 minutes
   java -jar /jpf/build/RunJPF.jar WaitAndRead.jpf
   java -jar /jpf/build/RunJPF.jar TrimReentrancy.jpf
+  java -jar /jpf/build/RunJPF.jar WaitSnapshot.jpf
 '
 ```
 

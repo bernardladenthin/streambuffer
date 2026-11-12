@@ -20,7 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   middle of a read (`AvailLinearizable`). Writes of several bytes (one FIFO entry each), a `read()`
   reader next to a record reader, and `waitForAtLeast` called directly are modeled too: the current
   code checks clean, the code before F278 deadlocks with a waiter next to a reader, and a model
-  shows that the count `waitForAtLeast` returns next to a reader is a snapshot, as documented.
+  (`WaitSnapshot2`) found that `waitForAtLeast` could return fewer than requested on an open buffer
+  (fixed, see Fixed).
 - **ESC proves every obligation twice, with Z3 and with cvc5.** The formal-verification job runs the
   same 15 ESC proofs a second time with cvc5 1.3.2 (bundled with OpenJML) and requires the same
   count, so no proof rests on a single solver (the nonlinear ceiling division included). A falsified
@@ -294,6 +295,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `correctOffsetAndLengthToWrite(byte[], int, int)` → `validateOffsetAndLengthToWrite(byte[], int, int)`.
 
 ### Fixed
+- **`waitForAtLeast` could return fewer bytes than asked for on an open buffer.** Its waiting
+  branch checked `availableBytes` against the request and then read it a second time for the
+  result; a reader next to it could take bytes in between, and the call returned, say, 1 for
+  `waitForAtLeast(2)` while the stream was open, against its own JML postcondition
+  (`\result < bytes ==> isClosed()`). Both waiting branches (untimed and timed) now return the count
+  they checked, as the fast path already did; fewer than requested comes back only for a closed
+  stream (or, for the timed variant, when the time ran out). Found by the TLA+ model
+  (`WaitSnapshot2`, now the counterexample for the old code; `WaitChecked2` checks the fix) and
+  confirmed on the bytecode by the new JPF harness `WaitSnapshot.jpf`.
 - **`available()` could see a count between two FIFO entries during `read(b, off, len)`** (bug-hunt
   finding F279). The read copied all its bytes under the lock but lowered `availableBytes` (and
   counted `totalBytesRead`) per entry, so the lock-free readers of those counters (`available()`,

@@ -28,8 +28,8 @@ part of the Maven build and never touches the shipped jar.
   copy loop of `readIntoArray`), so a lock-free reader of `avail` can watch it; a
   writer's signal cannot come between a reader's increment of `waitingReaders` and its check under
   `waitLock`.
-- **Code versions**, chosen by constants; the code since F279 is `Protocol = "condition"`,
-  `ReCheck`, `AtomicRead`, `CountOnce`:
+- **Code versions**, chosen by constants; the current code is `Protocol = "condition"`,
+  `ReCheck`, `AtomicRead`, `CountOnce`, `CheckedReturn`:
   - `Protocol` — `"condition"`: the wait since bug-hunt finding F278 (a `Condition` on `waitLock`
     with `signalAll`, the `waitingReaders` count that lets a write skip the lock while nobody waits);
     `"semaphore"`: the wait before it (a `Semaphore` released only while it has no permit).
@@ -38,6 +38,8 @@ part of the Maven build and never touches the shipped jar.
   - `AtomicRead` — `read(b, off, len)` waits for all `len` bytes and takes them in one lock hold
     (since #212); without it the read took the first byte, released the lock and waited for the rest.
   - `CountOnce` — `availableBytes` lowered once per read after the copy (since F279), not per entry.
+  - `CheckedReturn` — `waitForAtLeast`'s waiting branch returns the count it checked (since
+    2026-11-12); without it, it read `availableBytes` again for the result.
 - **Fairness:** weak for the writer and the closer, strong for the readers (a free lock or permit
   that a reader keeps finding taken is eventually its; the JDK locks are not fair, so this is an
   assumption).
@@ -52,7 +54,7 @@ part of the Maven build and never touches the shipped jar.
 | `AvailLinearizable` | invariant | `availableBytes` is `written − committed`, or that minus the whole read in flight: a lock-free reader sees the count before or after a read, never from the middle of it (F279) |
 | `ReaderOrder` | invariant | each reader gets the bytes in the order they were written |
 | `RecordsWhole` | invariant | each read returns consecutive bytes, as many as it asked for, fewer only from a closed buffer; with readers of one size, a whole aligned record (#212) |
-| `WaitEnoughOrClosed` | invariant | `waitForAtLeast(n)` returns fewer than `n` only for a closed buffer — holds where nothing else takes bytes; next to a reader the result is a snapshot (`WaitSnapshot2`) |
+| `WaitEnoughOrClosed` | invariant | `waitForAtLeast(n)` returns fewer than `n` only for a closed buffer (its JML postcondition) |
 | `NoWriteAfterEof` | invariant | no write returns normally after a reader reported the end (F149) |
 | `EofOnlyWhenClosedAndEmpty` | invariant | only a closed buffer reports the end, and it stays empty |
 | `AllReadersFinish` | liveness | every read and every `waitForAtLeast` call returns, from every wait (no lost wake-up, F278) |
@@ -60,7 +62,7 @@ part of the Maven build and never touches the shipped jar.
 ## Models and results
 
 `check.sh` runs every model and compares it with its **expected** outcome. Last run 2026-11-11, TLC
-v1.7.4, about 90 s in total. Writes are single bytes unless the row says otherwise:
+v1.7.4, 16 models, about 90 s in total. Writes are single bytes unless the row says otherwise:
 
 | Model | Code | Reads | Threads | Expected and found |
 |---|---|---|---|---|
@@ -78,11 +80,14 @@ v1.7.4, about 90 s in total. Writes are single bytes unless the row says otherwi
 | `Mixed2` | since F279 | `read()` and `read(b, 0, 2)`; writes of 2 and 1 bytes | 2 | no error, 12,749 states |
 | `WaitAndRead2` | since F279 | `waitForAtLeast(2)` and `read()`; 1 byte | 2 | no error, 1,796 states (the JPF `WaitAndRead` scenario, liveness included) |
 | `SemaphoreWaitAndRead2` | before F278 | `waitForAtLeast(2)` and `read()`; 1 byte | 2 | deadlock: the wait took the only permit, the reader waits forever (F278) |
-| `WaitSnapshot2` | since F279 | `waitForAtLeast(2)` and `read()`; one 2-byte write | 2 | `WaitEnoughOrClosed` violated: the wait saw 2 bytes under `waitLock`, the reader took one, the wait returned 1 on an open buffer |
+| `WaitSnapshot2` | before `CheckedReturn` | `waitForAtLeast(2)` and `read()`; one 2-byte write | 2 | `WaitEnoughOrClosed` violated: the wait saw 2 bytes under `waitLock`, the reader took one, the wait returned 1 on an open buffer |
+| `WaitChecked2` | current | the same | 2 | no error, 2,432 states |
 
-`WaitSnapshot2` shows the documented contract, not a defect: the Javadoc of `waitForAtLeast` calls
-the result a snapshot that another reader may lower. The waiting branch reads `availableBytes` again
-for the return after its loop condition; the fast path returns the value it checked.
+`WaitSnapshot2` found a real defect (2026-11-11): the waiting branch of `waitForAtLeast` read
+`availableBytes` a second time for its result, after the loop condition had seen enough bytes, so
+`waitForAtLeast(2)` could return 1 on an open buffer, against its own JML postcondition. The JPF
+harness `WaitSnapshot.jpf` confirmed it on the bytecode (`src/test/jpf/README.md`); since the fix
+(`CheckedReturn`) the call returns the checked count, as its fast path did.
 
 A mutation check on 2026-11-11 (not committed): with `waitingReaders` never counted, every signal is
 skipped and TLC reports a deadlock in `Condition2`, `Records2`, `Chunks2`, `Mixed2` and
