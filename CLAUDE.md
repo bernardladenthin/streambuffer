@@ -136,8 +136,9 @@ deliberately not part of the synchronous Publish pipeline and never a required c
    pitfall"); `inductive.sh` fails otherwise, and on a constant init without a writer or a closer.
    **Trace validation** (A6, `tla-model` job): `net.ladenthin.streambuffer.trace` (test code) loads
    `StreamBuffer` through `TracingClassLoader`, which rewrites with ASM every access to
-   `availableBytes`, `streamClosed`, `waitingReaders`, `bufferLock`, `waitLock` and `modified`
-   into calls of `TraceRecorder`; `TraceGenerator` runs the scenarios and writes each trace as a
+   `availableBytes`, `streamClosed`, `waitingReaders`, `bufferLock`, `waitLock` and
+   `modified.await()`/`signalAll()` (not the timed `awaitNanos`, which no scenario calls) into
+   calls of `TraceRecorder`, with assertions enabled; `TraceGenerator` runs the scenarios and writes each trace as a
    TLA+ module, `trace.sh` checks them against `TraceStreamBuffer.tla` (every trace must be
    accepted) and `trace-controls.sh` checks that wrong models and corrupted traces are rejected.
    The lines name a method and its n-th access of a kind (`waitForAtLeast.getAvail#0`), so when

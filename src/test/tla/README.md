@@ -358,25 +358,25 @@ line. TLC 1.7.4 has no `POSTCONDITION`, so the verdict is the inverted invariant
 which TLC violates exactly then. Deadlock checking is off, as the paper says. A rejected trace
 prints the first line no placement could consume.
 
-**Results** (2026-11-12, local, TLC 1.7.4, `trace.sh`):
+**Results** (2026-11-13, local, TLC 1.7.4, `trace.sh`, assertions on in the traced class):
 
 | | |
 |---|---|
 | traces | 990, all accepted: 11 scenarios x 30 seeds x 3 yield rates (0, 32, 128 per 256 accesses) |
 | scenarios | the seven of `check.sh` (2 and 3 `read()` readers, records of 2 bytes from writes of 1 and 3, `read()` next to a record reader, `waitForAtLeast` next to a reader, also next to a 2-byte write), plus 3 `read()` readers of 8 bytes, 3 record readers of writes of 3 bytes, two waiters next to a reader, a waiter next to a reader of 3-byte records |
-| size | 80,742 lines, 81 per trace on average, up to 293; TLC up to 45,817 distinct states per trace (2,272 on average) |
-| time | about 2.3 s per trace with one TLC worker; the 990 in 9 min, 12 in parallel on 16 cores |
+| size | 81,998 lines, 82 per trace on average, up to 284; TLC up to 50,683 distinct states per trace (2,254 on average) |
+| time | about 2.3 s per trace with one TLC worker; the 990 in 10 min, 9 in parallel on 16 cores |
 
 **Negative controls** (`trace-controls.sh`, also in CI; in CI the two scripts take about 5 min). A validation that accepts everything shows
 nothing, so these must reject:
 
-| control | rejected (the CI run: 33 traces, 3 seeds, 2026-11-12) |
+| control | rejected (one CI-sized run: 33 traces, 3 seeds, 2026-11-12; the counts vary with the interleavings) |
 |---|---|
-| older code with fewer behaviours: `AtomicRead = FALSE` (before #212, the `Records*` traces) | 5 of 6 |
-| the semaphore wait (before F278) | 19 of 33 |
+| older code with fewer behaviours: `AtomicRead = FALSE` (before #212, the `Records*` traces) | 3 of 6 |
+| the semaphore wait (before F278) | 17 of 33 |
 | no re-check under `bufferLock` (`ReCheck = FALSE`, before F278, the `Bytes*` traces) | 7 of 9 |
-| a mutated model whose writer never signals | 13 of 33 |
-| every trace with a completed read, its first returned byte changed by one | 32 of 32 |
+| a mutated model whose writer never signals | 10 of 33 |
+| every trace with a completed read, its first returned byte changed by one | 33 of 33 |
 
 The traces a wrong model accepts are those that never reach the difference, e.g. no thread
 waited, so the semaphore and the missing signal never mattered. Two older versions accept every

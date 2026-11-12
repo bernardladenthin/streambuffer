@@ -9,8 +9,8 @@
 #   expect: "accept" (default): every trace must be accepted (the current code and model);
 #           "reject": at least one trace must be rejected (a negative control).
 # The traces come from net.ladenthin.streambuffer.trace.TraceGenerator (see README.md, "Trace
-# validation"); this script copies StreamBuffer.tla and TraceStreamBuffer.tla next to them unless
-# the directory has its own (a negative control brings a changed model).
+# validation"); this script copies StreamBuffer.tla and TraceStreamBuffer.tla next to them, but
+# keeps the directory's own with TRACE_OWN_MODEL=1 (a negative control brings a changed model).
 #
 # A trace is accepted when TLC violates the invariant TraceNotDone: some placement of the model's
 # steps consumed every line. Otherwise TLC ends without an error, and the last "line" it printed is
@@ -22,8 +22,12 @@ jar="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
 dir="$(cd "$2" && pwd)"
 expect="${3:-accept}"
 here="$(cd "$(dirname "$0")" && pwd)"
+# the current model, always (a copy left by an earlier run would check new traces against an old
+# model); only a negative control with a model of its own sets TRACE_OWN_MODEL=1
 for f in StreamBuffer.tla TraceStreamBuffer.tla; do
-  [ -f "$dir/$f" ] || cp "$here/$f" "$dir/$f"
+  if [ "${TRACE_OWN_MODEL:-0}" != 1 ] || [ ! -f "$dir/$f" ]; then
+    cp "$here/$f" "$dir/$f"
+  fi
 done
 
 # a temporary directory of its own: TLC extracts its standard modules into java.io.tmpdir, and two

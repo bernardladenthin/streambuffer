@@ -35,8 +35,8 @@ copy() {  # copy <name> <glob>: the traces matching the glob into $work/<name>
   echo "$work/$1"
 }
 
-control() {  # control <label> <dir>: at least one trace rejected
-  if out=$(bash "$here/trace.sh" "$jar" "$2" reject 2>&1); then
+control() {  # control <label> <dir> [own model]: at least one trace rejected
+  if out=$(TRACE_OWN_MODEL="${3:-0}" bash "$here/trace.sh" "$jar" "$2" reject 2>&1); then
     echo "OK    $1: $(printf '%s\n' "$out" | tail -n 1)"
   else
     echo "FAIL  $1: $(printf '%s\n' "$out" | tail -n 1)"
@@ -61,7 +61,7 @@ cp "$here/StreamBuffer.tla" "$d/"
 before=$(grep -c 'IF waiters # 0 THEN "siglock" ELSE WriterDone' "$d/StreamBuffer.tla")
 sed -i 's/IF waiters # 0 THEN "siglock" ELSE WriterDone/WriterDone/' "$d/StreamBuffer.tla"
 [ "$before" = 1 ] || { echo "FAIL  the writer's signal not found in StreamBuffer.tla"; exit 1; }
-control "mutant: the writer never signals" "$d"
+control "mutant: the writer never signals" "$d" 1
 
 d=$(copy corrupted "")
 corrupted=$("$py" -I - "$d" <<'EOF'

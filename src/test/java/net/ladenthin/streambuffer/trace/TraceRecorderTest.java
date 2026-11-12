@@ -52,6 +52,8 @@ class TraceRecorderTest {
                                 "requireNonClosed.getClosed#0=0",
                                 "writeFromArray.getAvail#0=0",
                                 "writeFromArray.putAvail#0=2",
+                                // assert availableBytes > 0 (the tracing loader enables assertions)
+                                "writeFromArray.getAvail#1=2",
                                 "writeFromArray.getAvail#2=2",
                                 "shouldTrim.getAvail#0=2",
                                 "writeFromArray.exit#0=0",

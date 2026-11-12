@@ -26,6 +26,8 @@ import org.objectweb.asm.Opcodes;
  * {@code waitersInc}, {@code waitersDec} ({@code waitingReaders}), {@code enter}/{@code exit}
  * ({@code bufferLock}, the only monitor), {@code wlock}/{@code wunlock} ({@code waitLock}),
  * {@code park}/{@code unpark} (before and after {@code modified.await()}) and {@code signalAll}.
+ * Not rewritten: the timed {@code modified.awaitNanos} of {@code waitForAtLeast(n, timeout,
+ * unit)}, which the model does not have and no scenario calls.
  */
 public final class TracingClassLoader extends ClassLoader {
 
@@ -33,9 +35,15 @@ public final class TracingClassLoader extends ClassLoader {
 
     private static final String REC = "net/ladenthin/streambuffer/trace/TraceRecorder";
 
-    /** Creates the loader; it delegates every class but {@code StreamBuffer*} to its parent. */
+    /**
+     * Creates the loader; it delegates every class but {@code StreamBuffer*} to its parent. Its
+     * classes run with assertions enabled whatever the JVM's flags are ({@code assert
+     * availableBytes > 0} reads the count), so a run gives the same lines under Surefire and
+     * under PIT, which starts its JVMs with {@code -ea}.
+     */
     public TracingClassLoader() {
         super(TracingClassLoader.class.getClassLoader());
+        setDefaultAssertionStatus(true);
     }
 
     @Override
