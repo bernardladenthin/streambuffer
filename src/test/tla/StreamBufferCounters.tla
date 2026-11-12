@@ -198,39 +198,50 @@ TypeOK ==
     /\ cpc \in {"close", "sigread", "siglock", "done"}
     /\ rpc \in [Readers -> States] /\ hold \in [Readers -> {0, 1}]
     /\ eofAt \in Int /\ eofAt >= -1 /\ eofAt <= Bytes
-    /\ waiters \in Nat /\ parked \subseteq Readers
+    /\ waiters \in Int /\ parked \subseteq Readers
     /\ wl \in 0..N /\ bl \in 0..N
 
-IndInv ==
-    /\ TypeOK
-    /\ Safety
-    \* bufferLock: held exactly by the reader deciding, copying or finishing
-    /\ \A r \in Readers : (rpc[r] \in {"decide", "copy", "finish"}) <=> bl = r
-    /\ \A r \in Readers : hold[r] = (IF rpc[r] = "finish" THEN 1 ELSE 0)
-    /\ Buffered >= 0
-    \* a reader copying has a byte to copy (the re-check under the lock)
-    /\ \A r \in Readers : rpc[r] = "copy" => Buffered >= 1
-    \* waitLock and the waiting machinery
-    /\ \A r \in Readers : (rpc[r] \in {"inc", "test"}) <=> wl = r
-    /\ parked = {r \in Readers : rpc[r] = "parked"}
-    /\ waiters = Cardinality({r \in Readers : rpc[r] \in {"test", "parked", "woken"}})
-    \* the end of the stream: only seen closed and empty, and no write follows a close
-    /\ \A r \in Readers : rpc[r] = "reread" => closed
-    /\ \A r \in Readers : rpc[r] = "ret0" => closed /\ avail = 0
-    /\ \A r \in Readers : rpc[r] = "done" => eofAt # -1
-    /\ (cpc = "close") <=> ~closed
-    /\ (wpc = "write" => w < Bytes)
-    /\ (wpc = "done" => w = Bytes)
-    /\ (wpc = "sigread" => w >= 1)
+(* The safety part of the inductive invariant. waitingReaders only steers whether a write or *)
+(* the close signals (liveness); safety does not depend on its value, so SafeInv leaves it    *)
+(* out and is inductive on its own -- the form a TLAPS proof for any N works with.            *)
+\* bufferLock: held exactly by the reader deciding, copying or finishing
+BufLock == \A r \in Readers : (rpc[r] \in {"decide", "copy", "finish"}) <=> bl = r
+HoldInv == \A r \in Readers : hold[r] = (IF rpc[r] = "finish" THEN 1 ELSE 0)
+BufNonNeg == Buffered >= 0
+\* a reader copying has a byte to copy (the re-check under the lock)
+CopyHasByte == \A r \in Readers : rpc[r] = "copy" => Buffered >= 1
+\* waitLock and the parked readers
+WaitLockInv == \A r \in Readers : (rpc[r] \in {"inc", "test"}) <=> wl = r
+ParkedInv == parked = {r \in Readers : rpc[r] = "parked"}
+\* the end of the stream: only seen closed and empty, and no write follows a close
+RereadClosed == \A r \in Readers : rpc[r] = "reread" => closed
+Ret0Empty == \A r \in Readers : rpc[r] = "ret0" => closed /\ avail = 0
+DoneEof == \A r \in Readers : rpc[r] = "done" => eofAt # -1
+CloserInv == (cpc = "close") <=> ~closed
+WriterInv == /\ (wpc = "write" => w < Bytes)
+             /\ (wpc = "done" => w = Bytes)
+             /\ (wpc = "sigread" => w >= 1)
 
-(* Apalache: the initial predicate of the inductive step -- every variable assigned over its  *)
-(* domain first, then IndInv as the constraint                                              *)
-IndInit ==
+SafeInv ==
+    /\ TypeOK /\ Safety
+    /\ BufLock /\ HoldInv /\ BufNonNeg /\ CopyHasByte
+    /\ WaitLockInv /\ ParkedInv
+    /\ RereadClosed /\ Ret0Empty /\ DoneEof /\ CloserInv /\ WriterInv
+
+(* The full inductive invariant: SafeInv and the waitingReaders count. *)
+IndInv ==
+    /\ SafeInv
+    /\ waiters = Cardinality({r \in Readers : rpc[r] \in {"test", "parked", "woken"}})
+
+(* Apalache: the initial predicate of an inductive step -- every variable assigned over its  *)
+(* domain first, then the invariant as the constraint                                       *)
+Domains ==
     /\ w \in Nat /\ t \in Nat /\ avail \in Nat /\ closed \in BOOLEAN
     /\ wpc \in {"write", "sigread", "siglock", "done", "failed"}
     /\ cpc \in {"close", "sigread", "siglock", "done"}
     /\ rpc \in [Readers -> States] /\ hold \in [Readers -> {0, 1}]
-    /\ eofAt \in Int /\ waiters \in Nat /\ parked \in SUBSET Readers
+    /\ eofAt \in Int /\ waiters \in Int /\ parked \in SUBSET Readers
     /\ wl \in 0..N /\ bl \in 0..N
-    /\ IndInv
+IndInit == Domains /\ IndInv
+SafeInit == Domains /\ SafeInv
 =============================================================================

@@ -533,9 +533,9 @@ verified in a separate CI pipeline
   and for `waitForAtLeast`. The same model with the older code fails exactly as that code did:
   before bug-hunt finding F278 an empty take and a reader waiting forever after the close or next to
   a waiter, before #212 a torn record, before F279 a count from the middle of a read. For `read()`,
-  an inductive invariant proven with **Apalache** removes the bound on the bytes: safety holds for
-  any number of written bytes (with up to 12 readers checked), and the detailed model is checked to
-  refine that abstraction.
+  an inductive invariant removes the bounds: **Apalache** checks it for up to 12 readers and any
+  number of bytes, a **TLAPS proof** shows it for any number of readers and bytes, and the detailed
+  model is checked to refine that abstraction.
 
 Concurrency itself is outside the deductive scope by JML doctrine (JML specifies sequential
 behavior; OpenJML does not model `volatile` or monitors) and is covered empirically by the

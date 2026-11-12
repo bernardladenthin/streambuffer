@@ -112,11 +112,13 @@ deliberately not part of the synchronous Publish pipeline and never a required c
    next to a waiter; #212: a torn record; F279: a count from the middle of a read; before
    `CheckedReturn`: `waitForAtLeast(2)` returning 1 on an open buffer). Constants `Protocol`,
    `ReCheck`, `AtomicRead`, `CountOnce`, `CheckedReturn` select the code version; `ChunkLen`,
-   `ByteReaders`, `WaitCallers` the scenario. `inductive.sh` (A13) proves an inductive invariant of a
-   counter abstraction of `read()` with Apalache v0.63.0 (fixed readers, any number of bytes) and
-   checks with TLC that the model refines it (`RefineCounters.tla`). `tla2tools.jar` v1.7.4 and
-   Apalache are pinned by SHA-256. When the wait/signal code changes, change the model with it, and
-   `StreamBufferCounters.tla` and the mapping in `RefineCounters.tla` too.
+   `ByteReaders`, `WaitCallers` the scenario. A13: a counter abstraction of `read()`
+   (`StreamBufferCounters.tla`) has an inductive invariant -- `inductive.sh` checks it with Apalache
+   v0.63.0 (fixed readers, any number of bytes) and checks with TLC that the model refines it
+   (`RefineCounters.tla`); `proof.sh` proves it with TLAPS for any number of readers
+   (`StreamBufferCountersProof.tla`, not in CI). `tla2tools.jar` v1.7.4 and Apalache are pinned by
+   SHA-256. When the wait/signal code changes, change the model with it, and
+   `StreamBufferCounters.tla`, the mapping in `RefineCounters.tla` and the proof too.
 
 The `@GuardedBy("bufferLock")` lock discipline is gated separately by Error Prone in the default
 build. The Checker Framework Lock Checker was evaluated as a further layer and deferred — see
