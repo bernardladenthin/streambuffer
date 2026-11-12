@@ -296,8 +296,11 @@ the current text.
 Start: `/loop Work on A6 as described in TODO.md, section "Run prompts" / "A6 trace validation", re-read on every iteration.`
 
 ````text
-Implement A6 trace validation for streambuffer fully automatically, locally only (no Vultr, no
-cloud).
+Implement A6 trace validation for streambuffer fully automatically and as independently as
+possible. It may take longer than one session; there is no deadline. Work locally by default; for
+heavy runs a rented instance (e.g. Vultr, see ../workspacePrivate/remote.md) is allowed for up to
+about 10-15 EUR in total: enter it in remote.md while it runs, delete it and sweep when done.
+Web search is allowed, and so is Chrome (Claude in Chrome) for pages a search does not show.
 
 Goal (TODO.md, roadmap A6): record the events of real runs and check them with TLC against the A5
 spec src/test/tla/StreamBuffer.tla (the approach of Cirstea, Kuppe, Merz et al. 2024, "Validating
@@ -331,8 +334,8 @@ Procedure:
    goes as one line under Known limits in TODO.md. At most one more round. Then exactly one push,
    open the PR (do not merge, no dispatch runs), watch CI; on a CI error of my own: cancel the
    run, commit the fix, push.
-7. Rules: no questions, decide by best practice and give the reason for each decision in the TODO
-   step. No force-push, no pkill -f, delete only with Remove-Item, no private data to external
+7. Rules: no questions (ask only for something that is the owner's to decide, such as more
+   budget), decide by best practice and give the reason for each decision in the TODO step. No force-push, no pkill -f, delete only with Remove-Item, no private data to external
    services. At the end remove the done steps from TODO.md; only the result stays.
 8. When the PR is open and CI is green: summary in German (what was decided and why, numbers,
    open points), then end the loop.
