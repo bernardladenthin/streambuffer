@@ -8,8 +8,8 @@
 #   inductive (IndInv /\ Next => IndInv'), for N readers and any number of written bytes (Bytes
 #   symbolic); it implies the safety properties. The same for SafeModInv of StreamBufferRecords.tla
 #   (read(b, 0, K): any record size K, any chunking of the writes, several writers) and of
-#   StreamBufferWait.tla (read(b, 0, K) readers next to waitForAtLeast(M) callers, any K and M,
-#   several writers).
+#   StreamBufferWait.tla (read(b, 0, K) readers next to waitForAtLeast callers, any K, each waiter
+#   with a request M[r] of its own, several writers).
 # - No existential of the abstractions ranges over a set a..b that can be empty: Apalache 0.63.0
 #   asserts a <= c <= b of \E c \in a..b as a global fact, so a range empty in some state cut
 #   every path through that state, whichever action it took (missed violations, an inductive step
@@ -96,13 +96,13 @@ done
 apa "records: torn record reachable with the two-phase read (before #212)" $R RecordsAligned ConstInitTwoPhase Init 16 Error
 
 W=StreamBufferWait
-for c in "" 22 31; do
-  case "$c" in "") label="1 reader, 1 waiter" ;; 22) label="2 readers, 2 waiters" ;; 31) label="3 readers, 1 waiter" ;; esac
+for c in "" 22 13 31; do
+  case "$c" in "") label="1 reader, 1 waiter" ;; 22) label="2 readers, 2 waiters" ;; 13) label="1 reader, 3 waiters" ;; 31) label="3 readers, 1 waiter" ;; esac
   label="$label, 2 writers"
-  apa "waitForAtLeast: init $label, any K and M" $W SafeModInv "ConstInit$c" Init 0 NoError
-  apa "waitForAtLeast: inductive $label, any K and M" $W SafeModInv "ConstInit$c" SafeModInit 1 NoError
+  apa "waitForAtLeast: init $label, any K, any M per waiter" $W SafeModInv "ConstInit$c" Init 0 NoError
+  apa "waitForAtLeast: inductive $label, any K, any M per waiter" $W SafeModInv "ConstInit$c" SafeModInit 1 NoError
 done
-# the code before CheckedReturn reaches waitForAtLeast(M) < M on an open buffer
+# the code before CheckedReturn reaches waitForAtLeast(M[r]) < M[r] on an open buffer
 apa "waitForAtLeast: short result on an open buffer reachable before CheckedReturn" $W WaitEnoughOrClosed ConstInitUnchecked Init 14 Error
 
 refine RefineCounters RefineCondition2

@@ -118,7 +118,7 @@ deliberately not part of the synchronous Publish pipeline and never a required c
    `inductive.sh` checks them with Apalache v0.63.0 (fixed readers, any bytes and record size) and
    checks with TLC that the model refines them (`RefineCounters.tla`, `RefineRecords.tla`,
    `RefineWait.tla`); `proof.sh` proves them with TLAPS for any number of readers (the three
-   `*Proof.tla`, not in CI). `tla2tools.jar` v1.7.4 and Apalache are pinned by SHA-256. When the wait/signal code changes, change the model
+   `*Proof.tla`; the scheduled/dispatch CI job `tlaps-proofs` builds tlapm from a pinned commit). `tla2tools.jar` v1.7.4 and Apalache are pinned by SHA-256. When the wait/signal code changes, change the model
    with it, and the abstractions, the mappings in the `Refine*.tla` modules and the proofs too.
    An existential in an abstraction may range only over `a..b` that is never empty
    (`1..Bytes`, `0..left[r]`, filter inside): Apalache 0.63.0 asserts the bounds of `\E c \in a..b`

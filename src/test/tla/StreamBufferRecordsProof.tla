@@ -466,7 +466,15 @@ LEMMA StepSafe == SafeInv /\ [Next]_vars => SafeInv'
         <4>1 avail = 0 /\ closed
           BY DEF Ret0Empty
         <4>2 InFlight \in Nat /\ (bl # None => InFlight = hold[bl])
-          BY DEF InFlight
+          <5>1 CASE bl = None
+            BY <5>1 DEF InFlight
+          <5>2 CASE bl # None
+            <6>1 bl \in Readers
+              BY <5>2 DEF TypeOK, Readers, None
+            <6> QED
+              BY <5>2, <6>1 DEF InFlight, TypeOK
+          <5> QED
+            BY <5>1, <5>2
         <4> QED
           BY <4>1, <4>2 DEF BufNonNeg, AvailLinearizable, Buffered
       <3>1 TypeOK'

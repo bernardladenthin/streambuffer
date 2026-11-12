@@ -120,8 +120,8 @@ therefore true by construction there, and the F279 defect is only shown by the b
 | Abstraction | Slice | Apalache (fixed N) | TLAPS (any N) | Refinement (TLC) | Older code reaches a violation |
 |---|---|---|---|---|---|
 | `StreamBufferCounters.tla` | `read()`, single-byte writes | N = 2, 3, 4, 8, 12; any bytes (`IndInv`) | `SafeInv`, 216 obligations | `Condition2`, `Condition3` | the empty take without the re-check (F278), 10 steps |
-| `StreamBufferRecords.tla` | `read(b, 0, K)`, several writers, any chunking | 2, 3, 4 readers with 2 writers, 2 readers with 3; any K and bytes (`SafeModInv`) | `SafeInv`, any readers and writers, 475 obligations | `Records2`, `Chunks2` | a torn record with the two-phase read (#212), 6 steps |
-| `StreamBufferWait.tla` | `waitForAtLeast(M)` next to `read(b, 0, K)` readers (`K = 1` is `read()`), several writers, any chunking | 1+1, 2+2, 3+1 readers+waiters with 2 writers; any K, M and bytes (`SafeModInv`) | `SafeInv`, any readers, waiters and writers, 599 obligations | `WaitAndRead2`, `WaitChecked2` | `waitForAtLeast(M) < M` on an open buffer before `CheckedReturn`, 11 steps |
+| `StreamBufferRecords.tla` | `read(b, 0, K)`, several writers, any chunking | 2, 3, 4 readers with 2 writers, 2 readers with 3; any K and bytes (`SafeModInv`) | `SafeInv`, any readers and writers, 484 obligations | `Records2`, `Chunks2` | a torn record with the two-phase read (#212), 6 steps |
+| `StreamBufferWait.tla` | `waitForAtLeast(M[r])` next to `read(b, 0, K)` readers (`K = 1` is `read()`), each waiter with a request of its own, several writers, any chunking | 1+1, 2+2, 1+3, 3+1 readers+waiters with 2 writers; any K, bytes and request per waiter (`SafeModInv`) | `SafeInv`, any readers, waiters and writers, 599 obligations | `WaitAndRead2`, `WaitChecked2` | `waitForAtLeast(M[r]) < M[r]` on an open buffer before `CheckedReturn`, 11 steps |
 
 **The abstractions.** The writer writes the bytes 1, 2, ... in order, and the FIFO hands them out
 in order, so the byte sequences reduce to counts:
@@ -194,8 +194,8 @@ above. With the ranges made non-empty, the torn record is found in 6 steps inste
 
 **Limits of A13:**
 - **Not covered:** one closer only (`close()` is idempotent, and every close path ends the same way);
-  waiters with different M; a waiter that calls more than once or also reads; record readers of different
-  sizes next to each other (TLC covers that, bounded, in `Mixed2`); liveness.
+  a waiter that calls more than once or also reads; record readers of different sizes next to each
+  other (TLC covers that, bounded, in `Mixed2`); liveness.
 - **Inherited from `StreamBuffer.tla`:**
   - A reader's lock-free read of `availableBytes` and of `streamClosed` is one step, where Java
     reads them one after the other. This is harmless for safety: `RereadClosed` needs only
@@ -206,9 +206,13 @@ above. With the ranges made non-empty, the torn record is found in 6 steps inste
   bounded configurations.
 - **The proofs** run every step as `OBVIOUS` under one large `USE DEF`, with `--stretch 3`. On a
   slower machine an obligation may time out. The obligation counts drift with prover versions.
-- **Not in CI yet:** `proof.sh`, because tlapm has no tagged 1.6 release and the rolling 1.6.0-pre
-  asset changes. The run of 2026-11-12 used the asset with SHA-256
-  `99db29f119cb6f43ffed653b212ba2d005e5bf8e242c53468876cb0d08da6bcc` (tlapm `ff40755`).
+- **CI:** tlapm has no tagged 1.6 release, and the rolling 1.6.0-pre asset is replaced with every
+  tlapm commit, so a checksum pin would break. The scheduled job `tlaps-proofs` therefore builds tlapm
+  from the pinned commit `ff40755` (opam, dune, `make release`, which also runs tlapm's own release
+  checks) and caches the tarball. Measured on 4 cores (2026-11-12, the job's steps replayed as a
+  user without the cache): build about 10 min including the Isabelle download, `proof.sh` 622-1042 s
+  in five runs, all obligations proved. The 1.6.0-pre asset of that commit had SHA-256
+  `99db29f119cb6f43ffed653b212ba2d005e5bf8e242c53468876cb0d08da6bcc`.
 
 ## Limits
 
@@ -237,12 +241,13 @@ sha256sum apalache.tgz   # a756e96af249bf33cd7629667a49472cb26ac8227c48583da139b
 mkdir apalache && tar xzf apalache.tgz -C apalache --strip-components=1
 bash src/test/tla/inductive.sh "$PWD/tla2tools.jar" "$PWD/apalache/bin/apalache-mc"
 
-# A13, any number of readers: TLAPS (Linux)
+# A13, any number of readers: TLAPS (Linux). The rolling asset follows tlapm main; CI builds the
+# pinned commit instead (the tlaps-proofs job of formal-verification.yml)
 curl -fLo tlapm.tgz https://github.com/tlaplus/tlapm/releases/download/1.6.0-pre/tlapm-1.6.0-pre-x86_64-linux-gnu.tar.gz
 mkdir tlapm && tar xzf tlapm.tgz -C tlapm --strip-components=1
 bash src/test/tla/proof.sh "$PWD/tlapm/bin/tlapm"
 ```
 
 One model by hand, with its error trace: `java -cp tla2tools.jar tlc2.TLC -config Semaphore2.cfg
-StreamBuffer.tla` from this directory. CI: the `tla-model` job of `formal-verification.yml`
-(scheduled or dispatched).
+StreamBuffer.tla` from this directory. CI: the `tla-model` job (`check.sh`, `inductive.sh`) and the
+`tlaps-proofs` job (`proof.sh`) of `formal-verification.yml`, both scheduled or dispatched.
