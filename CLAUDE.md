@@ -113,17 +113,24 @@ deliberately not part of the synchronous Publish pipeline and never a required c
    `CheckedReturn`: `waitForAtLeast(2)` returning 1 on an open buffer). Constants `Protocol`,
    `ReCheck`, `AtomicRead`, `CountOnce`, `CheckedReturn` select the code version; `ChunkLen`,
    `ByteReaders`, `WaitCallers` the scenario. A13: counter abstractions of `read()`
-   (`StreamBufferCounters.tla`), of fixed-size records (`StreamBufferRecords.tla`) and of
-   `waitForAtLeast` next to readers (`StreamBufferWait.tla`) have inductive invariants --
-   `inductive.sh` checks them with Apalache v0.63.0 (fixed readers, any bytes and record size) and
-   checks with TLC that the model refines them (`RefineCounters.tla`, `RefineRecords.tla`,
-   `RefineWait.tla`); `proof.sh` proves them with TLAPS for any number of readers (the three
-   `*Proof.tla`; the scheduled/dispatch CI job `tlaps-proofs` builds tlapm from a pinned commit). `tla2tools.jar` v1.7.4 and Apalache are pinned by SHA-256. When the wait/signal code changes, change the model
-   with it, and the abstractions, the mappings in the `Refine*.tla` modules and the proofs too.
+   (`StreamBufferCounters.tla`), of fixed-size records (`StreamBufferRecords.tla`, several writers
+   and closers) and of the calls of the reading side (`StreamBufferWait.tla`: every thread any
+   number of calls, each a read of its own size or a wait of its own request, several writers and
+   closers) have inductive invariants -- `inductive.sh` checks them with Apalache v0.63.0 (fixed
+   threads, any bytes, sizes, requests and calls) and checks with TLC that the model refines them
+   (`RefineCounters.tla`, `RefineRecords.tla`, `RefineWait.tla`); `proof.sh` proves them with TLAPS
+   for any number of threads (the `*Proof.tla`), and the liveness of `StreamBufferWait.tla`
+   (`StreamBufferWaitLive.tla`: with a closer, weak fairness of `Next` ends with all done;
+   `StreamBufferWaitLiveProof.tla` with `StreamBufferCountLemmas.tla` and
+   `StreamBufferWaitEnabled.tla`); the scheduled/dispatch CI job `tlaps-proofs` builds tlapm from a
+   pinned commit. `tla2tools.jar` v1.7.4 and Apalache are pinned by SHA-256. When the wait/signal
+   code changes, change the model with it, and the abstractions, the mappings in the `Refine*.tla`
+   modules and the proofs too (a new step of `StreamBufferWait.tla` also needs its rank in
+   `StreamBufferWaitLive.tla` and a witness action in `StreamBufferWaitEnabled.tla`).
    An existential in an abstraction may range only over `a..b` that is never empty
-   (`1..Bytes`, `0..left[r]`, filter inside): Apalache 0.63.0 asserts the bounds of `\E c \in a..b`
-   globally, so an empty range silently cuts executions (README, "An Apalache pitfall");
-   `inductive.sh` fails otherwise.
+   (`1..Bytes`, `0..left[r]`, `0..calls`, filter inside): Apalache 0.63.0 asserts the bounds of
+   `\E c \in a..b` globally, so an empty range silently cuts executions (README, "An Apalache
+   pitfall"); `inductive.sh` fails otherwise, and on a constant init without a writer or a closer.
 
 The `@GuardedBy("bufferLock")` lock discipline is gated separately by Error Prone in the default
 build. The Checker Framework Lock Checker was evaluated as a further layer and deferred — see

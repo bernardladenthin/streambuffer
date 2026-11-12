@@ -4,31 +4,39 @@
 
 --------------------------- MODULE StreamBufferWait ---------------------------
 (***************************************************************************)
-(* A counter abstraction of waitForAtLeast next to readers (TODO roadmap   *)
-(* A13): threads 1..NR call read(b, 0, K) until -1 (K = 1 is read()),       *)
-(* each thread r in NR+1..N calls waitForAtLeast(M[r]) once, each with its *)
-(* own request; NW writers sharing Bytes bytes in any chunking (one FIFO    *)
-(* entry per write), a closer; the current code (Condition, re-check under *)
-(* bufferLock, all the bytes of a read in one hold, the count lowered once  *)
-(* per read). K, every M[r] and Bytes stay symbolic. CheckedReturn: the     *)
-(* waiting branch returns the count it checked                              *)
-(* (since 2026-11-12); without it, it read availableBytes again.            *)
+(* A counter abstraction of the calls of the reading side (TODO roadmap    *)
+(* A13): every thread r in Threads makes a sequence of calls, each either  *)
+(* read(b, 0, K[r]) (K[r] = 1 is read()) or waitForAtLeast(M[r]), chosen  *)
+(* anew for every call, the threads sharing a budget of Calls0 further     *)
+(* calls (any number, any split; a thread may also stop); NW writers       *)
+(* sharing Bytes bytes in any chunking (one FIFO entry per write); NC      *)
+(* closers. The current code (Condition, re-check under bufferLock, all    *)
+(* the bytes of a read in one hold, the count lowered once per read).      *)
+(* Bytes, every K[r], every M[r] and the budget stay symbolic.             *)
+(* CheckedReturn: the waiting branch returns the count it checked (since   *)
+(* 2026-11-12); without it, it read availableBytes again.                  *)
 (***************************************************************************)
 EXTENDS Integers, FiniteSets
 
 CONSTANTS
+    \* @type: Set(Int);
+    Threads,
     \* @type: Int;
-    N,
+    None,
     \* @type: Int;
     NW,
     \* @type: Int;
-    NR,
+    NC,
     \* @type: Int;
     Bytes,
     \* @type: Int -> Int;
+    K,
+    \* @type: Int -> Int;
     M,
     \* @type: Int;
-    K,
+    RecLen,
+    \* @type: Int;
+    Calls0,
     \* @type: Bool;
     CheckedReturn
 
@@ -43,10 +51,14 @@ VARIABLES
     closed,
     \* @type: Int -> Str;
     wpc,
-    \* @type: Str;
+    \* @type: Int -> Str;
     cpc,
     \* @type: Int -> Str;
     rpc,
+    \* @type: Int -> Str;
+    op,
+    \* @type: Int;
+    calls,
     \* @type: Int -> Int;
     hold,
     \* @type: Int -> Int;
@@ -66,42 +78,61 @@ VARIABLES
     \* @type: Int;
     bl
 
-vars == <<w, t, avail, closed, wpc, cpc, rpc, hold, left, off, wres, wclosed, eofAt, parked, wl, bl>>
+vars == <<w, t, avail, closed, wpc, cpc, rpc, op, calls, hold, left, off, wres, wclosed, eofAt,
+          parked, wl, bl>>
 
-Threads == 1..N
 Writers == 1..NW
-IsWaiter(r) == r > NR
-None == 0
+Closers == 1..NC
+Ops == {"read", "wait"}
 Min(a, b) == IF a < b THEN a ELSE b
 
-\* Apalache: the constants of a check -- readers and waiters fixed; Bytes, K and each waiter's
-\* request M[r] symbolic (the function domain must be a literal range here: Threads is not
-\* constant yet inside --cinit)
-ConstInit == N = 2 /\ NW = 2 /\ NR = 1 /\ Bytes \in Nat /\ Bytes >= 1 /\ M \in [1..2 -> Nat] /\ (\A r \in 1..2 : M[r] >= 1) /\ K \in Nat /\ K >= 1 /\ CheckedReturn = TRUE
-ConstInit22 == N = 4 /\ NW = 2 /\ NR = 2 /\ Bytes \in Nat /\ Bytes >= 1 /\ M \in [1..4 -> Nat] /\ (\A r \in 1..4 : M[r] >= 1) /\ K \in Nat /\ K >= 1 /\ CheckedReturn = TRUE
-ConstInit13 == N = 4 /\ NW = 2 /\ NR = 1 /\ Bytes \in Nat /\ Bytes >= 1 /\ M \in [1..4 -> Nat] /\ (\A r \in 1..4 : M[r] >= 1) /\ K \in Nat /\ K >= 1 /\ CheckedReturn = TRUE
-ConstInit31 == N = 4 /\ NW = 2 /\ NR = 3 /\ Bytes \in Nat /\ Bytes >= 1 /\ M \in [1..4 -> Nat] /\ (\A r \in 1..4 : M[r] >= 1) /\ K \in Nat /\ K >= 1 /\ CheckedReturn = TRUE
+\* Apalache: the constants of a check -- the threads, writers and closers fixed; Bytes, every read
+\* size K[r] and request M[r] symbolic (the function domains are literal sets: a constant is not
+\* yet fixed inside --cinit)
+ConstInit == Threads = {1, 2} /\ None = 0 /\ NW = 2 /\ NC = 2 /\ Bytes \in Nat /\ Bytes >= 1
+             /\ K \in [{1, 2} -> Nat] /\ (\A r \in {1, 2} : K[r] >= 1)
+             /\ M \in [{1, 2} -> Nat] /\ (\A r \in {1, 2} : M[r] >= 1)
+             /\ RecLen \in Nat /\ RecLen >= 1 /\ Calls0 \in Nat /\ CheckedReturn = TRUE
+ConstInit3 == Threads = {1, 2, 3} /\ None = 0 /\ NW = 2 /\ NC = 2 /\ Bytes \in Nat /\ Bytes >= 1
+             /\ K \in [{1, 2, 3} -> Nat] /\ (\A r \in {1, 2, 3} : K[r] >= 1)
+             /\ M \in [{1, 2, 3} -> Nat] /\ (\A r \in {1, 2, 3} : M[r] >= 1)
+             /\ RecLen \in Nat /\ RecLen >= 1 /\ Calls0 \in Nat /\ CheckedReturn = TRUE
+ConstInit4 == Threads = {1, 2, 3, 4} /\ None = 0 /\ NW = 2 /\ NC = 2 /\ Bytes \in Nat /\ Bytes >= 1
+             /\ K \in [{1, 2, 3, 4} -> Nat] /\ (\A r \in {1, 2, 3, 4} : K[r] >= 1)
+             /\ M \in [{1, 2, 3, 4} -> Nat] /\ (\A r \in {1, 2, 3, 4} : M[r] >= 1)
+             /\ RecLen \in Nat /\ RecLen >= 1 /\ Calls0 \in Nat /\ CheckedReturn = TRUE
+ConstInitW3 == Threads = {1, 2} /\ None = 0 /\ NW = 3 /\ NC = 3 /\ Bytes \in Nat /\ Bytes >= 1
+             /\ K \in [{1, 2} -> Nat] /\ (\A r \in {1, 2} : K[r] >= 1)
+             /\ M \in [{1, 2} -> Nat] /\ (\A r \in {1, 2} : M[r] >= 1)
+             /\ RecLen \in Nat /\ RecLen >= 1 /\ Calls0 \in Nat /\ CheckedReturn = TRUE
 \* the waiting branch before 2026-11-12: the invariant is not inductive
-ConstInitUnchecked == N = 2 /\ NW = 2 /\ NR = 1 /\ Bytes \in Nat /\ Bytes >= 1 /\ M \in [1..2 -> Nat] /\ (\A r \in 1..2 : M[r] >= 1) /\ K \in Nat /\ K >= 1 /\ CheckedReturn = FALSE
+\* (one writer, one call per thread, so the bounded search stays short)
+ConstInitUnchecked == Threads = {1, 2} /\ None = 0 /\ NW = 1 /\ NC = 1 /\ Bytes \in Nat /\ Bytes >= 1
+             /\ K \in [{1, 2} -> Nat] /\ (\A r \in {1, 2} : K[r] >= 1)
+             /\ M \in [{1, 2} -> Nat] /\ (\A r \in {1, 2} : M[r] >= 1)
+             /\ RecLen \in Nat /\ RecLen >= 1 /\ Calls0 = 0 /\ CheckedReturn = FALSE
 
 States == {"start", "reread", "lockwait", "inc", "test", "parked", "woken", "wret", "lock",
            "decide", "copy", "finish", "ret0", "done", "nsee"}
 
 InFlight == IF bl = None THEN 0 ELSE hold[bl]
 Buffered == w - t - InFlight
-Want(r) == IF IsWaiter(r) THEN M[r] ELSE K
+Want(r) == IF op[r] = "wait" THEN M[r] ELSE K[r]
+\* every read asks for RecLen bytes: the case in which RecordsAligned speaks
+Uniform == \A r \in Threads : K[r] = RecLen
 
 Init ==
     /\ w = 0 /\ t = 0 /\ avail = 0 /\ closed = FALSE
-    /\ wpc = [i \in Writers |-> "write"] /\ cpc = "close"
-    /\ rpc = [r \in Threads |-> "start"] /\ hold = [r \in Threads |-> 0]
-    /\ left = [r \in Threads |-> 0] /\ off = 0
+    /\ wpc = [i \in Writers |-> "write"] /\ cpc = [c \in Closers |-> "close"]
+    /\ rpc = [r \in Threads |-> "start"] /\ op \in [Threads -> Ops] /\ calls = Calls0
+    /\ hold = [r \in Threads |-> 0] /\ left = [r \in Threads |-> 0] /\ off = 0
     /\ wres = [r \in Threads |-> -1] /\ wclosed = [r \in Threads |-> FALSE]
     /\ eofAt = -1 /\ parked = {} /\ wl = None /\ bl = None
 
 \* with nobody parked the signal does nothing and needs no lock (the code skips it then)
 WriterNext == IF w >= Bytes THEN "done" ELSE "write"
 WGo(i, s) == wpc' = [wpc EXCEPT ![i] = s]
+CGo(c, s) == cpc' = [cpc EXCEPT ![c] = s]
 WakeAll ==
     IF parked = {}
        THEN UNCHANGED <<rpc, parked>>
@@ -121,67 +152,83 @@ WriterWrite(i) ==
                   \* path through that state, whichever action it took (README, A13)
                   ELSE /\ \E c \in 1..Bytes : c <= Bytes - w /\ w' = w + c /\ avail' = avail + c
                        /\ WGo(i, "siglock")
-    /\ UNCHANGED <<left, off, t, closed, cpc, rpc, hold, wres, wclosed, eofAt, parked, wl, bl>>
+    /\ UNCHANGED <<off, t, closed, cpc, rpc, op, calls, hold, left, wres, wclosed, eofAt, parked,
+                   wl, bl>>
 
 WriterSigLock(i) ==
     /\ wpc[i] = "siglock" /\ WakeAll /\ WGo(i, WriterNext)
-    /\ UNCHANGED <<left, off, w, t, avail, closed, cpc, hold, wres, wclosed, eofAt, wl, bl>>
+    /\ UNCHANGED <<off, w, t, avail, closed, cpc, op, calls, hold, left, wres, wclosed, eofAt, wl,
+                   bl>>
 
-CloserClose ==
-    /\ cpc = "close" /\ bl = None /\ closed' = TRUE /\ cpc' = "siglock"
-    /\ UNCHANGED <<left, off, w, t, avail, wpc, rpc, hold, wres, wclosed, eofAt, parked, wl, bl>>
+\* closer c: close() sets streamClosed under bufferLock (again, if another closer was first)
+CloserClose(c) ==
+    /\ cpc[c] = "close" /\ bl = None /\ closed' = TRUE /\ CGo(c, "siglock")
+    /\ UNCHANGED <<off, w, t, avail, wpc, rpc, op, calls, hold, left, wres, wclosed, eofAt, parked,
+                   wl, bl>>
 
-CloserSigLock ==
-    /\ cpc = "siglock" /\ WakeAll /\ cpc' = "done"
-    /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, hold, wres, wclosed, eofAt, wl, bl>>
+CloserSigLock(c) ==
+    /\ cpc[c] = "siglock" /\ WakeAll /\ CGo(c, "done")
+    /\ UNCHANGED <<off, w, t, avail, closed, wpc, op, calls, hold, left, wres, wclosed, eofAt, wl,
+                   bl>>
 
 Go(r, s) == rpc' = [rpc EXCEPT ![r] = s]
 
-\* waitForAtLeast returns avail to w, noting streamClosed
+\* a call returns: the thread makes its next call (s = "start"), a read or a wait, while calls are
+\* left, or stops (s = "done"); the budget goes down by at least one per call (by any amount at a
+\* stop), so it bounds every finite program (0..calls is never empty, see WriterWrite)
+EndCall(r) ==
+    \E n \in 0..calls : \E o \in Ops : \E s \in {"start", "done"} :
+       /\ s = "start" => n < calls
+       /\ calls' = n /\ op' = [op EXCEPT ![r] = o] /\ Go(r, s)
+
+\* waitForAtLeast returns avail, noting streamClosed
 Return(r) ==
     /\ wres' = [wres EXCEPT ![r] = avail]
     /\ wclosed' = [wclosed EXCEPT ![r] = closed]
-    /\ Go(r, "done")
+    /\ EndCall(r)
 
-\* the lock-free fast path: enough bytes (a waiter returns the count it checked), closed, or wait
+\* the lock-free fast path: enough bytes (a wait returns the count it checked), closed, or wait
 ThreadStart(r) ==
     /\ rpc[r] = "start"
-    /\ IF avail >= Want(r) /\ IsWaiter(r)
+    /\ IF avail >= Want(r) /\ op[r] = "wait"
           THEN Return(r)
           ELSE /\ Go(r, IF avail >= Want(r) THEN "lock" ELSE IF closed THEN "reread" ELSE "lockwait")
-               /\ UNCHANGED <<wres, wclosed>>
+               /\ UNCHANGED <<wres, wclosed, op, calls>>
     /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, hold, eofAt, parked, wl, bl>>
 
 \* closed seen: the wait returns availableBytes, read again
 ThreadReread(r) ==
     /\ rpc[r] = "reread"
-    /\ IF IsWaiter(r)
+    /\ IF op[r] = "wait"
           THEN Return(r)
-          ELSE /\ Go(r, IF avail >= 1 THEN "lock" ELSE "ret0") /\ UNCHANGED <<wres, wclosed>>
+          ELSE /\ Go(r, IF avail >= 1 THEN "lock" ELSE "ret0")
+               /\ UNCHANGED <<wres, wclosed, op, calls>>
     /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, hold, eofAt, parked, wl, bl>>
 
 ThreadWaitLock(r) ==
     /\ rpc[r] \in {"lockwait", "woken"} /\ wl = None /\ wl' = r
     /\ Go(r, IF rpc[r] = "lockwait" THEN "inc" ELSE "test")
-    /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, hold, wres, wclosed, eofAt, parked, bl>>
+    /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, op, calls, hold, wres, wclosed, eofAt,
+                   parked, bl>>
 
 ThreadInc(r) ==
     /\ rpc[r] = "inc" /\ Go(r, "test")
-    /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, hold, wres, wclosed, eofAt, parked, wl, bl>>
+    /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, op, calls, hold, wres, wclosed, eofAt,
+                   parked, wl, bl>>
 
-\* the loop condition under waitLock; a waiter with enough bytes returns the checked count
+\* the loop condition under waitLock; a wait with enough bytes returns the checked count
 \* (CheckedReturn), else, once enough or closed, reads availableBytes again under waitLock
 ThreadTest(r) ==
     /\ rpc[r] = "test" /\ wl = r
     /\ IF avail >= Want(r) \/ closed
-          THEN IF IsWaiter(r)
+          THEN IF op[r] = "wait"
                   THEN IF CheckedReturn /\ avail >= Want(r)
                           THEN /\ Return(r) /\ wl' = None /\ UNCHANGED parked
-                          ELSE /\ Go(r, "wret") /\ UNCHANGED <<wl, parked, wres, wclosed>>
+                          ELSE /\ Go(r, "wret") /\ UNCHANGED <<wl, parked, wres, wclosed, op, calls>>
                   ELSE /\ Go(r, IF avail >= 1 THEN "lock" ELSE "ret0") /\ wl' = None
-                       /\ UNCHANGED <<parked, wres, wclosed>>
+                       /\ UNCHANGED <<parked, wres, wclosed, op, calls>>
           ELSE /\ parked' = parked \cup {r} /\ Go(r, "parked") /\ wl' = None
-               /\ UNCHANGED <<wres, wclosed>>
+               /\ UNCHANGED <<wres, wclosed, op, calls>>
     /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, hold, eofAt, bl>>
 
 ThreadWaitReturn(r) ==
@@ -190,16 +237,18 @@ ThreadWaitReturn(r) ==
 
 ThreadLock(r) ==
     /\ rpc[r] = "lock" /\ bl = None /\ bl' = r /\ Go(r, "decide")
-    /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, hold, wres, wclosed, eofAt, parked, wl>>
+    /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, op, calls, hold, wres, wclosed, eofAt,
+                   parked, wl>>
 
-\* under bufferLock (readers only): the re-check -- all K bytes, or what is left of a closed
+\* under bufferLock (reads only): the re-check -- all K[r] bytes, or what is left of a closed
 \* stream -- then copy, or release and wait again
 ThreadDecide(r) ==
     /\ rpc[r] = "decide" /\ bl = r
-    /\ IF avail >= K \/ (closed /\ avail > 0)
-          THEN /\ left' = [left EXCEPT ![r] = Min(avail, K)] /\ Go(r, "copy") /\ UNCHANGED bl
+    /\ IF avail >= K[r] \/ (closed /\ avail > 0)
+          THEN /\ left' = [left EXCEPT ![r] = Min(avail, K[r])] /\ Go(r, "copy") /\ UNCHANGED bl
           ELSE /\ Go(r, "start") /\ bl' = None /\ UNCHANGED left
-    /\ UNCHANGED <<off, w, t, avail, closed, wpc, cpc, hold, wres, wclosed, eofAt, parked, wl>>
+    /\ UNCHANGED <<off, w, t, avail, closed, wpc, cpc, op, calls, hold, wres, wclosed, eofAt,
+                   parked, wl>>
 
 \* under bufferLock: one turn of the copy loop takes k bytes, any k up to what is left
 ThreadCopy(r) ==
@@ -211,18 +260,22 @@ ThreadCopy(r) ==
                   /\ k >= 1 /\ k <= Buffered
                   /\ hold' = [hold EXCEPT ![r] = @ + k] /\ left' = [left EXCEPT ![r] = @ - k]
                   /\ Go(r, IF left[r] = k THEN "finish" ELSE "copy")
-    /\ UNCHANGED <<off, w, t, avail, closed, wpc, cpc, wres, wclosed, eofAt, parked, wl, bl>>
+    /\ UNCHANGED <<off, w, t, avail, closed, wpc, cpc, op, calls, wres, wclosed, eofAt, parked, wl,
+                   bl>>
 
+\* under bufferLock: commit the bytes and the count, release; the read returns
 ThreadFinish(r) ==
     /\ rpc[r] = "finish" /\ bl = r
     /\ t' = t + hold[r] /\ avail' = avail - hold[r] /\ hold' = [hold EXCEPT ![r] = 0]
-    \* ghost: the bytes of the current record committed so far (t % K, kept linear)
-    /\ off' = IF off + hold[r] >= K THEN off + hold[r] - K ELSE off + hold[r]
-    /\ bl' = None /\ Go(r, "start")
+    \* ghost: the bytes of the current RecLen-byte record committed so far (t % RecLen while
+    \* every read size is at most RecLen, kept linear)
+    /\ off' = IF off + hold[r] >= RecLen THEN off + hold[r] - RecLen ELSE off + hold[r]
+    /\ bl' = None /\ EndCall(r)
     /\ UNCHANGED <<left, w, closed, wpc, cpc, wres, wclosed, eofAt, parked, wl>>
 
+\* the read returns -1
 ThreadRet0(r) ==
-    /\ rpc[r] = "ret0" /\ eofAt' = (IF eofAt = -1 THEN w ELSE eofAt) /\ Go(r, "done")
+    /\ rpc[r] = "ret0" /\ eofAt' = (IF eofAt = -1 THEN w ELSE eofAt) /\ EndCall(r)
     /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, hold, wres, wclosed, parked, wl, bl>>
 
 ThreadStep(r) ==
@@ -232,7 +285,7 @@ ThreadStep(r) ==
 
 Next ==
     \/ \E i \in Writers : WriterWrite(i) \/ WriterSigLock(i)
-    \/ CloserClose \/ CloserSigLock
+    \/ \E c \in Closers : CloserClose(c) \/ CloserSigLock(c)
     \/ \E r \in Threads : ThreadStep(r)
 
 CSpec == Init /\ [][Next]_vars
@@ -241,67 +294,65 @@ CSpec == Init /\ [][Next]_vars
 (* Safety *)
 NoEmptyTake == \A r \in Threads : rpc[r] # "nsee"
 AvailLinearizable == avail = w - t
-\* waitForAtLeast(M[r]) returns fewer than M[r] only for a closed buffer (its JML postcondition)
-WaitEnoughOrClosed == \A r \in Threads : IsWaiter(r) /\ wres[r] # -1 => wres[r] >= M[r] \/ wclosed[r]
-\* every commit up to the close is a whole record (#212); off is t % K (OffMod)
-RecordsAligned == off = 0 \/ closed
-OffMod == off = t % K
+\* waitForAtLeast(M[r]) returns fewer than M[r] only for a closed buffer (its JML postcondition);
+\* wres[r] is what r's last wait returned
+WaitEnoughOrClosed == \A r \in Threads : wres[r] # -1 => wres[r] >= M[r] \/ wclosed[r]
+\* a read takes K[r] bytes in one hold, fewer only from a closed buffer (#212)
+WholeRead == \A r \in Threads : rpc[r] \in {"copy", "finish"} => hold[r] + left[r] = K[r] \/ closed
+\* with one read size, every commit up to the close is a whole record (#212); off is t % RecLen
+RecordsAligned == Uniform => off = 0 \/ closed
+OffMod == (\A r \in Threads : K[r] <= RecLen) => off = t % RecLen
 NoWriteAfterEof == eofAt # -1 => w = eofAt
 EofOnlyWhenClosedAndEmpty == eofAt # -1 => closed /\ Buffered = 0 /\ avail = 0
-Safety == NoEmptyTake /\ AvailLinearizable /\ WaitEnoughOrClosed /\ RecordsAligned /\ NoWriteAfterEof
-          /\ EofOnlyWhenClosedAndEmpty
+Safety == NoEmptyTake /\ AvailLinearizable /\ WaitEnoughOrClosed /\ WholeRead /\ RecordsAligned
+          /\ NoWriteAfterEof /\ EofOnlyWhenClosedAndEmpty
 
 TypeOK ==
     /\ w \in Nat /\ w <= Bytes /\ t \in Nat /\ t <= w /\ avail \in Nat /\ closed \in BOOLEAN
     /\ wpc \in [Writers -> {"write", "siglock", "done", "failed"}]
-    /\ cpc \in {"close", "siglock", "done"}
-    /\ rpc \in [Threads -> States] /\ hold \in [Threads -> Nat] /\ left \in [Threads -> Nat]
-    /\ off \in Nat /\ off < K
+    /\ cpc \in [Closers -> {"close", "siglock", "done"}]
+    /\ rpc \in [Threads -> States] /\ op \in [Threads -> Ops] /\ calls \in Nat
+    /\ hold \in [Threads -> Nat] /\ left \in [Threads -> Nat] /\ off \in Nat
     /\ wres \in [Threads -> Int] /\ wclosed \in [Threads -> BOOLEAN]
     /\ eofAt \in Int /\ eofAt >= -1 /\ eofAt <= Bytes
-    /\ parked \subseteq Threads /\ wl \in 0..N /\ bl \in 0..N
+    /\ parked \subseteq Threads /\ wl \in Threads \cup {None} /\ bl \in Threads \cup {None}
 
 BufLock == \A r \in Threads : (rpc[r] \in {"decide", "copy", "finish"}) <=> bl = r
-\* hold and left: zero outside a copy; in a copy hold + left is the read's size, at most K
+\* hold and left: zero outside a copy; in a copy hold + left is the read's size, at most K[r]
 HoldLeft == \A r \in Threads :
     /\ rpc[r] \notin {"copy", "finish"} => hold[r] = 0 /\ left[r] = 0
     /\ rpc[r] = "copy" => left[r] >= 1
     /\ rpc[r] = "finish" => left[r] = 0 /\ hold[r] >= 1
-    /\ rpc[r] \in {"copy", "finish"} => hold[r] + left[r] <= K
+    /\ rpc[r] \in {"copy", "finish"} => hold[r] + left[r] <= K[r]
 BufNonNeg == Buffered >= 0
 \* a reader copying has the bytes still to copy (the re-check under the lock)
 CopyHasBytes == \A r \in Threads : rpc[r] = "copy" => Buffered >= left[r]
-\* a whole record per read, fewer only from a closed buffer (#212)
-WholeRead == \A r \in Threads : rpc[r] \in {"copy", "finish"} => hold[r] + left[r] = K \/ closed
-\* a waiter never takes bufferLock; it returns with enough bytes, or once it saw the close
-WaiterStates == \A r \in Threads : IsWaiter(r) =>
-    /\ rpc[r] \in {"start", "reread", "lockwait", "inc", "test", "parked", "woken", "wret", "done"}
-    /\ (rpc[r] = "done") <=> wres[r] # -1
-    /\ (rpc[r] = "wret" => closed)
-ReaderStates == \A r \in Threads : ~IsWaiter(r) => rpc[r] \notin {"wret"} /\ wres[r] = -1
+\* a wait never takes bufferLock, a read never returns through the waiting branch
+OpStates == \A r \in Threads :
+    /\ rpc[r] = "wret" => op[r] = "wait" /\ closed
+    /\ rpc[r] \in {"lock", "decide", "copy", "finish", "ret0"} => op[r] = "read"
 WaitLockInv == \A r \in Threads : (rpc[r] \in {"inc", "test", "wret"}) <=> wl = r
 ParkedInv == parked = {r \in Threads : rpc[r] = "parked"}
 RereadClosed == \A r \in Threads : rpc[r] = "reread" => closed
 Ret0Empty == \A r \in Threads : rpc[r] = "ret0" => closed /\ avail = 0
-DoneEof == \A r \in Threads : ~IsWaiter(r) /\ rpc[r] = "done" => eofAt # -1
-CloserInv == (cpc = "close") <=> ~closed
+CloserInv == closed <=> \E c \in Closers : cpc[c] # "close"
 WriterInv == \A i \in Writers : /\ (wpc[i] = "done" => w = Bytes)
                                  /\ (wpc[i] = "siglock" => w >= 1)
 
 SafeInv ==
     /\ TypeOK /\ Safety
-    /\ BufLock /\ HoldLeft /\ BufNonNeg /\ CopyHasBytes /\ WholeRead
-    /\ WaiterStates /\ ReaderStates /\ WaitLockInv /\ ParkedInv
-    /\ RereadClosed /\ Ret0Empty /\ DoneEof /\ CloserInv /\ WriterInv
+    /\ BufLock /\ HoldLeft /\ BufNonNeg /\ CopyHasBytes /\ OpStates /\ WaitLockInv /\ ParkedInv
+    /\ RereadClosed /\ Ret0Empty /\ CloserInv /\ WriterInv
 
 Domains ==
     /\ w \in Nat /\ t \in Nat /\ avail \in Nat /\ closed \in BOOLEAN
     /\ wpc \in [Writers -> {"write", "siglock", "done", "failed"}]
-    /\ cpc \in {"close", "siglock", "done"}
-    /\ rpc \in [Threads -> States] /\ hold \in [Threads -> Nat] /\ left \in [Threads -> Nat]
-    /\ off \in Nat
+    /\ cpc \in [Closers -> {"close", "siglock", "done"}]
+    /\ rpc \in [Threads -> States] /\ op \in [Threads -> Ops] /\ calls \in Nat
+    /\ hold \in [Threads -> Nat] /\ left \in [Threads -> Nat] /\ off \in Nat
     /\ wres \in [Threads -> Int] /\ wclosed \in [Threads -> BOOLEAN]
-    /\ eofAt \in Int /\ parked \in SUBSET Threads /\ wl \in 0..N /\ bl \in 0..N
+    /\ eofAt \in Int /\ parked \in SUBSET Threads
+    /\ wl \in Threads \cup {None} /\ bl \in Threads \cup {None}
 SafeInit == Domains /\ SafeInv
 \* Apalache: SafeInv and the ghost's meaning, inductive together
 SafeModInv == SafeInv /\ OffMod

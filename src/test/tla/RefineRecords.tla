@@ -18,9 +18,9 @@ MapSig(s) == IF s = "sigread" THEN "siglock" ELSE s
 MapLock(x) == IF x = None THEN 0 ELSE Idx[x]
 
 R == INSTANCE StreamBufferRecords WITH
-        N <- N0, NW <- 1, Bytes <- Bytes, K <- ReadLen, AtomicRead <- AtomicRead,
+        N <- N0, NW <- 1, NC <- 1, Bytes <- Bytes, K <- ReadLen, AtomicRead <- AtomicRead,
         w <- Len(written), t <- Len(taken), avail <- avail, closed <- closed,
-        wpc <- [i \in 1..1 |-> MapSig(wpc)], cpc <- MapSig(cpc),
+        wpc <- [i \in 1..1 |-> MapSig(wpc)], cpc <- [c \in 1..1 |-> MapSig(cpc)],
         rpc <- [i \in 1..N0 |-> MapPc(rpc[Rd(i)])],
         hold <- [i \in 1..N0 |-> Len(hold[Rd(i)])],
         left <- [i \in 1..N0 |-> left[Rd(i)]],

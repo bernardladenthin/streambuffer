@@ -8,29 +8,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Unbounded safety of three slices of the protocol (roadmap A13).** Counter abstractions of
+- **Unbounded safety and liveness of the protocol (roadmap A13).** Counter abstractions of
   `read()` (`StreamBufferCounters.tla`), of fixed-size records with `read(b, off, len)`
-  (`StreamBufferRecords.tla`, any chunking of the writes) and of `waitForAtLeast` next to
-  `read(b, off, len)` record readers (`StreamBufferWait.tla`) have inductive invariants containing
-  the safety properties:
+  (`StreamBufferRecords.tla`, any chunking of the writes, several writers and closers) and of the
+  calls of the reading side (`StreamBufferWait.tla`: every thread any number of calls, each a
+  `read(b, off, len)` of its own size or a `waitForAtLeast` of its own request, several writers and
+  closers) have inductive invariants containing the safety properties:
   - **Safety properties:** no empty take, a linearizable count, no write after the end, the end only
-    from a closed and empty buffer; whole aligned records up to the close; `waitForAtLeast(M)` short
-    only for a closed buffer, with each waiter's M of its own.
-  - **Apalache v0.63.0** (pinned by SHA-256, `inductive.sh`) checks them for fixed reader counts
-    (up to 12 for `read()`) with the bytes, the record size and each waiter's M symbolic.
-  - **TLAPS proofs** (`proof.sh`: 216, 484 and 599 obligations) show them for any number of
-    readers, and for records and `waitForAtLeast` for any number of writers too.
+    from a closed and empty buffer; whole aligned records up to the close; every read whole, fewer
+    bytes only from a closed buffer; `waitForAtLeast(M)` short only for a closed buffer.
+  - **Apalache v0.63.0** (pinned by SHA-256, `inductive.sh`) checks them for fixed thread counts
+    (up to 12 for `read()`) with the bytes, the read sizes, the requests and the budget of calls
+    symbolic.
+  - **TLAPS proofs** (`proof.sh`: 216, 488 and 577 obligations) show them for any number of
+    threads, writers and closers.
+  - **Liveness** (`StreamBufferWaitLive.tla`): with at least one closer, every behaviour in which
+    the system does not halt while a step is possible (weak fairness of the whole, none per thread
+    or lock) ends with every call returned and every thread, writer and closer done, for any
+    numbers of them and any finite programs. TLAPS proves it (363 + 628 + 919 obligations): a
+    natural number goes down with every step, and a step is possible until all are done; Apalache
+    checks the same parts for 2 and 3 threads.
   - **An Apalache soundness bug, worked around:** Apalache 0.63.0 asserts the bounds of a
     skolemized `\E c \in a..b` globally, so a range that is empty in some state silently cuts every
     execution through it. The abstractions use ranges that are never empty, and `inductive.sh`
-    rejects any other.
+    rejects any other, and any constant init without a writer or a closer (`1..NW`, `1..NC`
+    behind an operator).
   - **Older code:** each older version reaches a violation of the property itself in a bounded
     search from the initial state: the empty take without the F278 re-check, a torn record with
     the two-phase read before #212, a short `waitForAtLeast` result before this release's fix.
   - **Link to the code:** TLC checks that the detailed `StreamBuffer.tla` refines each abstraction,
-    for its bounded configurations (2 and 3 readers). The unbounded results are about the
-    abstractions; the abstractions build in the count lowered once per read, so F279 stays shown by
-    the bounded model only.
+    for its bounded configurations (2 and 3 readers; `StreamBufferWait.tla` in all seven
+    configurations of the current code). The unbounded results are about the abstractions; the
+    abstractions build in the count lowered once per read, so F279 stays shown by the bounded model
+    only.
   - **CI:** the scheduled `tla-model` job runs Apalache and the refinements, the scheduled
     `tlaps-proofs` job the TLAPS proofs, with tlapm built from a pinned commit (no tagged 1.6
     release exists; the rolling 1.6.0-pre asset is replaced with every tlapm commit).
