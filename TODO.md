@@ -106,38 +106,44 @@ annotated, so everything below is genuinely still open.
     would cut that further; possible follow-up.
   - **A9 — Functional proof of the sequential instance core (long-term, months).** The parked
     "Deeper ESC" item below; OpenJML first, KeY only for goals where Z3 answers "unknown".
-  - **A13 — Unbounded safety of the A5 model. Done for `read()`, records and `waitForAtLeast`
-    (2026-11-12).** Counter abstractions with inductive invariants: `StreamBufferCounters.tla`
-    (`read()`), `StreamBufferRecords.tla` (`read(b, 0, K)`, any chunking of the writes) and
-    `StreamBufferWait.tla` (`waitForAtLeast(M[r])` next to `read(b, 0, K)` readers, each waiter
-    with a request of its own).
-    - **Apalache v0.63.0** (`inductive.sh`): fixed reader counts, with the bytes, the record size
-      and M symbolic.
-    - **TLAPS** (`proof.sh`): any number of readers, and for records and `waitForAtLeast` any
-      number of writers (sharing the bytes); 216, 484 and 599 obligations.
+  - **A13 — Unbounded safety and liveness of the A5 model. Done but for the refinement for any
+    number of readers (2026-11-12).** Counter abstractions with inductive invariants:
+    `StreamBufferCounters.tla` (`read()`), `StreamBufferRecords.tla` (`read(b, 0, K)`, any chunking
+    of the writes, several writers and closers) and `StreamBufferWait.tla`: every thread any number
+    of calls, each a `read(b, 0, K[r])` or a `waitForAtLeast(M[r])` with a read size and request of
+    its own, several writers and closers.
+    - **Apalache v0.63.0** (`inductive.sh`): fixed thread counts, with the bytes, the read sizes,
+      the requests and the budget of calls symbolic.
+    - **TLAPS** (`proof.sh`): any number of threads, writers and closers; 216, 488 and 577
+      obligations.
+    - **Liveness** (`StreamBufferWaitLive.tla`): with at least one closer, every behaviour with weak
+      fairness of `Next` ends with every call returned and all done, for any number of threads,
+      writers and closers and any finite programs (`FairSpec => <>AllDone`; TLAPS 363 + 628 + 919
+      obligations, Apalache for 2 and 3 threads). A natural number goes down with every step, and
+      a step is possible until all are done (README, "Liveness").
     - **Apalache soundness bug, found 2026-11-12:** a skolemized `\E c \in a..b` asserts its bounds
       globally, so a range empty in some state cut every execution through it. Missed violations,
       and inductive steps that skipped pre-states (`w = Bytes`, no reader copying). The
       abstractions now use ranges that are never empty, and `inductive.sh` rejects any other
-      (README "An Apalache pitfall"). Open: the upstream issue (a 15-line reproduction; Apalache
-      wants the issue confirmed before a fix PR, and issue and PR text written by a person), then
-      the prepared fix (`QuantRule.skolemExistsInRange`, the bounds as a conjunct of the result,
-      with a regression test that fails on 0.63.0).
+      (README "An Apalache pitfall"). Reported as
+      [apalache#3503](https://github.com/apalache-mc/apalache/issues/3503) (2026-11-12, a 15-line
+      reproduction); waiting for a maintainer to confirm it, since Apalache wants a confirmed issue
+      before a fix PR. Then the prepared fix (`QuantRule.skolemExistsInRange`, the bounds as a
+      conjunct of the result, with a regression test that fails on 0.63.0). The workaround and the
+      guard stay until a release has the fix.
     - **Older code:** each older version reaches a violation of the safety property itself in a
       bounded search from `Init`: without the F278 re-check, with the two-phase read before #212,
       and with `waitForAtLeast` reading the count again before `CheckedReturn`.
     - **Link to the code:** TLC checks that `StreamBuffer.tla` refines all three
-      (`RefineCounters.tla`, `RefineRecords.tla`, `RefineWait.tla`), for its bounded
-      configurations only. The unbounded results are about the abstractions.
+      (`RefineCounters.tla`, `RefineRecords.tla`, `RefineWait.tla`; `StreamBufferWait.tla` in all
+      seven configurations of the current code), for its bounded configurations only. The
+      unbounded results are about the abstractions.
     - Details and limits in `src/test/tla/README.md`.
 
     Still open:
-    - one closer only (several writers are covered by the records and wait abstractions);
-    - a waiter that calls more than once or also reads;
-    - record readers of different sizes next to each other (the detailed model covers that,
-      bounded);
-    - liveness;
     - a refinement argument for any number of readers;
+    - liveness with a thread that calls forever (needs lock fairness, which the JDK does not
+      promise);
 
     The detailed model covers `read()`, fixed-size `read(b, off, len)` (#212, F279), writes of
     several bytes, readers of two sizes and `waitForAtLeast` (the A5 rest, 2026-11-11).

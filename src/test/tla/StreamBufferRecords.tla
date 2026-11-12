@@ -7,12 +7,12 @@
 (* A counter abstraction of the record configuration of StreamBuffer.tla   *)
 (* (TODO roadmap A13): readers 1..N calling read(b, 0, K) until -1, NW     *)
 (* writers sharing Bytes bytes, writes of any size (one FIFO entry each),   *)
-(* a closer, the                                                            *)
-(* code since F279 (Condition, re-check under bufferLock, the count lowered *)
-(* once per read). Counts as in StreamBufferCounters: w written, t          *)
-(* committed; per reader hold (bytes copied in this lock hold), left (bytes *)
-(* still to copy in it) and cur (bytes of the current call committed before,*)
-(* only for the two-phase read before #212). Bytes and K stay symbolic.     *)
+(* NC closers, the code since F279 (Condition, re-check under bufferLock,   *)
+(* the count lowered once per read). Counts as in StreamBufferCounters: w   *)
+(* written, t committed; per reader hold (bytes copied in this lock hold),  *)
+(* left (bytes still to copy in it) and cur (bytes of the current call      *)
+(* committed before, only for the two-phase read before #212). Bytes and K *)
+(* stay symbolic.                                                           *)
 (* AtomicRead: read(b, off, len) takes all its bytes in one hold (#212);    *)
 (* without it, the first byte, then the rest in a second hold.              *)
 (***************************************************************************)
@@ -23,6 +23,8 @@ CONSTANTS
     N,
     \* @type: Int;
     NW,
+    \* @type: Int;
+    NC,
     \* @type: Int;
     Bytes,
     \* @type: Int;
@@ -41,7 +43,7 @@ VARIABLES
     closed,
     \* @type: Int -> Str;
     wpc,
-    \* @type: Str;
+    \* @type: Int -> Str;
     cpc,
     \* @type: Int -> Str;
     rpc,
@@ -66,16 +68,17 @@ vars == <<w, t, avail, closed, wpc, cpc, rpc, hold, left, cur, off, eofAt, parke
 
 Readers == 1..N
 Writers == 1..NW
+Closers == 1..NC
 None == 0
 Min(a, b) == IF a < b THEN a ELSE b
 
 \* Apalache: the constants of a check -- N readers, any record size, any number of bytes
-ConstInit == N = 2 /\ NW = 2 /\ Bytes \in Nat /\ Bytes >= 1 /\ K \in Nat /\ K >= 1 /\ AtomicRead = TRUE
-ConstInit3 == N = 3 /\ NW = 2 /\ Bytes \in Nat /\ Bytes >= 1 /\ K \in Nat /\ K >= 1 /\ AtomicRead = TRUE
-ConstInit4 == N = 4 /\ NW = 2 /\ Bytes \in Nat /\ Bytes >= 1 /\ K \in Nat /\ K >= 1 /\ AtomicRead = TRUE
-ConstInitW3 == N = 2 /\ NW = 3 /\ Bytes \in Nat /\ Bytes >= 1 /\ K \in Nat /\ K >= 1 /\ AtomicRead = TRUE
+ConstInit == N = 2 /\ NW = 2 /\ NC = 2 /\ Bytes \in Nat /\ Bytes >= 1 /\ K \in Nat /\ K >= 1 /\ AtomicRead = TRUE
+ConstInit3 == N = 3 /\ NW = 2 /\ NC = 2 /\ Bytes \in Nat /\ Bytes >= 1 /\ K \in Nat /\ K >= 1 /\ AtomicRead = TRUE
+ConstInit4 == N = 4 /\ NW = 2 /\ NC = 2 /\ Bytes \in Nat /\ Bytes >= 1 /\ K \in Nat /\ K >= 1 /\ AtomicRead = TRUE
+ConstInitW3 == N = 2 /\ NW = 3 /\ NC = 3 /\ Bytes \in Nat /\ Bytes >= 1 /\ K \in Nat /\ K >= 1 /\ AtomicRead = TRUE
 \* the read before #212 (two phases): the invariant is not inductive
-ConstInitTwoPhase == N = 2 /\ NW = 2 /\ Bytes \in Nat /\ Bytes >= 1 /\ K \in Nat /\ K >= 2 /\ AtomicRead = FALSE
+ConstInitTwoPhase == N = 2 /\ NW = 2 /\ NC = 1 /\ Bytes \in Nat /\ Bytes >= 1 /\ K \in Nat /\ K >= 2 /\ AtomicRead = FALSE
 
 States == {"start", "reread", "lockwait", "inc", "test", "parked", "woken", "lock",
            "decide", "copy", "finish", "ret0", "done", "nsee"}
@@ -87,7 +90,7 @@ Want(r) == IF AtomicRead THEN K ELSE IF cur[r] = 0 THEN 1 ELSE K - cur[r]
 
 Init ==
     /\ w = 0 /\ t = 0 /\ avail = 0 /\ closed = FALSE
-    /\ wpc = [i \in Writers |-> "write"] /\ cpc = "close"
+    /\ wpc = [i \in Writers |-> "write"] /\ cpc = [c \in Closers |-> "close"]
     /\ rpc = [r \in Readers |-> "start"]
     /\ hold = [r \in Readers |-> 0] /\ left = [r \in Readers |-> 0] /\ cur = [r \in Readers |-> 0]
     /\ off = 0 /\ eofAt = -1 /\ parked = {} /\ wl = None /\ bl = None
@@ -97,6 +100,7 @@ Init ==
 \* code skips it then, waitingReaders being 0), else it takes waitLock and wakes every parked reader
 WriterNext == IF w >= Bytes THEN "done" ELSE "write"
 WGo(i, s) == wpc' = [wpc EXCEPT ![i] = s]
+CGo(c, s) == cpc' = [cpc EXCEPT ![c] = s]
 WakeAll ==
     IF parked = {}
        THEN UNCHANGED <<rpc, parked>>
@@ -122,12 +126,13 @@ WriterSigLock(i) ==
     /\ wpc[i] = "siglock" /\ WakeAll /\ WGo(i, WriterNext)
     /\ UNCHANGED <<off, w, t, avail, closed, cpc, hold, left, cur, eofAt, wl, bl>>
 
-CloserClose ==
-    /\ cpc = "close" /\ bl = None /\ closed' = TRUE /\ cpc' = "siglock"
+\* closer c: close() sets streamClosed under bufferLock (again, if another closer was first)
+CloserClose(c) ==
+    /\ cpc[c] = "close" /\ bl = None /\ closed' = TRUE /\ CGo(c, "siglock")
     /\ UNCHANGED <<off, w, t, avail, wpc, rpc, hold, left, cur, eofAt, parked, wl, bl>>
 
-CloserSigLock ==
-    /\ cpc = "siglock" /\ WakeAll /\ cpc' = "done"
+CloserSigLock(c) ==
+    /\ cpc[c] = "siglock" /\ WakeAll /\ CGo(c, "done")
     /\ UNCHANGED <<off, w, t, avail, closed, wpc, hold, left, cur, eofAt, wl, bl>>
 
 Go(r, s) == rpc' = [rpc EXCEPT ![r] = s]
@@ -211,7 +216,7 @@ ReaderStep(r) ==
 
 Next ==
     \/ \E i \in Writers : WriterWrite(i) \/ WriterSigLock(i)
-    \/ CloserClose \/ CloserSigLock
+    \/ \E c \in Closers : CloserClose(c) \/ CloserSigLock(c)
     \/ \E r \in Readers : ReaderStep(r)
 
 CSpec == Init /\ [][Next]_vars
@@ -232,7 +237,7 @@ Safety == NoEmptyTake /\ AvailLinearizable /\ RecordsAligned /\ NoWriteAfterEof
 TypeOK ==
     /\ w \in Nat /\ w <= Bytes /\ t \in Nat /\ t <= w /\ avail \in Nat /\ closed \in BOOLEAN
     /\ wpc \in [Writers -> {"write", "siglock", "done", "failed"}]
-    /\ cpc \in {"close", "siglock", "done"}
+    /\ cpc \in [Closers -> {"close", "siglock", "done"}]
     /\ rpc \in [Readers -> States]
     /\ hold \in [Readers -> Nat] /\ left \in [Readers -> Nat] /\ cur \in [Readers -> Nat]
     /\ off \in Nat /\ off < K
@@ -257,7 +262,7 @@ ParkedInv == parked = {r \in Readers : rpc[r] = "parked"}
 RereadClosed == \A r \in Readers : rpc[r] = "reread" => closed
 Ret0Empty == \A r \in Readers : rpc[r] = "ret0" => closed /\ avail = 0
 DoneEof == \A r \in Readers : rpc[r] = "done" => eofAt # -1
-CloserInv == (cpc = "close") <=> ~closed
+CloserInv == closed <=> \E c \in Closers : cpc[c] # "close"
 WriterInv == \A i \in Writers : /\ (wpc[i] = "done" => w = Bytes)
                                  /\ (wpc[i] = "siglock" => w >= 1)
 
@@ -270,7 +275,7 @@ SafeInv ==
 Domains ==
     /\ w \in Nat /\ t \in Nat /\ avail \in Nat /\ closed \in BOOLEAN
     /\ wpc \in [Writers -> {"write", "siglock", "done", "failed"}]
-    /\ cpc \in {"close", "siglock", "done"}
+    /\ cpc \in [Closers -> {"close", "siglock", "done"}]
     /\ rpc \in [Readers -> States]
     /\ hold \in [Readers -> Nat] /\ left \in [Readers -> Nat] /\ cur \in [Readers -> Nat]
     /\ off \in Nat /\ eofAt \in Int /\ parked \in SUBSET Readers /\ wl \in 0..N /\ bl \in 0..N

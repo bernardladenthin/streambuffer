@@ -7,9 +7,9 @@
 # - Apalache: IndInv of StreamBufferCounters.tla (read()) holds initially (Init => IndInv) and is
 #   inductive (IndInv /\ Next => IndInv'), for N readers and any number of written bytes (Bytes
 #   symbolic); it implies the safety properties. The same for SafeModInv of StreamBufferRecords.tla
-#   (read(b, 0, K): any record size K, any chunking of the writes, several writers) and of
-#   StreamBufferWait.tla (read(b, 0, K) readers next to waitForAtLeast callers, any K, each waiter
-#   with a request M[r] of its own, several writers).
+#   (read(b, 0, K): any record size K, any chunking of the writes, several writers and closers) and
+#   of StreamBufferWait.tla (threads making any number of calls, each a read(b, 0, K[r]) or a
+#   waitForAtLeast(M[r]): read sizes and requests of their own, several writers and closers).
 # - No existential of the abstractions ranges over a set a..b that can be empty: Apalache 0.63.0
 #   asserts a <= c <= b of \E c \in a..b as a global fact, so a range empty in some state cut
 #   every path through that state, whichever action it took (missed violations, an inductive step
@@ -64,16 +64,26 @@ refine() { # module, config
   expect "$2" "Model checking completed. No error has been found." "$log"
 }
 
-# only ranges that are never empty: 1..Bytes (Bytes >= 1) and 0..left[r] (left is a Nat)
+# only ranges that are never empty: 1..Bytes (Bytes >= 1), 0..left[r] and 0..calls (Nats)
 for m in StreamBufferCounters StreamBufferRecords StreamBufferWait; do
   bad="$(sed 's/\\\*.*$//' "$m.tla" | grep -nE '\\E [A-Za-z_]+ \\in [^:]*\.\.' \
-    | grep -vE '\\in (1\.\.Bytes|0\.\.left\[r\]) :' || true)"
+    | grep -vE '\\in (1\.\.Bytes|0\.\.left\[r\]|0\.\.calls) :' || true)"
   if [ -n "$bad" ]; then
     echo "FAIL $m: an existential over a range that can be empty"
     echo "$bad" | sed 's/^/     /'
     failed=1
   else
     echo "OK   $m: no existential over a range that can be empty"
+  fi
+done
+# the same pitfall through an operator: Writers == 1..NW and Closers == 1..NC, so every constant
+# init must have a writer and a closer (with NC = 0 an \E c \in Closers cut every state)
+for m in StreamBufferRecords StreamBufferWait StreamBufferWaitLive; do
+  if sed 's/\\\*.*$//' "$m.tla" | grep -qE 'N[WC] = 0'; then
+    echo "FAIL $m: a constant init without a writer or a closer"
+    failed=1
+  else
+    echo "OK   $m: every constant init has a writer and a closer"
   fi
 done
 
@@ -88,7 +98,8 @@ apa "read(): empty take reachable without the re-check (before F278)" $C NoEmpty
 
 R=StreamBufferRecords
 for c in "" 3 4 W3; do
-  case "$c" in "") label="2 readers, 2 writers" ;; 3) label="3 readers, 2 writers" ;; 4) label="4 readers, 2 writers" ;; W3) label="2 readers, 3 writers" ;; esac
+  case "$c" in "") label="2 readers" ;; 3) label="3 readers" ;; 4) label="4 readers" ;; W3) label="2 readers, 3 writers, 3 closers" ;; esac
+  [ "$c" = W3 ] || label="$label, 2 writers, 2 closers"
   apa "records: init $label, any K" $R SafeModInv "ConstInit$c" Init 0 NoError
   apa "records: inductive $label, any K" $R SafeModInv "ConstInit$c" SafeModInit 1 NoError
 done
@@ -96,19 +107,35 @@ done
 apa "records: torn record reachable with the two-phase read (before #212)" $R RecordsAligned ConstInitTwoPhase Init 16 Error
 
 W=StreamBufferWait
-for c in "" 22 13 31; do
-  case "$c" in "") label="1 reader, 1 waiter" ;; 22) label="2 readers, 2 waiters" ;; 13) label="1 reader, 3 waiters" ;; 31) label="3 readers, 1 waiter" ;; esac
-  label="$label, 2 writers"
-  apa "waitForAtLeast: init $label, any K, any M per waiter" $W SafeModInv "ConstInit$c" Init 0 NoError
-  apa "waitForAtLeast: inductive $label, any K, any M per waiter" $W SafeModInv "ConstInit$c" SafeModInit 1 NoError
+# every thread a read or a wait per call, any number of calls, its own K[r] and M[r]
+for c in "" 3 4 W3; do
+  case "$c" in "") label="2 threads" ;; 3) label="3 threads" ;; 4) label="4 threads" ;; W3) label="2 threads, 3 writers, 3 closers" ;; esac
+  [ "$c" = W3 ] || label="$label, 2 writers, 2 closers"
+  apa "calls: init $label, any K[r], M[r] and calls" $W SafeModInv "ConstInit$c" Init 0 NoError
+  apa "calls: inductive $label, any K[r], M[r] and calls" $W SafeModInv "ConstInit$c" SafeModInit 1 NoError
 done
 # the code before CheckedReturn reaches waitForAtLeast(M[r]) < M[r] on an open buffer
-apa "waitForAtLeast: short result on an open buffer reachable before CheckedReturn" $W WaitEnoughOrClosed ConstInitUnchecked Init 14 Error
+apa "calls: a short waitForAtLeast on an open buffer reachable before CheckedReturn" $W WaitEnoughOrClosed ConstInitUnchecked Init 12 Error
+
+# liveness, the parts of the argument (StreamBufferWaitLive.tla): LiveInv is inductive, Pot goes
+# down with every step (an action invariant), and a step is possible until all are done; without
+# ClosedNoPark (a closer done, the threads parked) a state of SafeInv has no step
+L=StreamBufferWaitLive
+for c in "" 3; do
+  case "$c" in "") label="2 threads, 2 writers, 1 closer" ;; 3) label="3 threads, 2 writers, 2 closers" ;; esac
+  apa "liveness: init $label" $L LiveInv "ConstInitLive$c" Init 0 NoError
+  apa "liveness: inductive $label" $L LiveInv "ConstInitLive$c" LiveDomains 1 NoError
+  apa "liveness: Pot goes down, $label" $L PotDecreases "ConstInitLive$c" LiveDomains 1 NoError
+  apa "liveness: a step until all are done, $label" $L NoDeadlock "ConstInitLive$c" LiveDomains 0 NoError
+done
+apa "liveness: no step without ClosedNoPark" $L NoDeadlock ConstInitLive SafeModInit 0 Error
 
 refine RefineCounters RefineCondition2
 refine RefineCounters RefineCondition3
 refine RefineRecords RefineRecordsRecords2
 refine RefineRecords RefineRecordsChunks2
-refine RefineWait RefineWaitWaitAndRead2
-refine RefineWait RefineWaitWaitChecked2
+# StreamBufferWait covers every configuration of the current code
+for c in Condition2 Condition3 Records2 Chunks2 Mixed2 WaitAndRead2 WaitChecked2; do
+  refine RefineWait "RefineWait$c"
+done
 exit "$failed"
