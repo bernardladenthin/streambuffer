@@ -25,6 +25,47 @@ annotated, so everything below is genuinely still open.
     A5 spec (`src/test/tla/StreamBuffer.tla`) with TLC (the approach of Cirstea, Kuppe, Merz et al.,
     2024). Closes the gap between model and code. Done when: a deliberately wrong spec rejects
     recorded traces. Run with `/loop` and the prompt in "Run prompts" below.
+    Run plan (branch `feat/a6-trace-validation`; decisions with reasons, ticked with their commit):
+    - Decisions (2026-11-12, after the paper, arXiv 2404.16075, and Merz's TLA+ 2024 slides):
+      - **Recording:** a test-side class loader rewrites the bytecode of `StreamBuffer` with ASM
+        (already on the test classpath through Lincheck, declared explicitly): every access to
+        shared state (`availableBytes`, `streamClosed`, `waitingReaders`, `bufferLock` enter and
+        exit, `waitLock`, `modified.await`/`signalAll`, the FIFO and `positionAtCurrentBufferEntry`)
+        calls a tracer. Non-blocking accesses run and log under one global trace lock, so the log
+        order is the real order of those accesses; a blocking one (monitor enter, `lock()`,
+        `await()`) logs right after it returns, a release right before it. Why: real JVM threads
+        instead of JPF's scheduler, no `-javaagent` in Surefire, the source and the shipped jar
+        untouched. Seeded random yields in the tracer vary the interleavings.
+      - **Trace format:** the test writes each trace as a TLA+ module (`Trace == << [...], ... >>`)
+        instead of ndjson. Why: `ndJsonDeserialize` needs the CommunityModules jar, a second pinned
+        dependency; a generated module needs only the pinned `tla2tools.jar` (MongoDB's conformance
+        checking did the same).
+      - **Trace spec:** `TraceStreamBuffer.tla` extends `StreamBuffer.tla` unchanged and adds the
+        line counter `l`. Each event belongs to one code step of one thread (a group of accesses,
+        e.g. the two volatile reads of the fast path of `waitForAtLeast`); within its group the
+        thread may take its spec step(s) at any of the group's events, outside it the thread
+        stutters, and at the group's end the thread's spec state must match what the code did (the
+        values it read and returned, the bytes it got). Why: the model is coarser than the code in
+        places (the fast path reads `availableBytes` and `streamClosed` in one step,
+        `ReaderTest` decrements `waitingReaders` in the step that reads the count); where the code
+        allows an outcome no placement explains, the trace is rejected, which is a finding about
+        the model, not a reason to bend it. Accepted = every line consumed (`l > Len(Trace)`),
+        checked as an invariant TLC must violate or as a postcondition if TLC 1.7.4 has one;
+        deadlock checking off (the paper).
+      - **Scenarios** = the model's: one writer of `Bytes` bytes (values 1, 2, ...) in writes of
+        `ChunkLen`, one closer, readers of `read()` or `read(b, 0, ReadLen)`, `waitForAtLeast`
+        callers; `maxBufferElements` above the number of writes (trim is not modeled).
+    - [ ] Tracer and instrumenting class loader, unit test: a single-threaded write/read gives the
+      expected event list.
+    - [ ] Trace spec for the writer and the closer, then the readers; first trace accepted.
+    - [ ] Trace generator test: scenarios x seeds, traces written to `target/traces/`; a script
+      `src/test/tla/trace.sh` runs TLC over them.
+    - [ ] Negative controls: at least two wrong specs (e.g. `ReCheck = FALSE`, `CheckedReturn =
+      FALSE`, a mutated action) reject recorded traces; a corrupted trace is rejected by the
+      correct spec.
+    - [ ] Numbers (traces, events, states, time) and the mismatches found in
+      `src/test/tla/README.md`; CI step in `formal-verification.yml`; CHANGELOG, CLAUDE.md.
+    - [ ] Review, one push, PR, CI green.
   - **A8 — `ReentrantLock` instead of `synchronized (bufferLock)` — measured 2026-11-12: no
     throughput reason, parked.** The waiting part landed with F278 (`waitLock`, a `Condition`,
     `signalAll`, the re-check under `bufferLock`). Still on `synchronized`: every FIFO access, so a
