@@ -74,6 +74,9 @@ annotated, so everything below is genuinely still open.
     Run on Vultr (the local machine ran out of memory): proof.sh 8,036 obligations, inductive.sh
     61 OK, check.sh 45 models and the mutant.
   - [x] README (model, properties, limits), CHANGELOG, CLAUDE.md, CI times.
+  - Known limits (review 2026-11-13, not blocking): `FairRole` is TLC-checked only without spurious
+    wake-ups (`WaitForeverMeasure2`); the probe `SpuriousReached2` covers one configuration; the
+    4-core CI time of `check.sh` is an estimate until the first scheduled run.
   - [ ] Review, one push, PR, CI green.
 
 - **Verification roadmap 2026-11 — packages A6–A14.** Each package is closed on its own, ends in a
