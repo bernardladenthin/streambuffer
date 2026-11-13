@@ -271,21 +271,23 @@ annotated, so everything below is genuinely still open.
     claim in the READMEs points to a row of that table, and every row has a run with a SHA.
 
     Plan (branch `feat/a16-a17`, started 2026-11-13), with the reasons:
-    - [ ] `VERIFICATION-ASSUMPTIONS.md` at the root: the trusted base, the caller contracts, what
+    - [x] (d142501) `VERIFICATION-ASSUMPTIONS.md` at the root: the trusted base, the caller contracts, what
       no model covers, what the models assume; one table property → tool → scope → assumptions →
       CI job → script, each row with an id (`V1`, `V2`, ...). At the root, not under `docs/`,
       because the README links it next to the verification overview.
-    - [ ] Every verification claim of `README.md`, `src/test/tla/README.md` and
+    - [x] (d142501) Every verification claim of `README.md`, `src/test/tla/README.md` and
       `src/test/jpf/README.md` names its row id; a test script checks both directions (every id
       in the READMEs exists in the table, every row is referenced), so a new claim without a row
       fails. A negative control: a README with an unknown id must fail it.
-    - [ ] The manifest: every formal job of `formal-verification.yml` writes a small JSON (commit
+    - [x] (d142501) The manifest: every formal job of `formal-verification.yml` writes a small JSON (commit
       SHA, tool name, version and SHA-256, the job's counts: obligations, states, models, traces)
       and uploads it as an artifact; one shared script writes it, so the jobs stay alike. No new
       workflow file.
     - [ ] The table's rows point to the manifest of the job that checks them; "every row has a run
-      with a SHA" closes with the first scheduled run after the merge (noted as such until then).
-    - [ ] README, CHANGELOG, CLAUDE.md.
+      with a SHA" closes with the first scheduled run after the merge (noted as such until then). The
+      section "The runs" of `VERIFICATION-ASSUMPTIONS.md` says which artifact covers which row;
+      open until the first scheduled run after the merge writes them.
+    - [x] (d142501) README, CHANGELOG, CLAUDE.md.
   - **A15 — Proofs as a release gate (1–2 days; last, see the table).** `formal-verification.yml` gets a `workflow_call`
     trigger; `publish.yml` calls it for a `v*` tag and its deploy job needs it (no new workflow
     file). Done when a release of a commit without green formal jobs is impossible. Cost: about 2 h
@@ -320,7 +322,7 @@ annotated, so everything below is genuinely still open.
       guarded field, an unguarded call of a `@GuardedBy` method, the annotation stripped from a
       guarded method, a plain field without `@GuardedBy`, and a field table without one row: each
       must fail with its own message.
-    - [ ] Runs in `mvn test` (fast, no agent); README "Data-Race Freedom" (point 2 is then checked
+    - [x] (d142501) Runs in `mvn test` (fast, no agent); README "Data-Race Freedom" (point 2 is then checked
       for every execution, not only by vmlens' scenarios), CHANGELOG, CLAUDE.md.
   - **A18 — Every interleaving of the code is a run of the model, for small scenarios (1–2
     weeks).** JPF enumerates all interleavings of the real bytecode for the scenarios of
