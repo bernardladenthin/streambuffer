@@ -788,4 +788,194 @@ LEMMA ActRet0 ==
     BY <1>1, <1>2, <1>3, <1>5, <1>6, <1>8, Decide DEF FKeeps
   <1> QED
     BY <1>6, <1>7, <1>8
+
+\* a copy turn takes k >= 1 bytes: Buffered drops by k, q's parts stay
+LEMMA ActCopy ==
+  ASSUME LiveInv, NEW q \in Threads, NEW r \in Threads, ThreadCopy(q)
+  PROVE FMeas(r)' < FMeas(r)
+  <1>0 ThreadStep(q) /\ ~ThreadFinish(q)
+    BY DEF ThreadStep, ThreadCopy, ThreadFinish
+  <1>1 LiveInv'
+    BY <1>0, LiveStepF DEF NextF, Next
+  <1>2 /\ \A x \in Threads \ {q} : /\ rpc'[x] = rpc[x] /\ op'[x] = op[x]
+                                    /\ hold'[x] = hold[x] /\ left'[x] = left[x]
+       /\ avail' = avail /\ closed' = closed /\ w' = w /\ t' = t /\ wpc' = wpc /\ cpc' = cpc
+    BY <1>0, ThreadBasics
+  <1>3 \A x \in Threads \ {q} : FVF'[x] = FVF[x] /\ (x \in FBadSet' <=> x \in FBadSet)
+    BY <1>2, OthersSame
+  <1>4 FIP' = FIP
+    BY <1>2 DEF FIP
+  <1>5 rpc[q] = "copy" /\ bl = q /\ left[q] >= 1 /\ Buffered >= left[q] /\ hold[q] \in Nat
+       /\ left[q] \in Nat /\ w \in Nat /\ t \in Nat /\ Buffered \in Nat
+    BY DEF ThreadCopy, LiveInv, SafeInv, TypeOK, BufLock, HoldLeft, CopyHasBytes, BufNonNeg,
+           Buffered, InFlight
+  <1>6 PICK k \in 0..left[q] : /\ k >= 1 /\ k <= Buffered
+                                /\ hold' = [hold EXCEPT ![q] = @ + k]
+                                /\ left' = [left EXCEPT ![q] = @ - k]
+                                /\ Go(q, IF left[q] = k THEN "finish" ELSE "copy")
+    BY <1>5 DEF ThreadCopy
+  <1>7 Buffered' = Buffered - k /\ k \in Nat /\ k >= 1
+    <2>1 bl' = bl /\ hold'[q] = hold[q] + k
+      BY <1>5, <1>6 DEF ThreadCopy, LiveInv, SafeInv, TypeOK
+    <2> QED
+      BY <1>2, <1>5, <1>6, <2>1, ConstAssump DEF Buffered, InFlight
+  <1>8 rpc'[q] \in {"copy", "finish"}
+    BY <1>6 DEF Go, LiveInv, SafeInv, TypeOK
+  <1>9 FVF[q] = 1 /\ FVF'[q] = 1 /\ q \notin FBadSet /\ q \notin FBadSet'
+    BY <1>5, <1>8 DEF FVF, FV, FBadSet
+  <1>10 FSumV' = FSumV
+    <2>1 LSum(Threads, FVF') = LSum(Threads, FVF) - FVF[q] + FVF'[q]
+      BY <1>3, <1>9, Fin, LSumExcept
+    <2> QED
+      BY <2>1, <1>9, FParts, Fin, LSumType
+  <1>11 FBad' = FBad
+    <2>1 FBadSet' = FBadSet
+      BY <1>3, <1>9 DEF FBadSet
+    <2> QED
+      BY <2>1 DEF FBad
+  <1>12 FRank(r)' <= FRank(r) /\ FRank(r) \in 0..6 /\ FRank(r)' \in 0..6
+    <2>1 CASE q = r
+      BY <2>1, <1>5, <1>8 DEF FRank
+    <2>2 CASE q # r
+      BY <2>2, <1>2 DEF FRank
+    <2> QED
+      BY <2>1, <2>2
+  <1>13 FW \in Nat /\ FIP \in Nat /\ FBad \in Nat /\ FSumV \in Nat
+    BY FTypes
+  <1>14 FMeas(r) = FW * FIP + Buffered + 8 * FBad + 2 * FSumV + FRank(r)
+        /\ FMeas(r)' = FW * FIP' + Buffered' + 8 * FBad' + 2 * FSumV' + FRank(r)'
+    BY DEF FMeas
+  <1>15 FW * FIP' = FW * FIP
+    BY <1>4
+  <1> QED
+    BY ONLY <1>5, <1>7, <1>10, <1>11, <1>12, <1>13, <1>14, <1>15
+
+\* a commit lowers FIP by the bytes held and keeps Buffered
+LEMMA ActFinish ==
+  ASSUME LiveInv, NEW q \in Threads, NEW r \in Threads, ThreadFinish(q)
+  PROVE FMeas(r)' < FMeas(r)
+  <1>1 LiveInv'
+    BY LiveStepF DEF NextF, Next, ThreadStep
+  <1>2 rpc[q] = "finish" /\ bl = q /\ hold[q] >= 1 /\ hold[q] \in Nat /\ w \in Nat /\ t \in Nat
+       /\ Bytes \in Nat
+    BY ConstAssump DEF ThreadFinish, LiveInv, SafeInv, TypeOK, BufLock, HoldLeft
+  <1>3 /\ t' = t + hold[q] /\ w' = w /\ wpc' = wpc /\ cpc' = cpc /\ bl' = None
+    BY DEF ThreadFinish
+  <1>4 FIP' = FIP - hold[q]
+    <2>1 /\ WW' = WW /\ WS' = WS /\ CC' = CC /\ CS' = CS
+      BY <1>3 DEF WW, WS, CC, CS
+    <2>2 /\ WW \in Nat /\ WS \in Nat /\ CC \in Nat /\ CS \in Nat
+         /\ Bytes - w \in Nat /\ Bytes - t \in Nat
+      BY PartsType DEF LiveInv
+    <2> QED
+      BY ONLY <2>1, <2>2, <1>2, <1>3, FParts
+  <1>5 Buffered' = Buffered
+    BY <1>2, <1>3, ConstAssump DEF Buffered, InFlight
+  <1>6 FIP' < FIP /\ Buffered' - Buffered <= FIP - FIP'
+    BY <1>2, <1>4, <1>5, FTypes
+  <1> QED
+    BY <1>1, <1>6, IPStep
+
+\* Refill changes the budget only
+LEMMA ActRefill ==
+  ASSUME LiveInv, NEW r \in Threads, Refill
+  PROVE FMeas(r)' = FMeas(r) /\ FFrame(r)
+  <1>1 \A x \in Threads : FV(x)' = FV(x) /\ (x \in FBadSet' <=> x \in FBadSet)
+    BY DEF Refill, FV, FPass, Want, FBadSet, FOk
+  <1>2 FVF' = FVF /\ FBadSet' = FBadSet
+    BY <1>1 DEF FVF, FBadSet
+  <1> QED
+    BY <1>2 DEF Refill, FMeas, FIP, Buffered, InFlight, FBad, FSumV, FLay, FRank, FFrame
+
+\* every step but a return of r keeps the measure or lowers it (FKeeps)
+LEMMA StepKeeps ==
+  ASSUME LiveInv, NEW r \in Threads, NextF, ~Ret(r)
+  PROVE FKeeps(r)
+  <1>1 CASE (\E i \in Writers : WStep(i)) \/ (\E c \in Closers : CStep(c))
+    BY <1>1, WCStep DEF FKeeps
+  <1>2 CASE Refill
+    BY <1>2, ActRefill DEF FKeeps
+  <1>3 CASE \E q \in Threads : ThreadStep(q)
+    <2> PICK q \in Threads : ThreadStep(q)
+      BY <1>3
+    <2>1 CASE ThreadStart(q)
+      BY <2>1, ActStart
+    <2>2 CASE ThreadReread(q)
+      BY <2>2, ActReread
+    <2>3 CASE ThreadWaitLock(q)
+      BY <2>3, ActWaitLock
+    <2>4 CASE ThreadInc(q)
+      BY <2>4, ActInc
+    <2>5 CASE ThreadTest(q)
+      BY <2>5, ActTest
+    <2>6 CASE ThreadWaitReturn(q)
+      BY <2>6, ActWaitReturn
+    <2>7 CASE ThreadLock(q)
+      BY <2>7, ActLock
+    <2>8 CASE ThreadDecide(q)
+      BY <2>8, ActDecide
+    <2>9 CASE ThreadCopy(q)
+      BY <2>9, ActCopy DEF FKeeps
+    <2>10 CASE ThreadFinish(q)
+      BY <2>10, ActFinish DEF FKeeps
+    <2>11 CASE ThreadRet0(q)
+      BY <2>11, ActRet0
+    <2> QED
+      BY <2>1, <2>2, <2>3, <2>4, <2>5, <2>6, <2>7, <2>8, <2>9, <2>10, <2>11 DEF ThreadStep
+  <1> QED
+    BY <1>1, <1>2, <1>3 DEF NextF, Next, WStep, CStep
+
+\* a step of r that is no return moves r: its stage, or its copy under bufferLock
+LEMMA OwnMoves ==
+  ASSUME LiveInv, NEW r \in Threads, ThreadStep(r), ~Ret(r)
+  PROVE rpc'[r] # rpc[r] \/ (hold'[r] # hold[r] /\ bl = r)
+  <1> USE DEF LiveInv, SafeInv, TypeOK, Go, Ret
+  <1>1 CASE ThreadStart(r)
+    BY <1>1 DEF ThreadStart, Return, EndCall, ThreadStep
+  <1>2 CASE ThreadReread(r)
+    BY <1>2 DEF ThreadReread, Return, EndCall, ThreadStep
+  <1>3 CASE ThreadWaitLock(r)
+    BY <1>3 DEF ThreadWaitLock
+  <1>4 CASE ThreadInc(r)
+    BY <1>4 DEF ThreadInc
+  <1>5 CASE ThreadTest(r)
+    BY <1>5 DEF ThreadTest, Return, EndCall, ThreadStep
+  <1>6 CASE ThreadWaitReturn(r)
+    BY <1>6 DEF ThreadWaitReturn, Return, EndCall, ThreadStep
+  <1>7 CASE ThreadLock(r)
+    BY <1>7 DEF ThreadLock
+  <1>8 CASE ThreadDecide(r)
+    BY <1>8 DEF ThreadDecide
+  <1>9 CASE ThreadCopy(r)
+    <2>1 bl = r /\ left[r] >= 1 /\ Buffered >= left[r] /\ hold[r] \in Nat
+      BY <1>9 DEF ThreadCopy, BufLock, HoldLeft, CopyHasBytes
+    <2> QED
+      BY <1>9, <2>1 DEF ThreadCopy
+  <1>10 CASE ThreadFinish(r)
+    BY <1>10 DEF ThreadFinish, EndCall, ThreadStep
+  <1>11 CASE ThreadRet0(r)
+    BY <1>11 DEF ThreadRet0, EndCall, ThreadStep
+  <1> QED
+    BY <1>1, <1>2, <1>3, <1>4, <1>5, <1>6, <1>7, <1>8, <1>9, <1>10, <1>11 DEF ThreadStep
+
+\* a step of a lock holder moves it
+LEMMA HolderMoves ==
+  ASSUME LiveInv, NEW q \in Threads, ThreadStep(q), bl = q \/ wl = q
+  PROVE rpc'[q] # rpc[q] \/ hold'[q] # hold[q]
+  <1> USE DEF LiveInv, SafeInv, TypeOK, Go
+  <1>1 rpc[q] \in {"decide", "copy", "finish", "inc", "test", "wret"}
+    BY DEF BufLock, WaitLockInv
+  <1>2 CASE rpc[q] = "copy"
+    <2>1 ThreadCopy(q) /\ left[q] >= 1 /\ Buffered >= left[q] /\ hold[q] \in Nat
+      BY <1>2 DEF ThreadStep, ThreadStart, ThreadReread, ThreadWaitLock, ThreadInc, ThreadTest,
+             ThreadWaitReturn, ThreadLock, ThreadDecide, ThreadCopy, ThreadFinish, ThreadRet0,
+             HoldLeft, CopyHasBytes
+    <2> QED
+      BY <2>1 DEF ThreadCopy
+  <1>3 CASE rpc[q] # "copy"
+    BY <1>1, <1>3 DEF ThreadStep, ThreadStart, ThreadReread, ThreadWaitLock, ThreadInc,
+           ThreadTest, ThreadWaitReturn, ThreadLock, ThreadDecide, ThreadCopy, ThreadFinish,
+           ThreadRet0, Return, EndCall
+  <1> QED
+    BY <1>2, <1>3
 =============================================================================
