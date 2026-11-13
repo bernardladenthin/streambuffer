@@ -138,7 +138,10 @@ deliberately not part of the synchronous Publish pipeline and never a required c
    (`addSignal`, the trim signals; F280): `releaseMaxOnePermit` checks for no permit and claims the
    semaphore in `releasingSignals` under `signalLock`, releases outside it and drops the claim in a
    `finally`; `signalLock` is never held during a `release()` or while waiting for `bufferLock`
-   (order `bufferLock` -> `signalLock` only). `StreamBufferSignal.tla` (TLC: the old release
+   (order `bufferLock` -> `signalLock` only). `releasingSignals` is an `ArrayDeque` searched by
+   identity, not an `IdentityHashMap`-backed set: OpenJML RAC instruments `IdentityHashMap` into an
+   access to its private fields, which the module system refuses (every RAC test failed with
+   `IllegalAccessError`); before using another JDK collection in `StreamBuffer`, run the RAC job. `StreamBufferSignal.tla` (TLC: the old release
    reaches two permits) and `StreamBufferSignalProof.tla` (TLAPS: at most one, any number of
    signalers) model it; change them with that code. `tla2tools.jar` v1.7.4 and Apalache are pinned by SHA-256. When the wait/signal
    code changes, change the model with it, and the abstractions, the mappings in the `Refine*.tla`

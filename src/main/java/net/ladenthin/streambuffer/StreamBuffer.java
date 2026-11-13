@@ -10,11 +10,8 @@ import java.io.InputStream;
 import java.io.InterruptedIOException;
 import java.io.OutputStream;
 import java.util.ArrayDeque;
-import java.util.Collections;
 import java.util.Deque;
-import java.util.IdentityHashMap;
 import java.util.Iterator;
-import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
@@ -156,13 +153,14 @@ public class StreamBuffer implements Closeable {
     /**
      * The registered semaphores (all three kinds) whose release a thread of this buffer has
      * decided and not finished yet. A thread that finds a semaphore here leaves it alone: its
-     * permit is on the way. Compared by identity, since {@link Semaphore} does not override
-     * {@code equals}. Bug-hunt finding F280: before, two threads could both see no permit and
-     * both release, leaving two.
+     * permit is on the way. Searched by identity ({@link #isReleasing}): a subclass's
+     * {@code equals} plays no part. A deque rather than an identity set: OpenJML RAC instruments
+     * {@code IdentityHashMap} into an access to its private fields, which the module system
+     * refuses. Bug-hunt finding F280: before, two threads could both see no permit and both
+     * release, leaving two.
      */
     @GuardedBy("signalLock")
-    private final Set<Semaphore> releasingSignals =
-            Collections.newSetFromMap(new IdentityHashMap<Semaphore, Boolean>());
+    private final ArrayDeque<Semaphore> releasingSignals = new ArrayDeque<>();
 
     /**
      * A variable for the current position of the current element in the
@@ -581,15 +579,52 @@ public class StreamBuffer implements Closeable {
      */
     private void releaseMaxOnePermit(final Semaphore semaphore) {
         synchronized (signalLock) {
-            if (semaphore.availablePermits() != 0 || !releasingSignals.add(semaphore)) {
+            if (semaphore.availablePermits() != 0 || isReleasing(semaphore)) {
                 return;
             }
+            releasingSignals.add(semaphore);
         }
         try {
             semaphore.release();
         } finally {
             synchronized (signalLock) {
-                releasingSignals.remove(semaphore);
+                stopReleasing(semaphore);
+            }
+        }
+    }
+
+    /**
+     * Whether a thread of this buffer is releasing the semaphore now (compared by identity).
+     *
+     * @param semaphore a registered semaphore
+     * @return {@code true} if it is in {@link #releasingSignals}
+     */
+    // identity on purpose: the claim is of this semaphore object, whatever a subclass's equals says
+    @SuppressWarnings("ReferenceEquality")
+    @GuardedBy("signalLock")
+    private boolean isReleasing(final Semaphore semaphore) {
+        for (Semaphore releasing : releasingSignals) {
+            if (releasing == semaphore) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Drops the claim of a semaphore whose release ended (compared by identity).
+     *
+     * @param semaphore a semaphore {@link #releaseMaxOnePermit} claimed
+     */
+    // identity on purpose, as in isReleasing
+    @SuppressWarnings("ReferenceEquality")
+    @GuardedBy("signalLock")
+    private void stopReleasing(final Semaphore semaphore) {
+        final Iterator<Semaphore> claims = releasingSignals.iterator();
+        while (claims.hasNext()) {
+            if (claims.next() == semaphore) {
+                claims.remove();
+                return;
             }
         }
     }
