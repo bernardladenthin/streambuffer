@@ -167,8 +167,53 @@ annotated, so everything below is genuinely still open.
       `RefineWait.tla`) in the bounded configurations.
     - Details and limits in `src/test/tla/README.md`.
 
-    Still open: liveness with a thread that calls forever (it needs lock fairness, which the JDK
-    does not promise).
+    Still open: liveness with a thread that calls forever (the guess was that it needs lock
+    fairness, which the JDK does not promise; see the follow-up below).
+
+    **Liveness with threads that call forever (A13 follow-up, 2026-11-13).** Run with `/loop` and the
+    prompt in "Run prompts" below. Branch `feat/a13-liveness-forever`. First TLC probes (scratchpad,
+    2026-11-13) showed that the guess above was wrong in both directions:
+    - with a finite stream and a closer, every call returns although threads call forever, with
+      fair scheduling only (weak fairness per thread, writer and closer), no lock fairness
+      (`StreamBufferWait`, 2 threads, read sizes 1 and 2, `waitForAtLeast(2)`: 364,866 states);
+    - with a writer that writes forever and no close, a reader can starve even with strong
+      fairness for every thread step: it gets `bufferLock` every round and finds the bytes taken
+      by the other reader. Lock fairness does not help; the bytes go to whoever commits first;
+    - the detailed model's readers need weak fairness only: all eight current-code models check
+      clean with `WF` instead of `SF`.
+
+    Decisions (with reasons):
+    - **Calls forever without touching `StreamBufferWait.tla`:** a new module
+      `StreamBufferWaitForever.tla` extends it with a ghost step `Refill` that tops the call budget
+      up (`calls = 0` to 1). Every run of threads calling forever is a run of it with `Refill`
+      inserted after each return; it also has runs where threads stop, which only adds behaviours,
+      so "every call returns" there implies it for the forever runs. Why: the safety, refinement and
+      liveness proofs of `StreamBufferWait.tla` stay valid unchanged.
+    - **Fairness:** `WF` per thread, writer and closer (the OS schedules a runnable thread), no
+      `SF` (the JDK's monitor and `ReentrantLock(false)` barge). Negative controls: `WF(Next)`
+      only, no closer, and a probe that forever runs exist must all fail.
+    - **Infinite stream:** a ghost `Shift` lowers `w` and `t` together, so the writer writes forever
+      in a finite state space (the code sees only their difference); the starvation lasso is the
+      expected result, with `SF` for every thread step.
+    - **Detailed model:** `Fairness` in `StreamBuffer.tla` becomes `WF` for the readers (the weakest
+      that holds); readers that call again after -1 and `waitForAtLeast` callers that call forever
+      through a ghost `Restart` in an extending module, checked by TLC.
+    - **Any number of threads:** a TLAPS proof of "every call returns" for the forever abstraction,
+      if it can be done (WF1 per thread with a measure of the global potential, the stale lock
+      holders and the thread's rank; the lock waits through the holder's fairness). Time-boxed:
+      if it does not close, the bounded TLC results stand and the proof stays open here.
+
+    - [ ] `StreamBufferWaitForever.tla` and TLC models (2 and 3 threads, 1-2 writers and closers,
+      read sizes and requests mixed), the negative controls, the infinite-stream starvation
+      model; all in `check.sh` with their expected outcomes.
+    - [ ] Detailed model: `WF` for the readers; forever callers through `Restart`; TLC models in
+      `check.sh`; re-run all of `check.sh` and the A6 trace validation (it uses `Init`/`Next` only).
+    - [ ] TLAPS: the refinement proof still proves with the new `Fairness` (`Spec => WP!CSpec`,
+      which drops the fairness by `PTL`); run `proof.sh` once (WSL or Docker).
+    - [ ] TLAPS proof of every call returning for any number of threads (time-boxed, see above).
+    - [ ] README (Fairness, Properties, Liveness, Limits), CHANGELOG, CLAUDE.md, CI
+      (`check.sh` is in `tla-model`; `proof.sh` in `tlaps-proofs` if a proof is added).
+    - [ ] Review, one push, PR, CI green.
 
     The detailed model covers `read()`, fixed-size `read(b, off, len)` (#212, F279), writes of
     several bytes, readers of two sizes and `waitForAtLeast` (the A5 rest, 2026-11-11).
@@ -282,4 +327,37 @@ Prompts for long `/loop` runs. The loop is started with a one-line reference to 
 so the prompt can be changed in this file without restarting the loop; the next iteration reads
 the current text.
 
-No run open.
+### Liveness with threads that call forever
+
+Start: `/loop Work on the liveness follow-up as described in TODO.md, section "Run prompts" / "Liveness with threads that call forever", re-read on every iteration.`
+
+````text
+Do the A13 follow-up "Liveness with threads that call forever" for streambuffer (TODO.md, under
+A13: the decisions and the checkbox plan) fully automatically and as independently as possible.
+It may take longer than one session; there is no deadline. Work locally (TLC: tla2tools.jar in the
+version and with the SHA256 from .github/workflows/formal-verification.yml, verified; TLAPS in WSL
+Ubuntu-24.04 or Docker, from the pinned commit or the rolling asset as in src/test/tla/README.md).
+A rented instance (see ../workspacePrivate/remote.md) is allowed for up to about 10-15 EUR in total:
+enter it in remote.md while it runs, delete it and sweep when done. Web search and Chrome are
+allowed.
+
+Procedure:
+1. Every iteration: switch to the branch feat/a13-liveness-forever in the real clone, do the next
+   open step of the plan, test it, tick it with its commit, add steps found on the way. Give the
+   reason for every decision in the TODO step.
+2. No change to production code. Do not bend the models to make a property hold: a property that
+   fails is a result (document it with the counterexample). Negative controls are mandatory for
+   every positive result.
+3. Results with numbers (models, states, time, obligations) in src/test/tla/README.md; CHANGELOG.md,
+   CLAUDE.md, TODO.md updated. CI: only the existing formal-verification.yml.
+4. At the end: review of the branch by an agent. Only regressions against main, moderate or high
+   bugs in the branch's own changes, and wrong statements in the docs block the push; the rest goes
+   as one line under the item in TODO.md. At most one more round. Then exactly one push, open the
+   PR (do not merge, no dispatch runs), watch CI; on a CI error of my own: cancel the run, commit
+   the fix, push.
+5. Rules: no questions (ask only for something that is the owner's to decide, such as more budget).
+   No force-push, no pkill -f (kill by PID), delete only with Remove-Item, no private data to
+   external services. At the end remove the done steps from TODO.md; only the result stays.
+6. When the PR is open and CI is green: summary in German (what was decided and why, numbers, open
+   points), then end the loop.
+````
