@@ -590,6 +590,7 @@ program; the JDK classes it builds on (`ReentrantLock`/`Condition`/AQS, `Semapho
 |---|---|---|---|
 | `bufferLock`, `waitLock`, `modified`, `is`, `os` | `final` | constructor | anywhere |
 | `buffer` (`ArrayDeque<byte[]>`) | `final`, `@GuardedBy("bufferLock")` | under `bufferLock` | under `bufferLock` |
+| `ownedPrefix` (the leading entries a trim allocated, A14) | `int`, `@GuardedBy("bufferLock")` | under `bufferLock` (`trim()`, `pollHead()`) | under `bufferLock` |
 | `availableBytes` | `volatile long` | under `bufferLock` | under `bufferLock`, and lock-free by `available()`, `getAvailableBytesExact()` and the wait (fast path and under `waitLock`) |
 | `positionAtCurrentBufferEntry` | `volatile int` | under `bufferLock` | under `bufferLock` |
 | `streamClosed` | `volatile boolean` | under `bufferLock` (`close()`) | under `bufferLock` (write), lock-free (wait, `isClosed()`) |
