@@ -36,11 +36,14 @@ cp StreamBufferCounters.tla StreamBufferCountersProof.tla \
    StreamBufferRecords.tla StreamBufferRecordsProof.tla \
    StreamBufferWait.tla StreamBufferWaitProof.tla \
    StreamBufferWaitLive.tla StreamBufferCountLemmas.tla StreamBufferWaitEnabled.tla \
-   StreamBufferWaitLiveProof.tla StreamBuffer.tla RefineWait.tla RefineWaitProof.tla    StreamBufferWaitForever.tla StreamBufferWaitForeverRoles.tla StreamBufferWaitForeverLive.tla    StreamBufferWaitForeverEnabled.tla StreamBufferWaitForeverLiveProof.tla "$work/"
+   StreamBufferWaitLiveProof.tla StreamBuffer.tla RefineWait.tla RefineWaitProof.tla \
+   StreamBufferWaitForever.tla StreamBufferWaitForeverRoles.tla StreamBufferWaitForeverLive.tla \
+   StreamBufferWaitForeverEnabled.tla StreamBufferWaitForeverLiveProof.tla "$work/"
 cd "$work"
 failed=0
 for proof in StreamBufferCountersProof StreamBufferRecordsProof StreamBufferWaitProof \
-             StreamBufferCountLemmas StreamBufferWaitEnabled StreamBufferWaitLiveProof RefineWaitProof              StreamBufferWaitForeverEnabled StreamBufferWaitForeverLiveProof; do
+             StreamBufferCountLemmas StreamBufferWaitEnabled StreamBufferWaitLiveProof RefineWaitProof \
+             StreamBufferWaitForeverEnabled StreamBufferWaitForeverLiveProof; do
   # the ENABLED steps need more time on a loaded machine (one timed out at --stretch 3 and 6
   # with the other cores busy, none in three runs at 12; 2026-11-12)
   stretch=3

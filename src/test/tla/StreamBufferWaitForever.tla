@@ -8,9 +8,9 @@
 (* follow-up). StreamBufferWait bounds the calls by a shared budget; here  *)
 (* the ghost step Refill tops it up whenever it is used up, so a thread    *)
 (* can always call again. Every run in which threads call forever is a run *)
-(* of this module with a Refill after each return; the module also has     *)
-(* runs in which threads stop, which only adds behaviours, so a property   *)
-(* of all its fair runs holds for the forever runs.                        *)
+(* of this module with a Refill whenever the budget is used up; it also    *)
+(* has runs in which threads stop, which only adds behaviours, so a        *)
+(* property of all its fair runs holds for the forever runs.               *)
 (*                                                                         *)
 (* Fairness is per process and weak: a thread, writer or closer that can   *)
 (* go on all the time eventually does (the scheduler runs a runnable       *)
@@ -78,7 +78,8 @@ SpecI == Init /\ [][NextI]_vars /\ FairStrong
 
 \* the writer writes forever (it does not stop at the bound of the backlog)
 WritesForever == []<><<\E i \in Writers : WriterWrite(i) /\ w' > w>>_vars
-\* expected to fail: a reader can starve next to another one, whatever the lock fairness
+\* expected to fail: a thread can starve next to another one, whatever the lock fairness (in
+\* WaitForeverStarve2 the starving call is a read())
 StarvationFree == WritesForever => EveryCallReturns
 
 -----------------------------------------------------------------------------

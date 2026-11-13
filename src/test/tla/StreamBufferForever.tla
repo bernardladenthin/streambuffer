@@ -29,7 +29,8 @@ SpecF ==
     /\ \A r \in Readers : WF_vars(ThreadStepF(r))
 
 \* a call of r returns: a read with its bytes or -1, a wait with its count (a failed re-check
-\* under bufferLock and a semaphore acquire go back to "start" too, but the call goes on)
+\* under bufferLock and a semaphore acquire go back to "start" too, but the call goes on). For
+\* AtomicRead only (every Forever*.cfg): the two-phase read goes back to "start" mid-call too.
 Ret(r) == ReaderStep(r) /\ rpc[r] \notin {"decide", "acquire"} /\ rpc'[r] \in {"start", "done"}
 
 \* every call of every thread returns, again and again

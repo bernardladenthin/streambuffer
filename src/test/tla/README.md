@@ -316,7 +316,8 @@ fair locks, which the JDK does not promise. That guess was wrong in both directi
 - **A finite stream with a closer.** Every call of every thread returns, although threads call
   forever. That needs fair scheduling only: weak fairness per thread, writer and closer. It needs no
   lock fairness. TLC checks it in bounded models of the abstraction and of the detailed model, and
-  TLAPS proves it for the abstraction, for any number of threads, writers and closers.
+  TLAPS proves it for the abstraction, for any number of threads, writers and closers, under the
+  fairness by role, which follows from that (see "Limits" below).
 - **An endless writer and no close.** A reader can starve even when every thread step is strongly
   fair. The starving reader gets `bufferLock` every round and finds the bytes gone: the other
   reader committed them first. The bytes go to whoever commits first, so a fair lock would not
@@ -327,7 +328,8 @@ fair locks, which the JDK does not promise. That guess was wrong in both directi
 
 **Calls forever, without changing the models.** `StreamBufferWaitForever.tla` extends
 `StreamBufferWait.tla` with a ghost step `Refill`, which tops up the budget of calls whenever it is
-used up. Every run in which threads call forever is a run of it, with a `Refill` after each return.
+used up. Every run in which threads call forever is a run of it, with a `Refill` whenever the budget is
+used up.
 It also has runs in which threads stop, which only adds behaviours: what holds for all its fair
 runs holds for the forever runs. So the safety, refinement and liveness proofs of
 `StreamBufferWait.tla` stay as they are. `StreamBufferForever.tla` does the same for the detailed
@@ -351,7 +353,7 @@ for a counterexample).
 | `WaitForeverNextOnly2` | same | as `WaitForever2`, fairness for `Next` only | violated: thread 2 is never scheduled again while thread 1 calls forever |
 | `WaitForeverNoClose2` | same | as `WaitForever2`, no closer | violated: the record reader waits forever for its second byte |
 | `WaitForeverRuns2` | same | as `WaitForever2`, probe `AllStop` | violated: fair runs in which the threads call forever exist |
-| `WaitForeverStarve2` | same | 2 `read()` threads, an endless writer, no close, every thread step strongly fair | violated: the starvation lasso above |
+| `WaitForeverStarve2` | same | 2 threads, each call a `read()` or a `waitForAtLeast(2)`, an endless writer, no close, every thread step strongly fair | violated: the starvation lasso above (the starving thread's call is a `read()`) |
 | `WaitForeverMeasure2` | `StreamBufferWaitForeverLive` | as `WaitForever2` | the step property of the proof's measure, and fairness per thread implies fairness by role |
 | `WaitForeverRole2` | same | as `WaitForever2`, fairness by role | every call returns |
 | `ForeverWaitAndRead2`, `ForeverWaitChecked2`, `ForeverMixed2`, `ForeverRecords2`, `ForeverChunks2`, `ForeverCondition3` | `StreamBufferForever` | the models of the current code, every thread calling again forever | every call returns; 3,038 to 294,862 states |
@@ -392,7 +394,8 @@ Obligations: `StreamBufferWaitForeverEnabled.tla` 633 (the role actions are enab
 proof needs them), `StreamBufferWaitForeverLiveProof.tla` 1,322. Negative controls (2026-11-13,
 not committed); each makes exactly the obligation fail that it should:
 
-- a lemma `FALSE` added: only that one fails, so the assumptions are consistent;
+- a lemma `FALSE` added: only that one fails, so no backend derives `FALSE` from the
+  assumptions;
 - the weight of the first part too small (20 · threads + 1 instead of 30 · threads + 10, changed
   everywhere the proof names it): the arithmetic that pays for the rise of the lower parts fails;
 - the stage of `decide` raised to that of `lock`, in the definition and the lemmas that restate

@@ -529,8 +529,8 @@ jobs:
     name: TLAPS proofs of the A13 invariants
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    # tlapm build about 10 min, proof.sh with the refinement proof about 30 min on 4 cores (2026-11-12),
-    # with the forever liveness proof 2866 s (2026-11-13, 4 cores of a local machine)
+    # tlapm build about 10 min; proof.sh with the refinement proof about 30 min on 4 cores
+    # (2026-11-12), with the forever liveness proof 2866 s (2026-11-13, 4 local cores)
     timeout-minutes: 120
     env:
       # tlaplus/tlapm main of 2026-11-10 ("Add soundness test for ENABLED binder order"); its
