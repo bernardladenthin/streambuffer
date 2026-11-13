@@ -19,8 +19,7 @@ annotated, so everything below is genuinely still open.
   |---|---|---|---|---|
   | Prove that fairness per thread gives the fairness by role (`FairRole`, A13 follow-up; today argued and checked by TLC in bounded models) | 1–2 weeks | low, ~30 % | 2–3 weeks | tlapm cannot swap a quantifier over threads with a temporal operator (`\A q : P(q) ~> Q` to `(\E q : P(q)) ~> Q`), which is where it failed; another prover (e.g. Isabelle with a TLA embedding) would be the way out |
   | Liveness of the detailed model for any number of readers (A19) | 2–4 weeks | medium, ~50 % | 3–6 weeks | the pattern of `StreamBufferWaitForeverLiveProof.tla` carries over, but the detailed model is much larger (the FIFO as a sequence, more stages, the copy per entry), and the assumption of the row above stays |
-  | A6: spurious wake-ups in the model (in progress, see below) | 1–2 weeks | ~75 % | 2–3 weeks | a small step (a parked thread may wake without a signal), but it is in four models and every proof above them (re-estimated 2026-11-13: the first estimate of 2–4 days missed that liveness needs the wake-ups bounded, a budget in `Pot` and in the forever measure) |
-  | A6: several writers and closers in the detailed model | 1–2 weeks | ~70 % | 2–3 weeks | `StreamBuffer.tla` has one of each; `RefineWaitProof.tla` (2,656 obligations) must follow; the trace scenarios are easy afterwards |
+  | A6: several writers and closers in the detailed model | 1–2 weeks | ~70 % | 2–3 weeks | `StreamBuffer.tla` has one of each; `RefineWaitProof.tla` (2,729 obligations) must follow; the trace scenarios are easy afterwards |
   | A6: trim in the model | 1–2 weeks | ~60 % | 2–4 weeks | the merge of the entries touches the FIFO invariant and the refinement; the geometric merge is hard to state compactly |
   | A8: `ReentrantLock` instead of `synchronized` | 3–5 days, if taken up | technically high, ~90 %; the gain unclear | 1–2 weeks | the measurements show a trade-off (faster for platform threads, slower for virtual threads); it needs a workload that decides which kind matters |
   | A9: functional proof of the instance methods | months | low, ~20–30 % | 3–6 months | OpenJML ESC returns "unknown" on instance methods, and the deque as a ghost sequence is large; extract a sequential core first |
@@ -28,56 +27,20 @@ annotated, so everything below is genuinely still open.
   | `@VisibleForTesting` decision | ½ day | ~95 % | a few days | only the decision (an own marker annotation, or the convention does not apply here), then act |
   | Naming review | ~1 day | ~90 % | ~1 week | mechanical; renaming private methods is cheap, a public API rename is a breaking change for the CHANGELOG |
 
-  Best value for the risk: spurious wake-ups, the `@VisibleForTesting` decision and the naming
-  review; then several writers in the detailed model, if that matters. The `FairRole` proof, A19
+  Best value for the risk: the `@VisibleForTesting` decision and the naming review; then several
+  writers in the detailed model, if that matters. The `FairRole` proof, A19
   and A9 are research with an open outcome. A17 is in the planned roadmap and covers most of what
   the Lock Checker would give.
 
-- **Spurious wake-ups in the model (started 2026-11-13, branch `feat/spurious-wakeups`).**
-  `Condition.await()` may return without a signal (JDK); the code tests again in its loop, but no
-  model has the step, and A6 rejects a trace with one. Run with `/loop` and the prompt in "Run
-  prompts" below.
-
-  Decisions (with reasons):
-  - **A budget, not unbounded:** a ghost counter `spurious` starting at the constant `Spurious`
-    (any natural number); a spurious wake-up of a parked thread uses one. Safety for every
-    `Spurious` covers every run, since a finite prefix has finitely many; liveness assumes
-    finitely many, the usual assumption (infinitely many with no progress is not a defect of the
-    code).
-  - **Not under fairness:** the step is not part of `ReaderStep`/`ThreadStep`, so the fairness
-    per thread never forces it; forced wake-ups would hide a lost wake-up in the liveness checks
-    (`StreamBufferWaitLive.tla`'s weak fairness of all of `Next` could, but its proof shows a
-    protocol step enabled until all are done).
-  - **Existing configurations get `Spurious = 0`:** their behaviour and state counts stay; new
-    models check `Spurious = 2`.
-  - **In `StreamBuffer.tla` and `StreamBufferWait.tla`** (the abstraction with the TLAPS
-    refinement and the liveness proofs), not in `StreamBufferCounters.tla` and
-    `StreamBufferRecords.tla`: `StreamBufferWait.tla` covers their slices, and their TLC
-    refinement checks run with `Spurious = 0`, so they stay valid.
-
-  - [x] (61e4cec, f285661) Detailed model: `Spurious`, `spurious`, `SpuriousWake(r)` (parked to woken, one of the
-    budget) in `Next`, not in `Fairness`; every existing `.cfg` with `Spurious = 0`; new models
-    (2 and 3 readers, records, `waitForAtLeast`) with `Spurious = 2`; a negative control (the
-    woken thread skips the test of its loop: must fail once a spurious wake-up is possible);
-    `check.sh`. The control runs next to a lone `waitForAtLeast(2)` (`WaitAlone1`): next to a
-    `read()` reader the mutant fails without spurious wake-ups too, so it would not separate.
-  - [x] (61e4cec, f285661) A6: `TraceStreamBuffer.tla` lets a parked thread wake spuriously; `TraceGenerator` writes
-    a budget; a hand-written trace with a wake-up without `signalAll` is accepted with a budget and
-    rejected with `Spurious = 0`; README limits. The trace is written by `trace-controls.sh`
-    (one more round of the wait loop right after a park); removing the signal lines of a recorded
-    trace does not work, the model places the writer's signal silently before its exit line.
-  - [x] (61e4cec, bae7484) `StreamBufferWait.tla`: the same step and budget; `inductive.sh` (Apalache, any budget);
-    TLAPS: `StreamBufferWaitProof.tla` (`SafeInv`), `StreamBufferWaitLiveProof.tla` (the budget in
-    `Pot`), `StreamBufferWaitEnabled.tla` if needed, the forever proof (the budget in `FIP`),
-    `RefineWaitProof.tla` (map `spurious` to `spurious`). Every action keeps the budget, so the
-    fairness and the witness actions need nothing new; `Pot` weighs it 10, the forever `FIP` 1.
-    Run on Vultr (the local machine ran out of memory): proof.sh 8,036 obligations, inductive.sh
-    61 OK, check.sh 45 models and the mutant.
-  - [x] README (model, properties, limits), CHANGELOG, CLAUDE.md, CI times.
-  - Known limits (review 2026-11-13, not blocking): `FairRole` is TLC-checked only without spurious
-    wake-ups (`WaitForeverMeasure2`); the probe `SpuriousReached2` covers one configuration; the
-    4-core CI time of `check.sh` is an estimate until the first scheduled run.
-  - [ ] Review, one push, PR, CI green.
+- **Spurious wake-ups in the model: done (PR #231, 2026-11-13).** `Condition.await()` may return
+  without a signal. `StreamBuffer.tla` and `StreamBufferWait.tla` have the step `SpuriousWake(r)`
+  within a ghost budget (the constant `Spurious`, not under fairness), with TLC models and a mutant
+  control in `check.sh`, the TLAPS proofs for any budget (safety, liveness, forever liveness,
+  refinement), Apalache, and a control in `trace-controls.sh`; details in
+  `src/test/tla/README.md`, "Spurious wake-ups". Known limits (review 2026-11-13): `FairRole` is
+  TLC-checked only without spurious wake-ups (`WaitForeverMeasure2`); the probe
+  `SpuriousReached2` covers one configuration; the 4-core CI time of `check.sh` is an estimate
+  until the first scheduled run.
 
 - **Verification roadmap 2026-11 — packages A6–A14.** Each package is closed on its own, ends in a
   machine-checked result and is listed with its acceptance criterion. The contract every package
@@ -105,9 +68,6 @@ annotated, so everything below is genuinely still open.
       one of each; the A13 abstractions have several, but no trace check against them), trim (not
       modeled; the scenarios set `maxBufferElements` above the number of writes), and
       `waitForAtLeast` with a timeout (`awaitNanos` is not rewritten, not in the model).
-    - [ ] A spurious wake-up of `await()` is not in the model and would reject a trace (none
-      occurred in 990 runs). If one shows up in CI: model it (a parked waiter may wake without a
-      signal), not a retry.
     - [ ] The trace lines name a method and its n-th access (`waitForAtLeast.getAvail#0`): a
       change of the wait or read paths needs the mapping in `TraceStreamBuffer.tla` changed with
       it (`TraceRecorderTest` fails first).
@@ -300,9 +260,9 @@ annotated, so everything below is genuinely still open.
     the trusted base (JVM and JIT, javac, the JDK classes `ReentrantLock`/`Condition`/AQS,
     `Semaphore`, `ArrayDeque`, `CopyOnWriteArrayList`, the atomics), the caller contracts (a
     written array without `safeWrite`, the semaphore limits of F280, `release()` overrides, trim
-    signals), what no model covers (timeouts, interrupts, spurious wake-ups, trim in the TLA+
-    model). And a table: property → tool → scope (bounded or unbounded; abstraction, detailed
-    model or code) → assumptions → CI job. Every scheduled formal run writes a manifest (commit SHA,
+    signals), what no model covers (timeouts, interrupts, trim in the TLA+ model) and what the
+    models assume (finitely many spurious wake-ups). And a table: property → tool → scope
+    (bounded or unbounded; abstraction, detailed model or code) → assumptions → CI job. Every scheduled formal run writes a manifest (commit SHA,
     tool versions and SHA-256, obligations, states) as an artifact. Done when every verification
     claim in the READMEs points to a row of that table, and every row has a run with a SHA.
   - **A15 — Proofs as a release gate (1–2 days).** `formal-verification.yml` gets a `workflow_call`
@@ -431,37 +391,6 @@ annotated, so everything below is genuinely still open.
 Prompts for long `/loop` runs. The loop is started with a one-line reference to its section here,
 so the prompt can be changed in this file without restarting the loop; the next iteration reads
 the current text.
-
-### Spurious wake-ups
-
-Start: `/loop Work on the spurious wake-ups as described in TODO.md, section "Run prompts" / "Spurious wake-ups", re-read on every iteration.`
-
-````text
-Add spurious wake-ups to the TLA+ models of streambuffer (TODO.md, "Spurious wake-ups in the
-model": the decisions and the checkbox plan) fully automatically and as independently as
-possible. It may take longer than one session; there is no deadline. Work locally (TLC 1.7.4 as
-pinned in formal-verification.yml, Apalache as in src/test/tla/README.md, tlapm ff40755 in WSL;
-Maven with JAVA_HOME=/c/Users/berna/AppData/Local/Programs/jdk-25.0.4.1+1).
-
-Procedure:
-1. Every iteration: on the branch feat/spurious-wakeups in the real clone, do the next open step,
-   test it, tick it with its commit, add steps found on the way, with the reason for every
-   decision.
-2. No change to production code. Do not bend the models to make a property hold: a property that
-   fails is a finding (document it with its counterexample). Negative controls are mandatory.
-3. Every proof module that changes runs through tlapm with all obligations proved; inductive.sh
-   and check.sh pass; the A6 trace validation and its controls pass. Numbers in the READMEs;
-   CHANGELOG.md, CLAUDE.md, TODO.md updated. CI: only the existing workflow files.
-4. At the end: review of the branch by an agent with the stop criterion (only regressions,
-   moderate or high bugs of the branch, wrong statements in the docs block; the rest one line in
-   TODO.md; at most one more round). Then one push, open the PR (do not merge, no dispatch runs),
-   watch CI, work off CodeRabbit's still-valid findings; on a CI error of my own: cancel the run,
-   commit the fix, push.
-5. Rules: no questions (ask only for something that is the owner's to decide). No force-push, no
-   pkill -f, delete only with Remove-Item, no private data to external services. When the PR is
-   green, remove the done steps from TODO.md (only the result stays) before the push, a summary in
-   German, then end the loop.
-````
 
 ### Verification roadmap A15–A18
 
