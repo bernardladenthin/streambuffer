@@ -576,7 +576,7 @@ and not only about the interleavings they enumerate:
    reports a data race by the memory model's happens-before; the `vmlens` job of the Publish pipeline
    fails the build on one (`There are N data races`). Scenarios: a reader against a writer, two
    readers and a close, two record readers, a trim with a trim start signal, `safeWrite` with a
-   concurrent single-byte write. All but one run out of interleavings within the iteration limit
+   concurrent single-byte write, two writers and an observer of a registered signal (F280). All but one run out of interleavings within the iteration limit
    (all of them explored); two readers and a close stops at vmlens's limit, and JPF explores that
    case exhaustively (`TwoReaders.jpf`, `WaitAndRead.jpf`).
 
@@ -599,6 +599,8 @@ program; the JDK classes it builds on (`ReentrantLock`/`Condition`/AQS, `Semapho
 | `waitingReaders` | `final AtomicInteger` | under `waitLock` | lock-free by the writer's signal |
 | `totalBytesWritten`, `totalBytesRead` | `final AtomicLong` | under `bufferLock` (`addAndGet`) | lock-free by the getters |
 | `signals`, `trimStartSignals`, `trimEndSignals` | `final CopyOnWriteArrayList` | by add/remove, any thread | iterated over a snapshot |
+| `signalLock` | `final` | constructor | anywhere (the lock of the two deques below; taken after `bufferLock`, never before it) |
+| `releasingSignals`, `signaledWhileReleasing` (`ArrayDeque<Semaphore>`) | `final`, `@GuardedBy("signalLock")` | under `signalLock` | under `signalLock` (the claims and notes of F280) |
 
 The **`byte[]` contents** are published through `bufferLock`: the writer adds the array under the
 lock, a reader copies from it under the lock, so the monitor's happens-before orders the two. With
