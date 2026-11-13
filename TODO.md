@@ -11,6 +11,28 @@ annotated, so everything below is genuinely still open.
 
 ## Open
 
+- **Open verification items — effort, odds and timeline (estimated 2026-11-13).** Estimates, not
+  measurements; "success" means the result is there as described, machine-checked. Details under
+  the items named.
+
+  | Item | Work | Odds of success | Timeline | Why / risk |
+  |---|---|---|---|---|
+  | Prove that fairness per thread gives the fairness by role (`FairRole`, A13 follow-up; today argued and checked by TLC in bounded models) | 1–2 weeks | low, ~30 % | 2–3 weeks | tlapm cannot swap a quantifier over threads with a temporal operator (`\A q : P(q) ~> Q` to `(\E q : P(q)) ~> Q`), which is where it failed; another prover (e.g. Isabelle with a TLA embedding) would be the way out |
+  | Liveness of the detailed model for any number of readers (A19) | 2–4 weeks | medium, ~50 % | 3–6 weeks | the pattern of `StreamBufferWaitForeverLiveProof.tla` carries over, but the detailed model is much larger (the FIFO as a sequence, more stages, the copy per entry), and the assumption of the row above stays |
+  | A6: spurious wake-ups in the model | 2–4 days | high, ~90 % | ~1 week | a small step (a parked thread may wake without a signal), but the model, the abstractions and the proofs must follow; safety and liveness should hold |
+  | A6: several writers and closers in the detailed model | 1–2 weeks | ~70 % | 2–3 weeks | `StreamBuffer.tla` has one of each; `RefineWaitProof.tla` (2,656 obligations) must follow; the trace scenarios are easy afterwards |
+  | A6: trim in the model | 1–2 weeks | ~60 % | 2–4 weeks | the merge of the entries touches the FIFO invariant and the refinement; the geometric merge is hard to state compactly |
+  | A8: `ReentrantLock` instead of `synchronized` | 3–5 days, if taken up | technically high, ~90 %; the gain unclear | 1–2 weeks | the measurements show a trade-off (faster for platform threads, slower for virtual threads); it needs a workload that decides which kind matters |
+  | A9: functional proof of the instance methods | months | low, ~20–30 % | 3–6 months | OpenJML ESC returns "unknown" on instance methods, and the deque as a ghost sequence is large; extract a sequential core first |
+  | Checker Framework Lock Checker | 1–2 days for a spike | ~40 % | ~1 week | blocked by inconsistent JDK stubs of `close()`; a way out via `-AskipDefs` or own stubs; A17 (the bytecode check) is an alternative that makes it mostly unnecessary |
+  | `@VisibleForTesting` decision | ½ day | ~95 % | a few days | only the decision (an own marker annotation, or the convention does not apply here), then act |
+  | Naming review | ~1 day | ~90 % | ~1 week | mechanical; renaming private methods is cheap, a public API rename is a breaking change for the CHANGELOG |
+
+  Best value for the risk: spurious wake-ups, the `@VisibleForTesting` decision and the naming
+  review; then several writers in the detailed model, if that matters. The `FairRole` proof, A19
+  and A9 are research with an open outcome. A17 is in the planned roadmap and covers most of what
+  the Lock Checker would give.
+
 - **Verification roadmap 2026-11 — packages A6–A14.** Each package is closed on its own, ends in a
   machine-checked result and is listed with its acceptance criterion. The contract every package
   checks: several readers and writers are supported, without fairness (decided with bug-hunt finding
