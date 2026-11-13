@@ -18,6 +18,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
 import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.Handle;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.AbstractInsnNode;
@@ -26,6 +27,7 @@ import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.FieldInsnNode;
 import org.objectweb.asm.tree.FieldNode;
 import org.objectweb.asm.tree.InnerClassNode;
+import org.objectweb.asm.tree.InvokeDynamicInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.analysis.Analyzer;
@@ -38,23 +40,42 @@ import org.objectweb.asm.tree.analysis.Value;
 
 /**
  * The lock discipline of a class, checked on its bytecode (roadmap A17): every access to a field
- * annotated {@code @GuardedBy(L)}, and every call of a method annotated so, happens with the
- * monitor of the field {@code L} held, on every path of the method; a field that is neither final,
- * volatile nor atomic must be annotated. Unlike a scenario-based race detector this covers every
- * execution: the locks held at an instruction are a property of the control flow, not of a run.
+ * annotated {@code @GuardedBy(L)}, and every call of a method annotated so, happens on the object
+ * itself with the monitor of its field {@code L} held, on every path of the method; a field that
+ * is neither final nor volatile must be annotated. Unlike a scenario-based race detector this
+ * covers every execution: the locks held at an instruction are a property of the control flow.
  *
  * <p>The analysis per method is a forward data flow over the control-flow graph (ASM's {@link
- * Analyzer}): {@code monitorenter} of a value loaded from the field {@code L} adds L, {@code
- * monitorexit} removes it, and where paths meet only what every path holds is held. A method
- * annotated {@code @GuardedBy(L)} starts with L held. Synthetic accessors ({@code access$NNN}: Java 8
- * bytecode has no nestmates, so an inner class reaches the outer class's private members through
- * them) pass what they need on to their callers. Constructors may touch their own class's fields
- * unguarded (the object is not published yet); nothing else is exempt.
+ * Analyzer}). A value's origin is tracked: the object itself ({@code this} of the outer class, or
+ * {@code this$0} of an inner class), a field loaded from it, or unknown; where paths meet, the
+ * origins are joined, so a value that is a lock on one path only is no lock. {@code monitorenter}
+ * of the object's field {@code L} adds L, {@code monitorexit} removes it, and where paths meet only
+ * what every path holds is held. A method annotated {@code @GuardedBy(L)} starts with L held.
+ *
+ * <p>Synthetic accessors ({@code access$NNN}: Java 8 bytecode has no nestmates, so an inner class
+ * reaches the outer class's private members through them) pass what they need on to their callers;
+ * their first parameter is taken to be the object itself, as javac passes {@code this$0}. Every
+ * other method is checked as it is, lambda bodies included, and a method reference to a guarded
+ * method or field is reported (when it runs cannot be seen). A constructor may touch its own
+ * object's fields unguarded (it is not published yet), and nothing else is exempt.
+ *
+ * <p>Not covered: a guarded object's reference used outside the lock after it was read under it,
+ * and calls through a supertype of the class (as with Error Prone's {@code GuardedBy} check).
  */
 final class LockDiscipline {
 
     static final String GUARDED_BY = "Lcom/google/errorprone/annotations/concurrent/GuardedBy;";
 
+    /** the object whose lock discipline is checked */
+    static final String SELF = "self";
+    /** the instance of an inner class, whose {@code this$0} is the object */
+    static final String INNER = "inner";
+    /** a value of unknown origin */
+    static final String UNKNOWN = "?";
+    /** the prefix of a field loaded from the object */
+    static final String FIELD = "field:";
+
+    private final String outer;
     private final Map<String, ClassNode> classes;
     /** owner.name -> the lock field guarding it */
     private final Map<String, String> guardedFields = new HashMap<>();
@@ -63,7 +84,8 @@ final class LockDiscipline {
 
     private final List<String> violations = new ArrayList<>();
 
-    private LockDiscipline(final Map<String, ClassNode> classes) {
+    private LockDiscipline(final String outer, final Map<String, ClassNode> classes) {
+        this.outer = outer;
         this.classes = classes;
     }
 
@@ -99,9 +121,12 @@ final class LockDiscipline {
         }
     }
 
-    /** The violations of the lock discipline in these classes; empty if it holds. */
-    static List<String> check(final Map<String, ClassNode> classes) throws AnalyzerException {
-        final LockDiscipline d = new LockDiscipline(classes);
+    /**
+     * The violations of the lock discipline of {@code outer} (an internal name) and its nested
+     * classes in {@code classes}; empty if it holds.
+     */
+    static List<String> check(final String outer, final Map<String, ClassNode> classes) throws AnalyzerException {
+        final LockDiscipline d = new LockDiscipline(outer, classes);
         d.collectAnnotations();
         d.checkFieldKinds();
         d.checkMethods();
@@ -145,12 +170,12 @@ final class LockDiscipline {
         return null;
     }
 
-    /** A field that is shared and mutable without being final, volatile or atomic. */
+    /**
+     * A field that is shared and mutable without being final or volatile. A field of an atomic
+     * type is safe only when it is final, so it counts as plain otherwise.
+     */
     static boolean isPlain(final FieldNode f) {
-        if ((f.access & (Opcodes.ACC_FINAL | Opcodes.ACC_VOLATILE)) != 0) {
-            return false;
-        }
-        return !Type.getType(f.desc).getClassName().startsWith("java.util.concurrent.atomic.");
+        return (f.access & (Opcodes.ACC_FINAL | Opcodes.ACC_VOLATILE)) == 0;
     }
 
     private void checkFieldKinds() {
@@ -184,16 +209,21 @@ final class LockDiscipline {
     // -------------------------------------------------------------------------------------------
     // the methods
 
+    /** A javac accessor of the outer class's private members for its inner classes. */
+    private boolean isAccessor(final ClassNode c, final MethodNode m) {
+        return c.name.equals(outer) && (m.access & Opcodes.ACC_SYNTHETIC) != 0 && m.name.startsWith("access$");
+    }
+
     private void checkMethods() throws AnalyzerException {
-        // what each synthetic accessor needs held at its call, to a fixpoint (an accessor may call
-        // another); then every method, the accessors' needs at their call sites included
+        // what each accessor needs held at its call, to a fixpoint (an accessor may call another);
+        // then every other method, the accessors' needs at their call sites included
         final Map<String, Set<String>> needs = new HashMap<>();
         boolean changed = true;
         while (changed) {
             changed = false;
             for (final ClassNode c : classes.values()) {
                 for (final MethodNode m : c.methods) {
-                    if ((m.access & Opcodes.ACC_SYNTHETIC) == 0 || m.instructions.size() == 0) {
+                    if (!isAccessor(c, m) || m.instructions.size() == 0) {
                         continue;
                     }
                     final Set<String> need = new HashSet<>();
@@ -208,7 +238,7 @@ final class LockDiscipline {
         }
         for (final ClassNode c : classes.values()) {
             for (final MethodNode m : c.methods) {
-                if ((m.access & Opcodes.ACC_SYNTHETIC) != 0 || m.instructions.size() == 0) {
+                if (isAccessor(c, m) || m.instructions.size() == 0) {
                     continue;
                 }
                 analyze(c, m, needs, what -> violations.add(c.name + "." + m.name + m.desc + ": " + what));
@@ -222,11 +252,12 @@ final class LockDiscipline {
 
     /**
      * The locks held at each instruction of {@code m}; reports every access that needs a lock not
-     * held there (for an accessor: the lock, to be held by its callers).
+     * held there, or is made on another object (for an accessor: the lock, to be held by its
+     * callers).
      */
     private void analyze(final ClassNode c, final MethodNode m, final Map<String, Set<String>> needs, final Sink sink)
             throws AnalyzerException {
-        final boolean accessor = (m.access & Opcodes.ACC_SYNTHETIC) != 0;
+        final boolean accessor = isAccessor(c, m);
         final int n = m.instructions.size();
         final List<List<Integer>> normal = new ArrayList<>();
         final List<List<Integer>> exceptional = new ArrayList<>();
@@ -234,7 +265,8 @@ final class LockDiscipline {
             normal.add(new ArrayList<>());
             exceptional.add(new ArrayList<>());
         }
-        final Analyzer<Origin> analyzer = new Analyzer<Origin>(new OriginInterpreter()) {
+        final String thisOrigin = c.name.equals(outer) ? SELF : INNER;
+        final Analyzer<Origin> analyzer = new Analyzer<Origin>(new OriginInterpreter(thisOrigin, accessor)) {
             @Override
             protected void newControlFlowEdge(final int insn, final int successor) {
                 normal.get(insn).add(successor);
@@ -248,7 +280,8 @@ final class LockDiscipline {
         };
         final Frame<Origin>[] frames = analyzer.analyze(c.name, m);
 
-        // must-hold data flow: the count of each lock held, the minimum where paths meet
+        // must-hold data flow: the count of each lock held, the minimum where paths meet; an
+        // exception edge leaves an instruction before its effect
         final List<Map<String, Integer>> held = new ArrayList<>(Collections.nCopies(n, null));
         final Map<String, Integer> entry = new TreeMap<>();
         final String own = guardedMethods.get(c.name + "." + m.name + m.desc);
@@ -280,34 +313,73 @@ final class LockDiscipline {
             }
         }
 
+        final boolean init = m.name.equals("<init>");
         for (int i = 0; i < n; i++) {
             final Map<String, Integer> h = held.get(i);
-            if (h == null) {
+            final Frame<Origin> f = frames[i];
+            if (h == null || f == null) {
                 continue; // unreachable
             }
             final AbstractInsnNode insn = m.instructions.get(i);
-            final List<String> required = new ArrayList<>();
-            String what = null;
             if (insn instanceof FieldInsnNode fi) {
                 final String lock = guardedFields.get(fi.owner + "." + fi.name);
-                final boolean ownInit = m.name.equals("<init>") || m.name.equals("<clinit>");
-                if (lock != null && !(ownInit && fi.owner.equals(c.name))) {
-                    required.add(lock);
-                    what = "access to " + fi.owner + "." + fi.name;
+                if (lock == null) {
+                    continue;
                 }
+                final String what = "access to " + fi.owner + "." + fi.name;
+                final boolean isStatic = fi.getOpcode() == Opcodes.GETSTATIC || fi.getOpcode() == Opcodes.PUTSTATIC;
+                if (!isStatic) {
+                    // the receiver: below the value for PUTFIELD, on top for GETFIELD
+                    final int depth = fi.getOpcode() == Opcodes.PUTFIELD ? 2 : 1;
+                    final Origin receiver = f.getStack(f.getStackSize() - depth);
+                    if (!receiver.isSelf()) {
+                        sink.add(what + " on another object than this");
+                        continue;
+                    }
+                    if (init && fi.owner.equals(c.name)) {
+                        continue; // the constructor's own object, not yet published
+                    }
+                }
+                require(h, List.of(lock), what, accessor, sink);
             } else if (insn instanceof MethodInsnNode mi) {
                 final String key = mi.owner + "." + mi.name + mi.desc;
                 final String lock = guardedMethods.get(key);
+                final List<String> required = new ArrayList<>(needs.getOrDefault(key, Set.of()));
+                final String what = "call of " + key;
                 if (lock != null) {
                     required.add(lock);
+                    if (mi.getOpcode() != Opcodes.INVOKESTATIC) {
+                        final int args = Type.getArgumentTypes(mi.desc).length;
+                        if (!f.getStack(f.getStackSize() - 1 - args).isSelf()) {
+                            sink.add(what + " on another object than this");
+                            continue;
+                        }
+                    }
                 }
-                required.addAll(needs.getOrDefault(key, Set.of()));
-                what = "call of " + key;
+                require(h, required, what, accessor, sink);
+            } else if (insn instanceof InvokeDynamicInsnNode indy) {
+                for (final Object arg : indy.bsmArgs) {
+                    if (arg instanceof Handle handle) {
+                        final String key = handle.getOwner() + "." + handle.getName();
+                        if (guardedMethods.containsKey(key + handle.getDesc()) || guardedFields.containsKey(key)) {
+                            sink.add("a method reference to the guarded " + key + handle.getDesc()
+                                    + " (when it runs cannot be checked)");
+                        }
+                    }
+                }
             }
-            for (final String lock : required) {
-                if (!h.containsKey(lock)) {
-                    sink.add(accessor ? lock : what + " without " + lock + " held");
-                }
+        }
+    }
+
+    private static void require(
+            final Map<String, Integer> held,
+            final List<String> locks,
+            final String what,
+            final boolean accessor,
+            final Sink sink) {
+        for (final String lock : locks) {
+            if (!held.containsKey(lock)) {
+                sink.add(accessor ? lock : what + " without " + lock + " held");
             }
         }
     }
@@ -336,21 +408,32 @@ final class LockDiscipline {
         }
     }
 
-    /** The lock a monitor operand is: the field it was loaded from, or "?" if not one field. */
+    /** The lock a monitor operand is: the object's field it was loaded from on every path, or "?". */
     private static String lockOf(final Origin v) {
-        return v.fields.size() == 1 ? v.fields.iterator().next() : "?";
+        if (v.origins.size() == 1) {
+            final String o = v.origins.iterator().next();
+            if (o.startsWith(FIELD)) {
+                return o.substring(FIELD.length());
+            }
+        }
+        return UNKNOWN;
     }
 
     // -------------------------------------------------------------------------------------------
-    // where a value comes from: the names of the fields it may have been loaded from
+    // where a value comes from
 
+    /** The origins a value may have, joined over the paths that reach it. */
     static final class Origin implements Value {
         final int size;
-        final Set<String> fields;
+        final Set<String> origins;
 
-        Origin(final int size, final Set<String> fields) {
+        Origin(final int size, final Set<String> origins) {
             this.size = size;
-            this.fields = fields;
+            this.origins = origins;
+        }
+
+        boolean isSelf() {
+            return origins.equals(Set.of(SELF));
         }
 
         @Override
@@ -360,25 +443,32 @@ final class LockDiscipline {
 
         @Override
         public boolean equals(final Object o) {
-            return o instanceof Origin other && other.size == size && other.fields.equals(fields);
+            return o instanceof Origin other && other.size == size && other.origins.equals(origins);
         }
 
         @Override
         public int hashCode() {
-            return 31 * size + fields.hashCode();
+            return 31 * size + origins.hashCode();
         }
     }
 
-    /** Tracks field origins through copies; the sizes come from ASM's {@link BasicInterpreter}. */
+    /**
+     * Tracks the object, its fields and unknown values through copies and merges; the sizes come
+     * from ASM's {@link BasicInterpreter}.
+     */
     static final class OriginInterpreter extends Interpreter<Origin> {
         private final BasicInterpreter basic = new BasicInterpreter();
+        private final String thisOrigin;
+        private final boolean accessor;
 
-        OriginInterpreter() {
+        OriginInterpreter(final String thisOrigin, final boolean accessor) {
             super(Opcodes.ASM9);
+            this.thisOrigin = thisOrigin;
+            this.accessor = accessor;
         }
 
-        private static Origin of(final BasicValue v) {
-            return v == null ? null : new Origin(v.getSize(), Set.of());
+        private static Origin unknown(final BasicValue v) {
+            return v == null ? null : new Origin(v.getSize(), Set.of(UNKNOWN));
         }
 
         private static BasicValue basic(final Origin v) {
@@ -387,16 +477,23 @@ final class LockDiscipline {
 
         @Override
         public Origin newValue(final Type type) {
-            return of(basic.newValue(type));
+            return unknown(basic.newValue(type));
+        }
+
+        @Override
+        public Origin newParameterValue(final boolean isInstanceMethod, final int local, final Type type) {
+            if (local == 0 && isInstanceMethod) {
+                return new Origin(1, Set.of(thisOrigin));
+            }
+            if (local == 0 && accessor) {
+                return new Origin(1, Set.of(SELF)); // javac passes this$0 to an accessor
+            }
+            return newValue(type);
         }
 
         @Override
         public Origin newOperation(final AbstractInsnNode insn) throws AnalyzerException {
-            final Origin v = of(basic.newOperation(insn));
-            if (insn instanceof FieldInsnNode fi && v != null) {
-                return new Origin(v.size, Set.of(fi.name));
-            }
-            return v;
+            return unknown(basic.newOperation(insn));
         }
 
         @Override
@@ -406,9 +503,15 @@ final class LockDiscipline {
 
         @Override
         public Origin unaryOperation(final AbstractInsnNode insn, final Origin value) throws AnalyzerException {
-            final Origin v = of(basic.unaryOperation(insn, basic(value)));
+            final Origin v = unknown(basic.unaryOperation(insn, basic(value)));
             if (insn.getOpcode() == Opcodes.GETFIELD && v != null) {
-                return new Origin(v.size, Set.of(((FieldInsnNode) insn).name));
+                final String name = ((FieldInsnNode) insn).name;
+                if (value.isSelf()) {
+                    return new Origin(v.size, Set.of(FIELD + name));
+                }
+                if (value.origins.equals(Set.of(INNER)) && name.startsWith("this$")) {
+                    return new Origin(v.size, Set.of(SELF));
+                }
             }
             return v;
         }
@@ -416,7 +519,7 @@ final class LockDiscipline {
         @Override
         public Origin binaryOperation(final AbstractInsnNode insn, final Origin a, final Origin b)
                 throws AnalyzerException {
-            return of(basic.binaryOperation(insn, basic(a), basic(b)));
+            return unknown(basic.binaryOperation(insn, basic(a), basic(b)));
         }
 
         @Override
@@ -431,7 +534,7 @@ final class LockDiscipline {
             for (final Origin o : values) {
                 args.add(basic(o));
             }
-            return of(basic.naryOperation(insn, args));
+            return unknown(basic.naryOperation(insn, args));
         }
 
         @Override
@@ -442,8 +545,8 @@ final class LockDiscipline {
             if (a.equals(b)) {
                 return a;
             }
-            final Set<String> union = new HashSet<>(a.fields);
-            union.addAll(b.fields);
+            final Set<String> union = new HashSet<>(a.origins);
+            union.addAll(b.origins);
             return new Origin(Math.min(a.size, b.size), Set.copyOf(union));
         }
     }

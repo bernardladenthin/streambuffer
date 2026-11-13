@@ -413,7 +413,9 @@ jobs:
           states=()
           for log in src/test/jpf/jpf-output*.log; do
             name="$(basename "$log" .log)"
-            states+=("states_${name#jpf-output}=$(grep -oE 'new=[0-9]+' "$log" | head -1 | cut -d= -f2)")
+            name="${name#jpf-output}"
+            name="${name#-}"
+            states+=("states_${name:-streambuffer}=$(grep -oE 'new=[0-9]+' "$log" | head -1 | cut -d= -f2)")
           done
           bash src/test/verification/manifest.sh manifest-jpf-interleavings.json jpf-interleavings \
             "rows=V6" "tool=jpf-core $JPF_SHA" "harnesses=${#states[@]}" "${states[@]}"
@@ -662,7 +664,7 @@ jobs:
           set -euo pipefail
           bash src/test/verification/manifest.sh manifest-tlaps-proofs.json tlaps-proofs \
             "rows=V12 V13 V14 V15 V16" "tool=tlapm $TLAPM_SHA (OCaml $OCAML_VERSION)" \
-            "tool_sha256=$(sha256sum tlapm-release.tar.gz | cut -d' ' -f1)" \
+            "tarball_sha256=$(sha256sum tlapm-release.tar.gz | cut -d' ' -f1)" \
             "modules=$(grep -c 'obligations proved' tlaps-proofs.log || true)" \
             "obligations=$(grep -oE 'All [0-9]+ obligations proved' tlaps-proofs.log | awk '{s += $2} END {print s + 0}')"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

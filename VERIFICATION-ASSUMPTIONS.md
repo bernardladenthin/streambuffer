@@ -21,7 +21,7 @@ caller must do for the results to apply (the caller contracts), and what no row 
 |---|---|---|---|---|---|
 | V1 | The 17 static methods of the sequential core (2 validators, 15 pure helpers) meet their full functional contracts | OpenJML 21.0.29 ESC, proved with Z3 and again with cvc5 | the code, every input (unbounded) | the JML semantics of OpenJML; `code_java_math` where the code relies on wrap-around (2 methods); one assumed contract (`newInvalidOffsetOrLengthToWriteException`); the bundled JDK specs | `openjml-esc` (formal-verification) |
 | V2 | Every JML contract (class invariants, the read/write guarantees, the statistics) holds at runtime during the whole test suite | OpenJML 21.0.29 RAC | the code, the executions of the test suite | contracts reference only monotone state, so they hold under concurrency; RAC's runtime classes | `openjml-rac` (formal-verification) |
-| V3 | The lock discipline: every access to a `@GuardedBy` field and every call of a `@GuardedBy` method holds its lock on every path; no field is plain without `@GuardedBy`; the README's field table lists every field with its kind | ASM 9.9.1 data flow over the bytecode (`drf/LockDisciplineBytecodeTest`); Error Prone's `GuardedBy` check on the source at compile time | the code's class files, every execution | the class files tested are those shipped (same build); the monitor of a lock is the field the operand was loaded from | `test`, `build` (publish) |
+| V3 | The lock discipline: every access to a `@GuardedBy` field and every call of a `@GuardedBy` method holds its lock on every path; no field is plain without `@GuardedBy`; the README's field table lists every field with its kind | ASM 9.9.1 data flow over the bytecode (`drf/LockDisciplineBytecodeTest`); Error Prone's `GuardedBy` check on the source at compile time | the code's class files, every execution | the class files tested are those shipped (same build); a lock is the object's own field the monitor operand was loaded from on every path; a guarded reference read under the lock is not used after it is released, and no guarded method is called through a supertype (neither is checked) | `test`, `build` (publish) |
 | V4 | No data race in the scenarios run (happens-before of the JMM) | vmlens 1.2.28 | the code, the scenarios and their interleavings (one stops at vmlens' limit) | the JDK classes behave as specified | `vmlens` (publish) |
 | V5 | Data-race freedom implies sequentially consistent executions, so the interleaving-based results (V6, V7, V8, V4) hold under the Java memory model | the theorem of JLS §17.4.5, machine-checked by Aspinall & Ševčík (TPHOLs 2007) and Lochbihler (TOPLAS 2014) | every execution of a correctly synchronized program | V3 for the lock-guarded fields, the total order of synchronization actions (JLS §17.4.4) for the volatile and atomic ones | none (an argument from V3 and V4) |
 | V6 | No deadlock, no lost wake-up, no uncaught exception, and the bytes each reader gets, in the 7 harnesses (a writer and a reader, a racing close, two readers, two record readers, a wait next to a reader, a wait next to a 2-byte write, a trim signal writing back) | Java PathFinder (jpf-core `e61e396`, an `AtomicLong` model patch) | the code's bytecode under JPF, every interleaving of the harnesses (bounded) | JPF's models of the JDK classes; the `AtomicLong` patch | `jpf-interleavings` (formal-verification) |
@@ -46,8 +46,9 @@ Every job of `formal-verification.yml` writes a manifest when its checks pass
 and its counts (proofs of ESC with each solver, the tests under RAC, the states of each JPF
 harness, the TLC models passed, including the two runs of the mutant, the traces accepted and the
 controls passed, the Apalache checks, the TLAPS modules and obligations, the jcstress results).
-The rows checked by jobs of `publish.yml` (V3, V4, V7, V9, V18) are tied to the Publish run of
-the same commit. ESC and RAC (V1, V2) run on every push and pull request; the other formal jobs
+The rows checked by jobs of `publish.yml` (V3, V4, V7, V8 in its quick mode, V9, V18) are tied to
+the Publish run of the same commit. ESC and RAC (V1, V2) run on every push to `main` and every pull
+request; the other formal jobs
 weekly and on dispatch (`arm64-jcstress-benchmark` on dispatch only), so their latest result is the
 manifest of the latest scheduled run, not necessarily of the latest commit. A15 (a release gate,
 `TODO.md`) would tie each release to its own run.
@@ -56,14 +57,15 @@ manifest of the latest scheduled run, not necessarily of the latest commit. A15 
 
 What every row takes for granted:
 
-- **The JVM and its JIT, and javac.** The rows on the code (V1-V9, V17, V18) check the source or the
+- **The JVM and its JIT, and javac.** The rows on the code (V1-V4, V6-V9, V17, V18) check the source or the
   bytecode javac produced; that the JVM runs that bytecode as the JLS says is assumed.
 - **The JDK classes** the buffer builds on: `ReentrantLock`, `Condition` and the AQS behind them,
   `Semaphore`, `ArrayDeque`, `CopyOnWriteArrayList`, `AtomicInteger`, `AtomicLong`. The TLA+ models
   (V10-V16) assume their documented behaviour (a lock is exclusive, `await` releases it,
   `signalAll` wakes every waiter, a spurious wake-up may happen).
 - **The tools themselves**, pinned by version, commit or SHA-256 in `formal-verification.yml`: OpenJML
-  with Z3 and cvc5, TLC, Apalache, tlapm with its backends (Zenon, Isabelle, the SMT solvers), JPF.
+  with Z3 and cvc5, TLC, Apalache, tlapm with its backends (Zenon, Isabelle, the SMT solvers; pinned
+  by commit, the SHA-256 of the tarball built from it is recorded in the manifest), JPF.
 
 ## The caller contracts
 

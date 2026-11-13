@@ -575,14 +575,19 @@ and not only about the interleavings they enumerate:
    machine-checked (Aspinall & Ševčík, TPHOLs 2007; Lochbihler, JinjaThreads, TOPLAS 2014) [V5]. The
    memory model's known problems (out-of-thin-air values, causality) concern racy programs only.
 2. **Every shared field is safe by construction** — final, volatile, atomic, or only touched under
-   one lock (table below). **This is checked on the bytecode for every execution** [V3]
+   one lock (table below). **This is checked on the bytecode for every execution** [V3] (its
+   assumptions there: a guarded reference is not used after the lock is released, no call through a
+   supertype)
    (`LockDisciplineBytecodeTest`, roadmap A17, in `mvn test`): for every method of `StreamBuffer`
    and its inner classes, the locks held at each instruction follow from the control flow, and
    every access to a `@GuardedBy` field and every call of a `@GuardedBy` method has its lock on
    every path; a field that is neither final, volatile nor atomic must be `@GuardedBy`. The table
    below is checked against the class by reflection, both ways. Negative controls on class files
-   mutated in memory (an unguarded read, the wrong lock, a lock no longer taken, an unguarded call
-   of a guarded method, a plain field, a missing table row) are each reported.
+   mutated in memory are each reported: an unguarded read, the wrong lock, a lock no longer taken
+   or taken on one branch only, a monitor that is the lock on one path only, another object's lock
+   or field, an access in the exception handler after the lock is released, an accessor of an inner
+   class that needs the lock, a lambda body, a method reference to a guarded method, an unguarded
+   call of a guarded method, a plain field, a missing table row.
 3. **vmlens checks it.** It runs the scenarios through their sequentially consistent interleavings and
    reports a data race by the memory model's happens-before; the `vmlens` job of the Publish pipeline
    fails the build on one (`There are N data races`). Scenarios: a reader against a writer, two
