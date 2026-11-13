@@ -42,6 +42,9 @@ models=(
   "WaitForeverNoClose2@StreamBufferWaitForever|Error: Temporal properties were violated."
   "WaitForeverRuns2@StreamBufferWaitForever|Error: Temporal properties were violated."
   "WaitForeverStarve2@StreamBufferWaitForever|Error: Temporal properties were violated."
+  # the argument of the TLAPS proof: the measure, and fairness per thread implies fairness by role
+  "WaitForeverMeasure2@StreamBufferWaitForeverLive|Model checking completed. No error has been found."
+  "WaitForeverRole2@StreamBufferWaitForeverLive|Model checking completed. No error has been found."
   # the detailed model, every thread calling again when done, forever
   "ForeverWaitAndRead2@StreamBufferForever|Model checking completed. No error has been found."
   "ForeverWaitChecked2@StreamBufferForever|Model checking completed. No error has been found."
