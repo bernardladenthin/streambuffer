@@ -3,9 +3,11 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
-# Runs every TLC model of StreamBuffer.tla and compares each with its expected outcome: the models
-# of the current code must check clean, the models of older code must fail with exactly the error
-# that shows the defect (so the spec can fail, and fails for the right reason).
+# Runs every TLC model and compares each with its expected outcome: the models of the current code
+# must check clean, the models of older code and the negative controls must fail with exactly the
+# error that shows the defect (so the spec can fail, and fails for the right reason). A model is
+# its .cfg; it checks StreamBuffer.tla unless the entry names another module.
+# StreamBufferWaitForever.tla: liveness with threads that call forever (TODO, A13 follow-up).
 #
 # Usage: src/test/tla/check.sh <path to tla2tools.jar>   (run from anywhere; needs java on PATH)
 set -euo pipefail
@@ -32,16 +34,37 @@ models=(
   "SemaphoreWaitAndRead2|Error: Deadlock reached."
   "WaitSnapshot2|Error: Invariant WaitEnoughOrClosed is violated."
   "WaitChecked2|Model checking completed. No error has been found."
+  # model@module: threads that call forever; fairness per process, no lock fairness
+  "WaitForever2@StreamBufferWaitForever|Model checking completed. No error has been found."
+  "WaitForever3@StreamBufferWaitForever|Model checking completed. No error has been found."
+  "WaitForever2W2@StreamBufferWaitForever|Model checking completed. No error has been found."
+  "WaitForeverNextOnly2@StreamBufferWaitForever|Error: Temporal properties were violated."
+  "WaitForeverNoClose2@StreamBufferWaitForever|Error: Temporal properties were violated."
+  "WaitForeverRuns2@StreamBufferWaitForever|Error: Temporal properties were violated."
+  "WaitForeverStarve2@StreamBufferWaitForever|Error: Temporal properties were violated."
+  # the detailed model, every thread calling again when done, forever
+  "ForeverWaitAndRead2@StreamBufferForever|Model checking completed. No error has been found."
+  "ForeverWaitChecked2@StreamBufferForever|Model checking completed. No error has been found."
+  "ForeverMixed2@StreamBufferForever|Model checking completed. No error has been found."
+  "ForeverRecords2@StreamBufferForever|Model checking completed. No error has been found."
+  "ForeverChunks2@StreamBufferForever|Model checking completed. No error has been found."
+  "ForeverCondition3@StreamBufferForever|Model checking completed. No error has been found."
+  "ForeverNextOnlyWaitAndRead2@StreamBufferForever|Error: Temporal properties were violated."
 )
 
 failed=0
 for entry in "${models[@]}"; do
   model="${entry%%|*}"
   expected="${entry#*|}"
+  module=StreamBuffer
+  if [[ "$model" == *@* ]]; then
+    module="${model#*@}"
+    model="${model%@*}"
+  fi
   log="$work/$model.log"
   set +e
   java -XX:+UseParallelGC -cp "$jar" tlc2.TLC -workers auto -metadir "$work/$model" \
-    -config "$model.cfg" StreamBuffer.tla > "$log" 2>&1
+    -config "$model.cfg" "$module.tla" > "$log" 2>&1
   set -e
   states="$(grep -oE '[0-9]+ distinct states found' "$log" | tail -1 || true)"
   if grep -qF "$expected" "$log"; then

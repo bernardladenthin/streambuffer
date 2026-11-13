@@ -438,12 +438,15 @@ Next ==
     \/ WriterStep \/ CloserStep \/ \E r \in Readers : ReaderStep(r)
     \/ (Terminated /\ UNCHANGED vars)
 
-(* Weak fairness for the writer and the closer, strong for the readers: a  *)
-(* reader that keeps finding a lock or permit taken eventually gets it (the *)
-(* JDK locks are not fair, so this is an assumption).                      *)
+(* Weak fairness for every thread: a thread that can go on all the time    *)
+(* eventually does (the scheduler runs a runnable thread). No lock         *)
+(* fairness: a thread that keeps finding a lock taken may never get it, as  *)
+(* the JDK's monitor and ReentrantLock(false) allow. Until 2026-11-13 the   *)
+(* readers had strong fairness (fair locks); every model of the current    *)
+(* code checks with weak fairness too.                                     *)
 Fairness ==
     /\ WF_vars(WriterStep) /\ WF_vars(CloserStep)
-    /\ \A r \in Readers : SF_vars(ReaderStep(r))
+    /\ \A r \in Readers : WF_vars(ReaderStep(r))
 
 Spec == Init /\ [][Next]_vars /\ Fairness
 
