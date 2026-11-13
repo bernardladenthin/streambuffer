@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Verification assumptions and run manifests (roadmap A16).** `VERIFICATION-ASSUMPTIONS.md`
+  lists every verification result as a row (`V1` to `V18`: property, tool, scope, assumptions, CI
+  job), the trusted base, the caller contracts and what no result covers; the READMEs name the row
+  of each claim, and `VerificationAssumptionsTest` fails on a reference to no row or a row named
+  nowhere. Every job of `formal-verification.yml` writes a manifest (commit, run, tool versions
+  and SHA-256, its counts) as the artifact `manifest-<job>`.
+- **The lock discipline checked on the bytecode (roadmap A17).** `LockDisciplineBytecodeTest`
+  (in `mvn test`) reads `StreamBuffer`'s class files with ASM and checks, for every method and every
+  path, that each access to a `@GuardedBy` field and each call of a `@GuardedBy` method holds its
+  lock, and that no field is plain without `@GuardedBy`; the README's field table is checked
+  against reflection. So data-race freedom by the lock discipline holds for every execution, not
+  only for vmlens' scenarios. The table lacked `ownedPrefix` (A14); added. Negative controls on
+  mutated class files.
 - **Spurious wake-ups in the TLA+ models.** `Condition.await()` may return without a signal; the
   models now have that step, `SpuriousWake(r)`: a parked thread is woken as by a signal, within a
   ghost budget that starts at the constant `Spurious` (any natural number) and is not under

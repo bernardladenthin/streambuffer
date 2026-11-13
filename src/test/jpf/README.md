@@ -7,7 +7,8 @@ SPDX-License-Identifier: Apache-2.0
 # JPF interleaving model-check
 
 Exhaustive thread-interleaving verification of `StreamBuffer`'s concurrent read/write/close protocol
-with [Java PathFinder](https://github.com/javapathfinder/jpf-core). Where the jcstress
+with [Java PathFinder](https://github.com/javapathfinder/jpf-core) [V6]; its scope and assumptions
+are in [`../../../VERIFICATION-ASSUMPTIONS.md`](../../../VERIFICATION-ASSUMPTIONS.md). Where the jcstress
 `Mode.Termination` tests (`-Pjcstress`) *stress* the blocking paths under hardware-driven schedules,
 JPF *exhaustively enumerates* the interleavings of a small harness — a strictly stronger guarantee
 for the schedules it covers. It is the erschöpfende ("exhaustive") counterpart flagged in
