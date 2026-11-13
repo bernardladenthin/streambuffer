@@ -44,8 +44,10 @@ annotated, so everything below is genuinely still open.
     `Spurious` covers every run, since a finite prefix has finitely many; liveness assumes
     finitely many, the usual assumption (infinitely many with no progress is not a defect of the
     code).
-  - **Not under fairness:** the step is not part of `ReaderStep`/`ThreadStep`, so fairness never
-    forces it; forced wake-ups would hide a lost wake-up in the liveness checks.
+  - **Not under fairness:** the step is not part of `ReaderStep`/`ThreadStep`, so the fairness
+    per thread never forces it; forced wake-ups would hide a lost wake-up in the liveness checks
+    (`StreamBufferWaitLive.tla`'s weak fairness of all of `Next` could, but its proof shows a
+    protocol step enabled until all are done).
   - **Existing configurations get `Spurious = 0`:** their behaviour and state counts stay; new
     models check `Spurious = 2`.
   - **In `StreamBuffer.tla` and `StreamBufferWait.tla`** (the abstraction with the TLAPS

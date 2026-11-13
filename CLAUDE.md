@@ -115,7 +115,7 @@ deliberately not part of the synchronous Publish pipeline and never a required c
    `ReCheck`, `AtomicRead`, `CountOnce`, `CheckedReturn` select the code version; `ChunkLen`,
    `ByteReaders`, `WaitCallers` the scenario; `Spurious` is the budget of spurious wake-ups of
    `Condition.await()` (`SpuriousWake(r)`, not under fairness; 0 in the existing configurations,
-   2 in `Spurious*`, 3 in the traces; also in `StreamBufferWait.tla` and its proofs). Every other
+   2 in the `*Spurious*` models, 3 in the traces; also in `StreamBufferWait.tla` and its proofs). Every other
    step keeps the ghost `spurious` (`StreamBuffer.tla`: in `WriterStep`/`CloserStep`/`ReaderStep`;
    `StreamBufferWait.tla`: in each writer, closer and thread action), so a new action needs
    `UNCHANGED spurious` too. A13: counter abstractions of `read()`

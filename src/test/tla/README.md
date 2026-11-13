@@ -112,8 +112,11 @@ signal would, and uses one of a ghost budget `spurious`, which starts at the con
 - **A budget, not an unbounded step.** Safety for every `Spurious` covers every run, since a finite
   prefix has finitely many wake-ups. Liveness assumes finitely many: wake-ups that come forever
   without progress are no defect of the code.
-- **Not under fairness.** The step is not part of `ReaderStep`, so fairness never forces it; a
-  forced wake-up would hide a lost one in the liveness checks.
+- **Not under fairness.** The step is not part of `ReaderStep`, so the fairness per thread never
+  forces it; a forced wake-up would hide a lost one in the liveness checks. The one exception is
+  harmless: `StreamBufferWaitLive.tla` assumes weak fairness of all of `Next`, which now includes
+  the step, but its proof shows a protocol step enabled in every state before all are done
+  (`EnabledLive`, from the witness actions alone), so no lost wake-up can hide behind a forced one.
 - **Every other step keeps the budget** (`WriterStep`, `CloserStep`, `ReaderStep`), so the
   fairness conditions and their `ENABLED` are as before.
 - The models above run with `Spurious = 0`, and their state counts are unchanged. These run with 2:
@@ -568,12 +571,12 @@ prints the first line no placement could consume.
 **Negative controls** (`trace-controls.sh`, also in CI; in CI the two scripts take about 5 min). A validation that accepts everything shows
 nothing, so these must reject:
 
-| control | rejected (one CI-sized run: 33 traces, 3 seeds, 2026-11-12; the counts vary with the interleavings) |
+| control | rejected (one CI-sized run: 33 traces, 3 seeds, a budget of 3 spurious wake-ups, 2026-11-13; the counts vary with the interleavings) |
 |---|---|
 | older code with fewer behaviours: `AtomicRead = FALSE` (before #212, the `Records*` traces) | 3 of 6 |
-| the semaphore wait (before F278) | 17 of 33 |
-| no re-check under `bufferLock` (`ReCheck = FALSE`, before F278, the `Bytes*` traces) | 7 of 9 |
-| a mutated model whose writer never signals (without spurious wake-ups, which could stand in for the signal) | 10 of 33 (9 on 2026-11-13) |
+| the semaphore wait (before F278) | 16 of 33 |
+| no re-check under `bufferLock` (`ReCheck = FALSE`, before F278, the `Bytes*` traces) | 9 of 9 |
+| a mutated model whose writer never signals (without spurious wake-ups, which could stand in for the signal) | 9 of 33 |
 | a spurious wake-up written into a trace (unpark, the test, park right after a reader's park, before any other thread's line): accepted with the budget, rejected with `Spurious = 0` | 3 of 3 |
 | every trace with a completed read, its first returned byte changed by one | 33 of 33 |
 
@@ -592,8 +595,8 @@ runs have the properties is what model checking (`check.sh`) and the proofs show
   `bufferLock` touches. The bytes every read returns are checked against the model's FIFO
   instead.
 - A spurious wake-up of `await()` is in the model within the trace's budget (`Spurious = 3`, set by
-  `TraceGenerator`); none occurred in the recorded runs. The control above shows a written one is
-  accepted only with a budget.
+  `TraceGenerator`). An accepted trace therefore no longer shows whether one happened in the
+  recorded run; that a written one is accepted only with a budget is the control above.
 - The lines name a method and its n-th access of a kind (`waitForAtLeast.getAvail#0`). A change of
   those methods needs the mapping in `TraceStreamBuffer.tla` changed with it (`TraceRecorderTest`
   fails first, with the fixed list of a single-threaded run).
