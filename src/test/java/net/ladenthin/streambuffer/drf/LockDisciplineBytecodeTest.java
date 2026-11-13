@@ -7,6 +7,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.not;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 import java.io.IOException;
@@ -186,6 +187,32 @@ class LockDisciplineBytecodeTest {
         assertThat(
                 check(),
                 hasItem(caller + ": call of " + OUTER + "." + call.name + call.desc + " without bufferLock held"));
+    }
+
+    @Test
+    void anAccessorGivenAnotherObjectIsReported() throws Exception {
+        // static void access$999(StreamBuffer sb) { sb.buffer; } -- needs sb's bufferLock
+        final InsnList body = readOf(0, "buffer", "Ljava/util/Deque;");
+        body.add(new InsnNode(Opcodes.RETURN));
+        final String desc = "(L" + OUTER + ";)V";
+        addMethod("access$999", desc, Opcodes.ACC_STATIC | Opcodes.ACC_SYNTHETIC, body, 1, 1);
+        // synchronized (bufferLock) { access$999(x); } with x = other, and with x = this
+        for (final String name : List.of("viaOther", "viaThis")) {
+            final InsnList code = new InsnList();
+            code.add(new VarInsnNode(Opcodes.ALOAD, 0));
+            code.add(new FieldInsnNode(Opcodes.GETFIELD, OUTER, "bufferLock", "Ljava/lang/Object;"));
+            code.add(new InsnNode(Opcodes.MONITORENTER));
+            code.add(new VarInsnNode(Opcodes.ALOAD, name.equals("viaOther") ? 1 : 0));
+            code.add(new MethodInsnNode(Opcodes.INVOKESTATIC, OUTER, "access$999", desc, false));
+            code.add(new InsnNode(Opcodes.RETURN));
+            addMethod(name, desc, Opcodes.ACC_PRIVATE, code, 1, 2);
+        }
+        final List<String> violations = check();
+        assertThat(
+                violations,
+                hasItem(OUTER + ".viaOther" + desc + ": call of " + OUTER + ".access$999" + desc
+                        + " with another object than this"));
+        assertThat(violations, not(hasItem(containsString(".viaThis"))));
     }
 
     @Test

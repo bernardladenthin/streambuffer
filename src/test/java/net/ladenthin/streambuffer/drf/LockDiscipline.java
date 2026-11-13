@@ -266,18 +266,19 @@ final class LockDiscipline {
             exceptional.add(new ArrayList<>());
         }
         final String thisOrigin = c.name.equals(outer) ? SELF : INNER;
-        final Analyzer<Origin> analyzer = new Analyzer<Origin>(new OriginInterpreter(thisOrigin, accessor)) {
-            @Override
-            protected void newControlFlowEdge(final int insn, final int successor) {
-                normal.get(insn).add(successor);
-            }
+        final Analyzer<Origin> analyzer =
+                new Analyzer<Origin>(new OriginInterpreter(thisOrigin, accessor ? outer : null)) {
+                    @Override
+                    protected void newControlFlowEdge(final int insn, final int successor) {
+                        normal.get(insn).add(successor);
+                    }
 
-            @Override
-            protected boolean newControlFlowExceptionEdge(final int insn, final int successor) {
-                exceptional.get(insn).add(successor);
-                return true;
-            }
-        };
+                    @Override
+                    protected boolean newControlFlowExceptionEdge(final int insn, final int successor) {
+                        exceptional.get(insn).add(successor);
+                        return true;
+                    }
+                };
         final Frame<Origin>[] frames = analyzer.analyze(c.name, m);
 
         // must-hold data flow: the count of each lock held, the minimum where paths meet; an
@@ -344,8 +345,17 @@ final class LockDiscipline {
             } else if (insn instanceof MethodInsnNode mi) {
                 final String key = mi.owner + "." + mi.name + mi.desc;
                 final String lock = guardedMethods.get(key);
-                final List<String> required = new ArrayList<>(needs.getOrDefault(key, Set.of()));
+                final Set<String> accessorNeeds = needs.getOrDefault(key, Set.of());
+                final List<String> required = new ArrayList<>(accessorNeeds);
                 final String what = "call of " + key;
+                if (!accessorNeeds.isEmpty()) {
+                    // an accessor's needs are those of the object it is given: it must be this
+                    final int args = Type.getArgumentTypes(mi.desc).length;
+                    if (args == 0 || !f.getStack(f.getStackSize() - args).isSelf()) {
+                        sink.add(what + " with another object than this");
+                        continue;
+                    }
+                }
                 if (lock != null) {
                     required.add(lock);
                     if (mi.getOpcode() != Opcodes.INVOKESTATIC) {
@@ -459,12 +469,13 @@ final class LockDiscipline {
     static final class OriginInterpreter extends Interpreter<Origin> {
         private final BasicInterpreter basic = new BasicInterpreter();
         private final String thisOrigin;
-        private final boolean accessor;
+        /** the outer class, for an accessor (whose parameter 0 of that type is the object) */
+        private final String accessorOf;
 
-        OriginInterpreter(final String thisOrigin, final boolean accessor) {
+        OriginInterpreter(final String thisOrigin, final String accessorOf) {
             super(Opcodes.ASM9);
             this.thisOrigin = thisOrigin;
-            this.accessor = accessor;
+            this.accessorOf = accessorOf;
         }
 
         private static Origin unknown(final BasicValue v) {
@@ -485,7 +496,7 @@ final class LockDiscipline {
             if (local == 0 && isInstanceMethod) {
                 return new Origin(1, Set.of(thisOrigin));
             }
-            if (local == 0 && accessor) {
+            if (local == 0 && accessorOf != null && type.getDescriptor().equals("L" + accessorOf + ";")) {
                 return new Origin(1, Set.of(SELF)); // javac passes this$0 to an accessor
             }
             return newValue(type);
@@ -509,7 +520,7 @@ final class LockDiscipline {
                 if (value.isSelf()) {
                     return new Origin(v.size, Set.of(FIELD + name));
                 }
-                if (value.origins.equals(Set.of(INNER)) && name.startsWith("this$")) {
+                if (value.origins.equals(Set.of(INNER)) && name.equals("this$0")) {
                     return new Origin(v.size, Set.of(SELF));
                 }
             }

@@ -324,6 +324,10 @@ annotated, so everything below is genuinely still open.
       must fail with its own message.
     - [x] (d142501) Runs in `mvn test` (fast, no agent); README "Data-Race Freedom" (point 2 is then checked
       for every execution, not only by vmlens' scenarios), CHANGELOG, CLAUDE.md.
+    - Known limits (reviews 2026-11-13, not blocking, not reachable by the code today): a guarded
+      reference used after the lock is released, calls through a supertype, a static `@GuardedBy`
+      method (matched by the lock's name), a method reference to an accessor, and a method named
+      like a guarded field in a method reference.
   - **A18 — Every interleaving of the code is a run of the model, for small scenarios (1–2
     weeks).** JPF enumerates all interleavings of the real bytecode for the scenarios of
     `src/test/jpf/`; a JPF listener writes each path as a trace in the format of A6, and
