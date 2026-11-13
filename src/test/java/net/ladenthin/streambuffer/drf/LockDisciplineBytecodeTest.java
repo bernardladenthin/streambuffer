@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -70,7 +71,7 @@ class LockDisciplineBytecodeTest {
 
     @Test
     void theFieldTableOfTheReadmeListsEveryFieldWithItsKind() throws IOException {
-        assertThat(FieldTable.differences(FieldTable.parse(readme()), StreamBuffer.class), empty());
+        assertThat(FieldTable.differences(FieldTable.parse(readme()), StreamBuffer.class, classes.get(OUTER)), empty());
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -371,11 +372,36 @@ class LockDisciplineBytecodeTest {
     }
 
     @Test
+    void aLockFieldThatIsNotFinalIsReported() throws Exception {
+        // synchronized (bufferLock) { bufferLock = new Object(); ... } would hand the lock out twice
+        for (final FieldNode f : classes.get(OUTER).fields) {
+            if (f.name.equals("bufferLock")) {
+                f.access &= ~Opcodes.ACC_FINAL;
+            }
+        }
+        assertThat(check(), hasItem("@GuardedBy lock is not final: " + OUTER + ".buffer by bufferLock"));
+    }
+
+    @Test
+    void aGuardTheTableNamesButTheClassFileLacksIsReported() throws IOException {
+        // buffer is final: without its @GuardedBy the checker no longer checks its accesses, so the
+        // table's guard must match the class file
+        for (final FieldNode f : classes.get(OUTER).fields) {
+            if (f.name.equals("buffer")) {
+                f.invisibleAnnotations.removeIf(a -> LockDiscipline.GUARDED_BY.equals(a.desc));
+            }
+        }
+        assertThat(
+                FieldTable.differences(FieldTable.parse(readme()), StreamBuffer.class, classes.get(OUTER)),
+                hasItem("buffer: @GuardedBy in the class file none, in the table bufferLock"));
+    }
+
+    @Test
     void aFieldMissingFromTheTableIsReported() throws IOException {
         final Map<String, String> table = FieldTable.parse(readme());
         table.remove("availableBytes");
         assertThat(
-                FieldTable.differences(table, StreamBuffer.class),
+                FieldTable.differences(table, StreamBuffer.class, classes.get(OUTER)),
                 hasItem("field not in the README table: availableBytes"));
     }
 
@@ -384,7 +410,8 @@ class LockDisciplineBytecodeTest {
         final Map<String, String> table = FieldTable.parse(readme());
         table.put("streamClosed", "`final boolean`");
         assertThat(
-                FieldTable.differences(table, StreamBuffer.class), hasItem(containsString("streamClosed is volatile")));
+                FieldTable.differences(table, StreamBuffer.class, classes.get(OUTER)),
+                hasItem(containsString("streamClosed is volatile")));
     }
 
     private List<String> check() throws AnalyzerException {
@@ -431,6 +458,7 @@ class LockDisciplineBytecodeTest {
     static final class FieldTable {
 
         private static final Pattern NAME = Pattern.compile("`([a-z][A-Za-z0-9]*)`");
+        private static final Pattern GUARD = Pattern.compile("@GuardedBy\\(\"([A-Za-z0-9]+)\"\\)");
 
         static Map<String, String> parse(final String readme) {
             final int start = readme.indexOf("| Field | Kind | Written | Read |");
@@ -457,7 +485,7 @@ class LockDisciplineBytecodeTest {
         }
 
         /** What the table and the class disagree on, as messages; empty if they agree. */
-        static List<String> differences(final Map<String, String> table, final Class<?> c) {
+        static List<String> differences(final Map<String, String> table, final Class<?> c, final ClassNode node) {
             final List<String> out = new ArrayList<>();
             final Map<String, Field> fields = new TreeMap<>();
             for (final Field f : c.getDeclaredFields()) {
@@ -480,6 +508,19 @@ class LockDisciplineBytecodeTest {
                     out.add(e.getKey() + " is plain (guarded by a lock), the table says " + kind);
                 } else if (!Modifier.isFinal(mod) && kind.contains("final")) {
                     out.add(e.getKey() + " is not final, the table says " + kind);
+                }
+                // the guard: the table's and the class file's must be the same, final fields too
+                final Matcher documented = GUARD.matcher(kind);
+                final String inTable = documented.find() ? documented.group(1) : null;
+                String inClass = null;
+                for (final FieldNode f : node.fields) {
+                    if (f.name.equals(e.getKey())) {
+                        inClass = LockDiscipline.guardOf(f);
+                    }
+                }
+                if (!Objects.equals(inTable, inClass)) {
+                    out.add(e.getKey() + ": @GuardedBy in the class file " + (inClass == null ? "none" : inClass)
+                            + ", in the table " + (inTable == null ? "none" : inTable));
                 }
             }
             for (final String name : table.keySet()) {

@@ -9,8 +9,8 @@
 # the file as an artifact, so each row of VERIFICATION-ASSUMPTIONS.md has a run tied to a revision.
 #
 # Usage: src/test/verification/manifest.sh <file.json> <job> <key=value>...
-#   every value is written as a JSON string; the commit is GITHUB_SHA (else git's HEAD), the run
-#   GITHUB_RUN_ID (else "local").
+#   every value is written as a JSON string (encoded by Python's json module, so any character is
+#   valid); the commit is GITHUB_SHA (else git's HEAD), the run GITHUB_RUN_ID (else "local").
 set -euo pipefail
 if [ "$#" -lt 2 ]; then
   echo "usage: manifest.sh <file.json> <job> <key=value>..." >&2
@@ -19,23 +19,24 @@ fi
 out="$1"
 job="$2"
 shift 2
-
-esc() {  # the JSON string escapes a value needs: backslash, quote, control characters
-  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr '\t\r\n' '   '
-}
-
+for kv in "$@"; do
+  case "$kv" in
+    ?*=*) ;;
+    *) echo "manifest.sh: not key=value: $kv" >&2; exit 2 ;;
+  esac
+done
+py="$(command -v python3 || command -v python)"
 commit="${GITHUB_SHA:-$(git rev-parse HEAD 2>/dev/null || echo unknown)}"
-{
-  printf '{\n  "job": "%s",\n  "commit": "%s",\n' "$(esc "$job")" "$(esc "$commit")"
-  printf '  "run": "%s",\n  "created": "%s"' "$(esc "${GITHUB_RUN_ID:-local}")" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  for kv in "$@"; do
-    case "$kv" in
-      ?*=*) ;;
-      *) echo "manifest.sh: not key=value: $kv" >&2; exit 2 ;;
-    esac
-    printf ',\n  "%s": "%s"' "$(esc "${kv%%=*}")" "$(esc "${kv#*=}")"
-  done
-  printf '\n}\n'
-} > "$out.tmp"
+"$py" -I -c '
+import json, sys
+out, job, commit, run, created = sys.argv[1:6]
+manifest = {"job": job, "commit": commit, "run": run, "created": created}
+for kv in sys.argv[6:]:
+    key, value = kv.split("=", 1)
+    manifest[key] = value
+with open(out + ".tmp", "w", encoding="utf-8", newline="\n") as f:
+    json.dump(manifest, f, indent=2, ensure_ascii=True)
+    f.write("\n")
+' "$out" "$job" "$commit" "${GITHUB_RUN_ID:-local}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$@"
 mv "$out.tmp" "$out"
 echo "manifest: $out ($job, $commit)"

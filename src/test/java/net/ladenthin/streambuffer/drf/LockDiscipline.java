@@ -153,6 +153,11 @@ final class LockDiscipline {
         }
     }
 
+    /** The lock a field's {@code @GuardedBy} names, or null. */
+    static String guardOf(final FieldNode f) {
+        return guardOf(f.visibleAnnotations, f.invisibleAnnotations);
+    }
+
     private static String guardOf(final List<AnnotationNode> visible, final List<AnnotationNode> invisible) {
         for (final List<AnnotationNode> list : List.of(
                 visible == null ? List.<AnnotationNode>of() : visible,
@@ -188,8 +193,12 @@ final class LockDiscipline {
         }
         for (final Map.Entry<String, String> e : guardedFields.entrySet()) {
             final String owner = e.getKey().substring(0, e.getKey().indexOf('.'));
-            if (field(owner, e.getValue()) == null) {
+            final FieldNode lock = field(owner, e.getValue());
+            if (lock == null) {
                 violations.add("@GuardedBy names no field of " + owner + ": " + e.getKey() + " by " + e.getValue());
+            } else if ((lock.access & Opcodes.ACC_FINAL) == 0) {
+                // a lock field that can be reassigned: another thread could take the new monitor
+                violations.add("@GuardedBy lock is not final: " + e.getKey() + " by " + e.getValue());
             }
         }
     }
