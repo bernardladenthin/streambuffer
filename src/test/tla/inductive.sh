@@ -134,8 +134,9 @@ refine RefineCounters RefineCondition2
 refine RefineCounters RefineCondition3
 refine RefineRecords RefineRecordsRecords2
 refine RefineRecords RefineRecordsChunks2
-# StreamBufferWait covers every configuration of the current code
-for c in Condition2 Condition3 Records2 Chunks2 Mixed2 WaitAndRead2 WaitChecked2; do
+# StreamBufferWait covers every configuration of the current code, also with spurious wake-ups
+for c in Condition2 Condition3 Records2 Chunks2 Mixed2 WaitAndRead2 WaitChecked2 \
+         SpuriousWaitChecked2 SpuriousMixed2; do
   refine RefineWait "RefineWait$c"
 done
 exit "$failed"

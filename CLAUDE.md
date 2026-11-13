@@ -105,7 +105,7 @@ deliberately not part of the synchronous Publish pipeline and never a required c
 
 4. **TLA+ model** (`src/test/tla/`, scheduled/dispatch CI job `tla-model`): `StreamBuffer.tla` models
    the wait/wake-up/close protocol, the writes (one FIFO entry each) and the reads; TLC checks safety
-   and liveness (weak fairness per thread, no lock fairness). `check.sh` compares 35 models with
+   and liveness (weak fairness per thread, no lock fairness). `check.sh` compares 45 models (and a mutant) with
    their expected outcomes: the current code checks
    clean (`read()` with 1, 2, 3 readers, `read(b, 0, 2)` records, records across entries, a `read()`
    reader next to a record reader, `waitForAtLeast` next to a reader, also next to a 2-byte write),
@@ -113,7 +113,12 @@ deliberately not part of the synchronous Publish pipeline and never a required c
    next to a waiter; #212: a torn record; F279: a count from the middle of a read; before
    `CheckedReturn`: `waitForAtLeast(2)` returning 1 on an open buffer). Constants `Protocol`,
    `ReCheck`, `AtomicRead`, `CountOnce`, `CheckedReturn` select the code version; `ChunkLen`,
-   `ByteReaders`, `WaitCallers` the scenario. A13: counter abstractions of `read()`
+   `ByteReaders`, `WaitCallers` the scenario; `Spurious` is the budget of spurious wake-ups of
+   `Condition.await()` (`SpuriousWake(r)`, not under fairness; 0 in the existing configurations,
+   2 in the `*Spurious*` models, 3 in the traces; also in `StreamBufferWait.tla` and its proofs). Every other
+   step keeps the ghost `spurious` (`StreamBuffer.tla`: in `WriterStep`/`CloserStep`/`ReaderStep`;
+   `StreamBufferWait.tla`: in each writer, closer and thread action), so a new action needs
+   `UNCHANGED spurious` too. A13: counter abstractions of `read()`
    (`StreamBufferCounters.tla`), of fixed-size records (`StreamBufferRecords.tla`, several writers
    and closers) and of the calls of the reading side (`StreamBufferWait.tla`: every thread any
    number of calls, each a read of its own size or a wait of its own request, several writers and

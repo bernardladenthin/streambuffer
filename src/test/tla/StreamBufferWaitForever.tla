@@ -28,7 +28,7 @@ EXTENDS StreamBufferWait
 Refill ==
     /\ calls = 0 /\ calls' = 1
     /\ UNCHANGED <<w, t, avail, closed, wpc, cpc, rpc, op, hold, left, off, wres, wclosed, eofAt,
-                   parked, wl, bl>>
+                   parked, wl, bl, spurious>>
 
 NextF == Next \/ Refill
 
@@ -64,7 +64,7 @@ AllStop == <>(\A r \in Threads : rpc[r] = "done")
 Shift ==
     /\ t >= RecLen /\ eofAt = -1 /\ w' = w - RecLen /\ t' = t - RecLen
     /\ UNCHANGED <<avail, closed, wpc, cpc, rpc, op, calls, hold, left, off, wres, wclosed, eofAt,
-                   parked, wl, bl>>
+                   parked, wl, bl, spurious>>
 
 NextI == NextF \/ Shift
 

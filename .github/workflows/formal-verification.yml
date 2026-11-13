@@ -453,7 +453,9 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     # inductive.sh took about 20 min on 4 cores with the A13 calls and liveness checks (2026-11-12),
-    # check.sh 594 s with the 32 models (2026-11-13, 4 cores), the trace validation about 5 min
+    # check.sh 594 s with 32 models (2026-11-13, 4 cores) and 361 s with the 45 of the spurious
+    # wake-ups on 32 cores (2026-11-13; on 4 cores about 20 min, estimated), the trace validation
+    # about 5 min
     timeout-minutes: 75
     env:
       TLA_TOOLS_VERSION: "v1.7.4"

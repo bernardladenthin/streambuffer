@@ -102,6 +102,8 @@ public final class TraceGenerator {
                 + "    ReadLen <- TReadLen\n"
                 + "    TraceLog <- TTrace\n"
                 + "    K = 6\n"
+                // spurious wake-ups of Condition.await() a trace may have (the JDK allows them)
+                + "    Spurious = 3\n"
                 + "    Protocol = \"condition\"\n"
                 + "    ReCheck = TRUE\n"
                 + "    AtomicRead = TRUE\n"

@@ -17,7 +17,7 @@ EXTENDS StreamBuffer
 Restart(r) ==
     /\ rpc[r] = "done"
     /\ Goto(r, "start")
-    /\ UNCHANGED <<Shared, want, cur, hold, left, reads, wres, wclosed, eofAt, Sync>>
+    /\ UNCHANGED <<Shared, want, cur, hold, left, reads, wres, wclosed, eofAt, Sync, spurious>>
 
 ThreadStepF(r) == ReaderStep(r) \/ Restart(r)
 

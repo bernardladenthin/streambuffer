@@ -68,12 +68,15 @@ CloserPot ==
     (Wake + 1) * Cardinality({c \in Closers : cpc[c] = "close"})
     + Wake * Cardinality({c \in Closers : cpc[c] = "siglock"})
 
-\* the bytes to write and to commit, the bytes buffered, the calls left
+\* the bytes to write and to commit, the bytes buffered, the calls left, the spurious wake-ups
+\* still to come (one lifts a parked thread's rank from 1 to 6)
 GlobalPot == (Wake + 2) * (Bytes - w) + Buffered + (10 * NT + 1) * (Bytes - t) + 9 * calls
+             + 10 * spurious
 Pot == ThreadPot + WriterPot + CloserPot + GlobalPot
 
 \* Pot in the initial state
 Pot0 == 8 * NT + NW + (Wake + 1) * NC + (Wake + 2) * Bytes + (10 * NT + 1) * Bytes + 9 * Calls0
+        + 10 * Spurious
 
 -----------------------------------------------------------------------------
 \* Apalache (fixed threads): the parts of the argument, as invariants
@@ -96,9 +99,9 @@ LiveDomains == Domains /\ LiveInv /\ OffMod
 ConstInitLive == Threads = {1, 2} /\ None = 0 /\ NW = 2 /\ NC = 1 /\ Bytes \in Nat /\ Bytes >= 1
              /\ K \in [{1, 2} -> Nat] /\ (\A r \in {1, 2} : K[r] >= 1)
              /\ M \in [{1, 2} -> Nat] /\ (\A r \in {1, 2} : M[r] >= 1)
-             /\ RecLen \in Nat /\ RecLen >= 1 /\ Calls0 \in Nat /\ CheckedReturn = TRUE
+             /\ RecLen \in Nat /\ RecLen >= 1 /\ Calls0 \in Nat /\ CheckedReturn = TRUE /\ Spurious \in Nat
 ConstInitLive3 == Threads = {1, 2, 3} /\ None = 0 /\ NW = 2 /\ NC = 2 /\ Bytes \in Nat /\ Bytes >= 1
              /\ K \in [{1, 2, 3} -> Nat] /\ (\A r \in {1, 2, 3} : K[r] >= 1)
              /\ M \in [{1, 2, 3} -> Nat] /\ (\A r \in {1, 2, 3} : M[r] >= 1)
-             /\ RecLen \in Nat /\ RecLen >= 1 /\ Calls0 \in Nat /\ CheckedReturn = TRUE
+             /\ RecLen \in Nat /\ RecLen >= 1 /\ Calls0 \in Nat /\ CheckedReturn = TRUE /\ Spurious \in Nat
 =============================================================================

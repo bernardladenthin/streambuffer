@@ -20,7 +20,7 @@ ASSUME ConstAssump == /\ None \notin Threads /\ NW \in Nat /\ NC \in Nat
                       /\ K \in [Threads -> Nat] /\ \A r \in Threads : K[r] >= 1
                       /\ M \in [Threads -> Nat] /\ \A r \in Threads : M[r] >= 1
                       /\ RecLen \in Nat /\ RecLen >= 1 /\ Calls0 \in Nat
-                      /\ CheckedReturn = TRUE
+                      /\ CheckedReturn = TRUE /\ Spurious \in Nat
 
 LEMMA InitSafe == Init => SafeInv
   BY ConstAssump DEF Init, SafeInv, TypeOK, Safety, NoEmptyTake, AvailLinearizable, WaitEnoughOrClosed, WholeRead, RecordsAligned, Uniform, NoWriteAfterEof, EofOnlyWhenClosedAndEmpty, Buffered, InFlight, Writers, Closers, Ops, States, Min, Want, BufLock, HoldLeft, BufNonNeg, CopyHasBytes, OpStates, WaitLockInv, ParkedInv, RereadClosed, Ret0Empty, CloserInv, WriterInv
@@ -174,11 +174,21 @@ LEMMA StepSafe == SafeInv /\ [Next]_vars => SafeInv'
   <1>3 CASE \E r \in Threads : ThreadStep(r)
     <2> PICK r \in Threads : ThreadStep(r)
       BY <1>3
+    \* a step of the protocol keeps the budget of spurious wake-ups
+    <2>0 spurious' = spurious
+      BY DEF ThreadStep, ThreadStart, ThreadReread, ThreadWaitLock, ThreadInc, ThreadTest,
+             ThreadWaitReturn, ThreadLock, ThreadDecide, ThreadCopy, ThreadFinish, ThreadRet0
+    <2> USE <2>0
     <2>1 CASE ThreadStart(r)
       <3> USE <2>1 DEF ThreadStart, Go, Return, EndCall
       <3>1 TypeOK'
         <4>1 rpc' \in [Threads -> States] /\ op' \in [Threads -> Ops] /\ calls' \in Nat
-          OBVIOUS
+          <5>1 CASE avail >= Want(r) /\ op[r] = "wait"
+            BY <5>1
+          <5>2 CASE ~(avail >= Want(r) /\ op[r] = "wait")
+            BY <5>2
+          <5> QED
+            BY <5>1, <5>2
         <4>2 wres' \in [Threads -> Int] /\ wclosed' \in [Threads -> BOOLEAN]
           OBVIOUS
         <4>3 parked' \subseteq Threads /\ wl' \in Threads \cup {None} /\ bl' \in Threads \cup {None}
@@ -517,7 +527,10 @@ LEMMA StepSafe == SafeInv /\ [Next]_vars => SafeInv'
         <4>2 hold' \in [Threads -> Nat]
           BY <4>1
         <4>3 left' \in [Threads -> Nat]
-          BY <4>1
+          <5>1 left[r] - k \in Nat
+            BY <4>1
+          <5> QED
+            BY <5>1
         <4>4 rpc' \in [Threads -> States]
           OBVIOUS
         <4> QED
@@ -658,8 +671,41 @@ LEMMA StepSafe == SafeInv /\ [Next]_vars => SafeInv'
       BY <2>1, <2>2, <2>3, <2>4, <2>5, <2>6, <2>7, <2>8, <2>9, <2>10, <2>11 DEF ThreadStep
   <1>4 CASE UNCHANGED vars
     BY <1>4 DEF vars
+  \* a spurious wake-up: a parked thread is woken, as by a signal
+  <1>5 CASE \E r \in Threads : SpuriousWake(r)
+    <2> PICK r \in Threads : SpuriousWake(r)
+      BY <1>5
+    <2> USE DEF SpuriousWake, Go
+    <2>1 TypeOK'
+      OBVIOUS
+    <2>2 Safety'
+      OBVIOUS
+    <2>3 BufLock'
+      OBVIOUS
+    <2>4 HoldLeft'
+      OBVIOUS
+    <2>5 BufNonNeg'
+      OBVIOUS
+    <2>6 CopyHasBytes'
+      OBVIOUS
+    <2>7 OpStates'
+      OBVIOUS
+    <2>8 WaitLockInv'
+      OBVIOUS
+    <2>9 ParkedInv'
+      OBVIOUS
+    <2>10 RereadClosed'
+      OBVIOUS
+    <2>11 Ret0Empty'
+      OBVIOUS
+    <2>12 CloserInv'
+      OBVIOUS
+    <2>13 WriterInv'
+      OBVIOUS
+    <2> QED
+      BY <2>1, <2>2, <2>3, <2>4, <2>5, <2>6, <2>7, <2>8, <2>9, <2>10, <2>11, <2>12, <2>13 DEF SafeInv
   <1> QED
-    BY <1>1, <1>2, <1>3, <1>4 DEF Next
+    BY <1>1, <1>2, <1>3, <1>4, <1>5 DEF Next
 
 THEOREM SafeInvariant == CSpec => []SafeInv
   BY InitSafe, StepSafe, PTL DEF CSpec

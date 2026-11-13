@@ -20,7 +20,8 @@
 (* every step but a return of r, or kept, and a step that keeps it moves   *)
 (* neither r nor a lock holder nor a writer or closer (FKeeps). Its parts, *)
 (* each paying for the largest rise of the parts below it:                 *)
-(* 1. FIP: what writers, closers and commits still have to do;             *)
+(* 1. FIP: what writers, closers and commits still have to do, and the    *)
+(*    spurious wake-ups still to come (each pays for the waking it causes);*)
 (* 2. Buffered: the bytes a copy can still take;                           *)
 (* 3. FBad: the threads at bufferLock whose re-check fails (stale since    *)
 (*    a commit);                                                           *)
@@ -48,6 +49,7 @@ FIP ==
     + Cardinality({i \in Writers : wpc[i] = "write"})
     + 2 * Cardinality({c \in Closers : cpc[c] = "close"})
     + Cardinality({c \in Closers : cpc[c] = "siglock"})
+    + spurious
 
 \* 3.
 FBadSet == {q \in Threads : rpc[q] \in {"lock", "decide"} /\ ~FOk(q)}

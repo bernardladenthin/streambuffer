@@ -15,8 +15,8 @@ EXTENDS StreamBufferWaitForeverLive, StreamBufferWaitLiveProof, StreamBufferWait
 
 \* the parts of the measure in the notation of the counting lemmas
 LEMMA FParts ==
-  /\ FIP = 2 * (Bytes - w) + (Bytes - t) + 2 * WS + WW + 2 * CC + CS
-  /\ FIP' = 2 * (Bytes - w') + (Bytes - t') + 2 * WS' + WW' + 2 * CC' + CS'
+  /\ FIP = 2 * (Bytes - w) + (Bytes - t) + 2 * WS + WW + 2 * CC + CS + spurious
+  /\ FIP' = 2 * (Bytes - w') + (Bytes - t') + 2 * WS' + WW' + 2 * CC' + CS' + spurious'
   /\ FSumV = LSum(Threads, FVF)
   /\ FSumV' = LSum(Threads, FVF')
   /\ FNT = NT
@@ -41,8 +41,10 @@ LEMMA FTypes ==
     <2>1 WW \in Nat /\ WS \in Nat /\ CC \in Nat /\ CS \in Nat /\ Bytes - w \in Nat
          /\ Bytes - t \in Nat /\ Buffered \in Nat
       BY PartsType DEF LiveInv
+    <2>2 spurious \in Nat
+      BY DEF LiveInv, SafeInv, TypeOK
     <2> QED
-      BY <2>1, FParts
+      BY <2>1, <2>2, FParts
   <1>3 FBad \in Nat /\ FBad <= FNT
     <2>1 FBadSet \subseteq Threads
       BY DEF FBadSet
@@ -61,7 +63,7 @@ LEMMA FTypesP ==
   <1>1 FIP' \in Nat /\ Buffered' \in Nat
     <2>1 /\ WW' \in Nat /\ WS' \in Nat /\ CC' \in Nat /\ CS' \in Nat
       BY Fin, AtType DEF WW, WS, CC, CS
-    <2>2 Bytes - w' \in Nat /\ Bytes - t' \in Nat /\ Buffered' \in Nat
+    <2>2 Bytes - w' \in Nat /\ Bytes - t' \in Nat /\ Buffered' \in Nat /\ spurious' \in Nat
       BY ConstAssump DEF LiveInv, SafeInv, TypeOK, BufNonNeg, Buffered, InFlight
     <2> QED
       BY <2>1, <2>2, FParts
@@ -153,9 +155,12 @@ LEMMA WCDrop ==
        /\ Buffered \in Nat /\ Buffered' \in Nat
        /\ w \in Nat /\ w' \in Nat /\ t \in Nat /\ t' \in Nat /\ Bytes \in Nat
     BY <1>1, ConstAssump DEF SafeInv, TypeOK, BufNonNeg, Buffered, InFlight
-  <1>4 FIP = 2 * (Bytes - w) + (Bytes - t) + 2 * WS + WW + 2 * CC + CS
-       /\ FIP' = 2 * (Bytes - w') + (Bytes - t') + 2 * WS' + WW' + 2 * CC' + CS'
+  <1>4 FIP = 2 * (Bytes - w) + (Bytes - t) + 2 * WS + WW + 2 * CC + CS + spurious
+       /\ FIP' = 2 * (Bytes - w') + (Bytes - t') + 2 * WS' + WW' + 2 * CC' + CS' + spurious'
     BY FParts
+  <1>5 spurious \in Nat /\ spurious' = spurious
+    BY <1>1 DEF WStep, CStep, WriterWrite, WriterSigLock, CloserClose, CloserSigLock, SafeInv,
+           TypeOK
   <1> USE ConstAssump, LiveAssump
   <1>10 CASE \E i \in Writers : WStep(i)
     <2> PICK i \in Writers : WriterWrite(i) \/ WriterSigLock(i)
@@ -175,7 +180,7 @@ LEMMA WCDrop ==
         <4>2 w' = w /\ Buffered' = Buffered
           BY <3>3, <2>1, <1>1 DEF WriterWrite, Buffered, InFlight, SafeInv, TypeOK
         <4> QED
-          BY ONLY <4>1, <4>2, <2>a, <1>2, <1>3, <1>4
+          BY ONLY <4>1, <4>2, <2>a, <1>2, <1>3, <1>4, <1>5
       <3>4 CASE ~(closed \/ w >= Bytes)
         <4> PICK c \in 1..Bytes : c <= Bytes - w /\ w' = w + c /\ avail' = avail + c
           BY <3>4, <2>1, <1>1 DEF WriterWrite, SafeInv, TypeOK
@@ -186,7 +191,7 @@ LEMMA WCDrop ==
         <4>3 c \in Nat /\ c >= 1 /\ w' = w + c
           OBVIOUS
         <4> QED
-          BY ONLY <4>1, <4>2, <4>3, <2>a, <1>2, <1>3, <1>4
+          BY ONLY <4>1, <4>2, <4>3, <2>a, <1>2, <1>3, <1>4, <1>5
       <3> QED
         BY <3>3, <3>4
     <2>2 CASE WriterSigLock(i)
@@ -195,7 +200,7 @@ LEMMA WCDrop ==
       <3>2 w' = w /\ Buffered' = Buffered
         BY <2>2 DEF WriterSigLock, Buffered, InFlight
       <3> QED
-        BY ONLY <3>1, <3>2, <2>a, <1>2, <1>3, <1>4
+        BY ONLY <3>1, <3>2, <2>a, <1>2, <1>3, <1>4, <1>5
     <2> QED
       BY <2>1, <2>2
   <1>11 CASE \E c \in Closers : CStep(c)
@@ -213,12 +218,12 @@ LEMMA WCDrop ==
       <3>1 CC' = CC - 1 /\ CS' = CS + 1
         BY <2>1, <2>b, <2>c, <1>1, <1>2 DEF CloserClose, CGo, SafeInv, TypeOK
       <3> QED
-        BY ONLY <3>1, <2>a, <1>2, <1>3, <1>4
+        BY ONLY <3>1, <2>a, <1>2, <1>3, <1>4, <1>5
     <2>2 CASE CloserSigLock(c)
       <3>1 CC' = CC /\ CS' = CS - 1
         BY <2>2, <2>b, <2>c, <1>1, <1>2 DEF CloserSigLock, CGo, SafeInv, TypeOK
       <3> QED
-        BY ONLY <3>1, <2>a, <1>2, <1>3, <1>4
+        BY ONLY <3>1, <2>a, <1>2, <1>3, <1>4, <1>5
     <2> QED
       BY <2>1, <2>2
   <1> QED
@@ -237,7 +242,7 @@ LEMMA ThreadBasics ==
   PROVE /\ \A x \in Threads \ {q} : /\ rpc'[x] = rpc[x] /\ op'[x] = op[x]
                                      /\ hold'[x] = hold[x] /\ left'[x] = left[x]
         /\ avail' = avail /\ closed' = closed /\ w' = w /\ t' = t /\ wpc' = wpc /\ cpc' = cpc
-        /\ (~ThreadCopy(q) => Buffered' = Buffered)
+        /\ (~ThreadCopy(q) => Buffered' = Buffered) /\ spurious' = spurious
   <1>0 SafeInv
     BY DEF LiveInv
   <1> USE <1>0, ConstAssump DEF SafeInv, TypeOK, BufLock, HoldLeft, WaitLockInv, Go, Return,
@@ -339,7 +344,7 @@ LEMMA StepDelta ==
   <1>3 \A x \in Threads \ {q} : FVF'[x] = FVF[x] /\ (x \in FBadSet' <=> x \in FBadSet)
     BY <1>2, OthersSame
   <1>4 FIP' = FIP
-    BY <1>2 DEF FIP
+    BY <1>2, ThreadBasics DEF FIP
   <1>5 q # r => FRank(r)' = FRank(r)
     BY <1>2 DEF FRank
   <1> QED
@@ -805,7 +810,7 @@ LEMMA ActCopy ==
   <1>3 \A x \in Threads \ {q} : FVF'[x] = FVF[x] /\ (x \in FBadSet' <=> x \in FBadSet)
     BY <1>2, OthersSame
   <1>4 FIP' = FIP
-    BY <1>2 DEF FIP
+    BY <1>0, <1>2, ThreadBasics DEF FIP
   <1>5 rpc[q] = "copy" /\ bl = q /\ left[q] >= 1 /\ Buffered >= left[q] /\ hold[q] \in Nat
        /\ left[q] \in Nat /\ w \in Nat /\ t \in Nat /\ Buffered \in Nat
     BY DEF ThreadCopy, LiveInv, SafeInv, TypeOK, BufLock, HoldLeft, CopyHasBytes, BufNonNeg,
@@ -861,6 +866,7 @@ LEMMA ActFinish ==
        /\ Bytes \in Nat
     BY ConstAssump DEF ThreadFinish, LiveInv, SafeInv, TypeOK, BufLock, HoldLeft
   <1>3 /\ t' = t + hold[q] /\ w' = w /\ wpc' = wpc /\ cpc' = cpc /\ bl' = None
+       /\ spurious' = spurious
     BY DEF ThreadFinish
   <1>4 FIP' = FIP - hold[q]
     <2>1 /\ WW' = WW /\ WS' = WS /\ CC' = CC /\ CS' = CS
@@ -868,8 +874,10 @@ LEMMA ActFinish ==
     <2>2 /\ WW \in Nat /\ WS \in Nat /\ CC \in Nat /\ CS \in Nat
          /\ Bytes - w \in Nat /\ Bytes - t \in Nat
       BY PartsType DEF LiveInv
+    <2>3 spurious \in Nat
+      BY DEF LiveInv, SafeInv, TypeOK
     <2> QED
-      BY ONLY <2>1, <2>2, <1>2, <1>3, FParts
+      BY ONLY <2>1, <2>2, <2>3, <1>2, <1>3, FParts
   <1>5 Buffered' = Buffered
     BY <1>2, <1>3, ConstAssump DEF Buffered, InFlight
   <1>6 FIP' < FIP /\ Buffered' - Buffered <= FIP - FIP'
@@ -887,6 +895,40 @@ LEMMA ActRefill ==
     BY <1>1 DEF FVF, FBadSet
   <1> QED
     BY <1>2 DEF Refill, FMeas, FIP, Buffered, InFlight, FBad, FSumV, FLay, FRank, FFrame
+
+\* a spurious wake-up uses up one of the budget, which pays for the waking
+LEMMA ActSpurious ==
+  ASSUME LiveInv, NEW r \in Threads, NEW q \in Threads, SpuriousWake(q)
+  PROVE FMeas(r)' < FMeas(r)
+  <1>1 LiveInv'
+    BY LiveStepF DEF NextF, Next
+  <1>2 /\ w' = w /\ t' = t /\ wpc' = wpc /\ cpc' = cpc /\ Buffered' = Buffered
+       /\ spurious \in Nat /\ spurious > 0 /\ spurious' = spurious - 1
+       /\ w \in Nat /\ t \in Nat /\ Bytes \in Nat
+    BY ConstAssump DEF SpuriousWake, LiveInv, SafeInv, TypeOK, Buffered, InFlight
+  <1>3 /\ WW' = WW /\ WS' = WS /\ CC' = CC /\ CS' = CS
+    BY <1>2 DEF WW, WS, CC, CS
+  <1>4 /\ WW \in Nat /\ WS \in Nat /\ CC \in Nat /\ CS \in Nat
+       /\ Bytes - w \in Nat /\ Bytes - t \in Nat
+    BY PartsType DEF LiveInv
+  <1>5 FIP' = FIP - 1
+    <2>1 /\ FIP = 2 * (Bytes - w) + (Bytes - t) + 2 * WS + WW + 2 * CC + CS + spurious
+         /\ FIP' = 2 * (Bytes - w') + (Bytes - t') + 2 * WS' + WW' + 2 * CC' + CS' + spurious'
+      BY FParts
+    <2>2 FIP' = 2 * (Bytes - w) + (Bytes - t) + 2 * WS + WW + 2 * CC + CS + (spurious - 1)
+      BY ONLY <2>1, <1>2, <1>3
+    <2> DEFINE A == 2 * (Bytes - w) + (Bytes - t) + 2 * WS + WW + 2 * CC + CS
+    <2>3 A \in Nat
+      BY ONLY <1>4 DEF A
+    <2>4 FIP = A + spurious /\ FIP' = A + (spurious - 1)
+      BY ONLY <2>1, <2>2 DEF A
+    <2> HIDE DEF A
+    <2> QED
+      BY ONLY <2>3, <2>4, <1>2
+  <1>6 FIP' < FIP /\ Buffered' - Buffered <= FIP - FIP'
+    BY <1>2, <1>5, FTypes
+  <1> QED
+    BY <1>1, <1>6, IPStep
 
 \* every step but a return of r keeps the measure or lowers it (FKeeps)
 LEMMA StepKeeps ==
@@ -923,8 +965,10 @@ LEMMA StepKeeps ==
       BY <2>11, ActRet0
     <2> QED
       BY <2>1, <2>2, <2>3, <2>4, <2>5, <2>6, <2>7, <2>8, <2>9, <2>10, <2>11 DEF ThreadStep
+  <1>4 CASE \E q \in Threads : SpuriousWake(q)
+    BY <1>4, ActSpurious DEF FKeeps
   <1> QED
-    BY <1>1, <1>2, <1>3 DEF NextF, Next, WStep, CStep
+    BY <1>1, <1>2, <1>3, <1>4 DEF NextF, Next, WStep, CStep
 
 \* a step of r that is no return moves r: its stage, or its copy under bufferLock
 LEMMA OwnMoves ==
@@ -1015,8 +1059,10 @@ LEMMA NotDone ==
         BY <2>2, <3>1 DEF Ret
     <2> QED
       BY <2>1, <2>2
+  <1>5 CASE \E q \in Threads : SpuriousWake(q)
+    BY <1>5 DEF SpuriousWake, Go
   <1> QED
-    BY <1>1, <1>2, <1>3, <1>4 DEF NextF, Next, WStep, CStep
+    BY <1>1, <1>2, <1>3, <1>4, <1>5 DEF NextF, Next, WStep, CStep
 
 LEMMA StutterM ==
   ASSUME NEW r \in Threads, UNCHANGED vars
@@ -1233,7 +1279,7 @@ LEMMA Lower ==
     BY <1>1, Case1, Case2, Case3, Case4, Case5, Case6, PTL
 
 \* the measure is bounded by a constant
-MB == FW * (3 * Bytes + 3 * NW + 3 * NC) + Bytes + 28 * FNT + 6
+MB == FW * (3 * Bytes + 3 * NW + 3 * NC + Spurious) + Bytes + 28 * FNT + 6
 
 LEMMA MeasBound ==
   ASSUME LiveInv, NEW r \in Threads
@@ -1246,11 +1292,15 @@ LEMMA MeasBound ==
     BY Fin, AtType DEF WW, WS, CC, CS
   <1>3 /\ w \in Nat /\ t \in Nat /\ w <= Bytes /\ t <= w /\ Bytes \in Nat /\ NW \in Nat
        /\ NC \in Nat /\ Buffered <= Bytes
+       /\ spurious \in Nat /\ spurious <= Spurious /\ Spurious \in Nat
     BY ConstAssump DEF LiveInv, SafeInv, TypeOK, BufNonNeg, Buffered, InFlight
-  <1>4 FIP <= 3 * Bytes + 3 * NW + 3 * NC
-    BY ONLY <1>2, <1>3, FParts
-  <1>5 FW * FIP <= FW * (3 * Bytes + 3 * NW + 3 * NC)
-    <2> DEFINE b == 3 * Bytes + 3 * NW + 3 * NC
+  <1>4 FIP <= 3 * Bytes + 3 * NW + 3 * NC + Spurious
+    <2>1 FIP - spurious <= 3 * Bytes + 3 * NW + 3 * NC
+      BY ONLY <1>2, <1>3, FParts
+    <2> QED
+      BY ONLY <2>1, <1>1, <1>3
+  <1>5 FW * FIP <= FW * (3 * Bytes + 3 * NW + 3 * NC + Spurious)
+    <2> DEFINE b == 3 * Bytes + 3 * NW + 3 * NC + Spurious
     <2>1 b \in Nat /\ b - FIP \in Nat
       BY <1>1, <1>3, <1>4
     <2>2 FW * b = FW * FIP + FW * (b - FIP) /\ FW * (b - FIP) \in Nat
