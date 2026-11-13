@@ -53,14 +53,17 @@ annotated, so everything below is genuinely still open.
     `StreamBufferRecords.tla`: `StreamBufferWait.tla` covers their slices, and their TLC
     refinement checks run with `Spurious = 0`, so they stay valid.
 
-  - [ ] Detailed model: `Spurious`, `spurious`, `SpuriousWake(r)` (parked to woken, one of the
+  - [x] (61e4cec, f285661) Detailed model: `Spurious`, `spurious`, `SpuriousWake(r)` (parked to woken, one of the
     budget) in `Next`, not in `Fairness`; every existing `.cfg` with `Spurious = 0`; new models
     (2 and 3 readers, records, `waitForAtLeast`) with `Spurious = 2`; a negative control (the
     woken thread skips the test of its loop: must fail once a spurious wake-up is possible);
-    `check.sh`.
-  - [ ] A6: `TraceStreamBuffer.tla` lets a parked thread wake spuriously; `TraceGenerator` writes
+    `check.sh`. The control runs next to a lone `waitForAtLeast(2)` (`WaitAlone1`): next to a
+    `read()` reader the mutant fails without spurious wake-ups too, so it would not separate.
+  - [x] (61e4cec, f285661) A6: `TraceStreamBuffer.tla` lets a parked thread wake spuriously; `TraceGenerator` writes
     a budget; a hand-written trace with a wake-up without `signalAll` is accepted with a budget and
-    rejected with `Spurious = 0`; README limits.
+    rejected with `Spurious = 0`; README limits. The trace is written by `trace-controls.sh`
+    (one more round of the wait loop right after a park); removing the signal lines of a recorded
+    trace does not work, the model places the writer's signal silently before its exit line.
   - [ ] `StreamBufferWait.tla`: the same step and budget; `inductive.sh` (Apalache, any budget);
     TLAPS: `StreamBufferWaitProof.tla` (`SafeInv`), `StreamBufferWaitLiveProof.tla` (the budget in
     `Pot`), `StreamBufferWaitEnabled.tla` if needed, the forever proof (the budget in `FIP`),
