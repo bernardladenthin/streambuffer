@@ -65,9 +65,10 @@ part of the Maven build and never touches the shipped jar.
 ## Models and results
 
 `check.sh` runs every model and compares it with its **expected** outcome: the 16 models below
-(last run 2026-11-13, TLC v1.7.4, about 90 s), the 16 of "Liveness with threads that call
-forever" and the 3 of the external signals (F280), 35 in all, 594 s on 4 cores (with 32; the
-signal models take a second). Writes are single bytes unless the row says otherwise:
+(last run 2026-11-13, TLC v1.7.4, about 90 s), the 8 of "Spurious wake-ups" and its mutant, the 18
+of "Liveness with threads that call forever" and the 3 of the external signals (F280), 45 in all;
+361 s on 32 cores (2026-11-13, next to the other checks), 594 s on 4 cores with 32 of them before.
+Writes are single bytes unless the row says otherwise:
 
 | Model | Code | Reads | Threads | Expected and found |
 |---|---|---|---|---|
@@ -102,6 +103,45 @@ head entry, a copy across two entries, completed reads of both sizes, `waitForAt
 returning through the waiting branch. Moving the FIFO from bytes to entries left the state counts of
 the clean single-byte models unchanged.
 
+### Spurious wake-ups
+
+`Condition.await()` may return without a signal (its Javadoc allows it); the code tests again in
+its loop. The model has the step: `SpuriousWake(r)` turns a parked reader into a woken one, as a
+signal would, and uses one of a ghost budget `spurious`, which starts at the constant `Spurious`.
+
+- **A budget, not an unbounded step.** Safety for every `Spurious` covers every run, since a finite
+  prefix has finitely many wake-ups. Liveness assumes finitely many: wake-ups that come forever
+  without progress are no defect of the code.
+- **Not under fairness.** The step is not part of `ReaderStep`, so fairness never forces it; a
+  forced wake-up would hide a lost one in the liveness checks.
+- **Every other step keeps the budget** (`WriterStep`, `CloserStep`, `ReaderStep`), so the
+  fairness conditions and their `ENABLED` are as before.
+- The models above run with `Spurious = 0`, and their state counts are unchanged. These run with 2:
+
+| Model | Reads | Threads | Expected and found |
+|---|---|---|---|
+| `SpuriousCondition2` | `read()` | 2 | no error, 34,736 states |
+| `SpuriousCondition3` | `read()` | 3 | no error, 627,231 states |
+| `SpuriousMixed2` | `read()` and `read(b, 0, 2)` | 2 | no error, 39,248 states |
+| `SpuriousWaitAndRead2` | `waitForAtLeast(2)` and `read()`; 1 byte | 2 | no error, 5,673 states |
+| `SpuriousWaitChecked2` | the same; one 2-byte write | 2 | no error, 7,673 states |
+| `SpuriousReached2` | as `SpuriousCondition2`, probe `NoSpuriousWake` | 2 | violated: a spurious wake-up happens |
+| `WaitAlone1` | `waitForAtLeast(2)` alone; one 2-byte write | 1 | no error, 105 states |
+| `SpuriousWaitAlone1` | the same with the budget | 1 | no error, 263 states |
+
+**The negative control** (`check.sh`, on a copy of the model): a mutant whose woken thread skips
+the test of its loop (`ReaderWaitLock` goes to `wret` instead of `test`). Next to a lone
+`waitForAtLeast(2)` every signal wakes it to enough bytes or a closed buffer. So the mutant checks
+clean in `WaitAlone1` and violates `WaitEnoughOrClosed` in `SpuriousWaitAlone1`: it returns 0 on an
+open buffer. The step reaches what the test is for. Next to a `read()` reader the mutant fails
+without spurious wake-ups too (a signal wakes the waiter, the reader takes a byte before its test),
+so that configuration would not tell the two apart.
+
+The abstraction `StreamBufferWait.tla` has the same step and budget, and so do its proofs (below):
+`Pot` and the measure of the forever proof count the budget, which pays for the rank a wake-up
+gives the thread. The trace validation lets a parked reader wake spuriously within a budget
+(below).
+
 ## Unbounded safety: inductive invariants (roadmap A13)
 
 TLC checks fixed constants, up to 3 readers and a few bytes. Counter abstractions with inductive
@@ -135,9 +175,9 @@ therefore true by construction there, and the F279 defect is only shown by the b
 |---|---|---|---|---|---|
 | `StreamBufferCounters.tla` | `read()`, single-byte writes | N = 2, 3, 4, 8, 12; any bytes (`IndInv`) | `SafeInv`, 216 obligations | `Condition2`, `Condition3` | the empty take without the re-check (F278), 10 steps |
 | `StreamBufferRecords.tla` | `read(b, 0, K)`, several writers and closers, any chunking | 2, 3, 4 readers with 2 writers and 2 closers, 2 readers with 3 and 3; any K and bytes (`SafeModInv`) | `SafeInv`, any readers, writers and closers, 488 obligations | `Records2`, `Chunks2` | a torn record with the two-phase read (#212), 6 steps |
-| `StreamBufferWait.tla` | every thread any number of calls, each `read(b, 0, K[r])` (`K[r] = 1` is `read()`) or `waitForAtLeast(M[r])`; several writers and closers, any chunking | 2, 3, 4 threads with 2 writers and 2 closers, 2 threads with 3 and 3; any read sizes, requests, bytes and calls (`SafeModInv`) | `SafeInv`, any threads, writers and closers, 577 obligations | TLAPS for any number of readers (`RefineWaitProof.tla`, 2,656 obligations); TLC in all seven configurations of the current code (`Condition2`, `Condition3`, `Records2`, `Chunks2`, `Mixed2`, `WaitAndRead2`, `WaitChecked2`) | `waitForAtLeast(M[r]) < M[r]` on an open buffer before `CheckedReturn`, 11 steps |
-| `StreamBufferWaitForeverLive.tla` | liveness with threads that call forever: with a closer, every call returns | TLC (`WaitForever*`, below) | `SpecRole => EveryCallReturns`, any threads, writers and closers: 633 + 1,322 obligations | as `StreamBufferWait.tla` | with an endless writer and no close a reader starves, also with fair locks |
-| `StreamBufferWaitLive.tla` | liveness of `StreamBufferWait.tla`: with a closer, every call returns and all finish | 2 threads with 2 writers and 1 closer, 3 with 2 and 2: `LiveInv` inductive, `Pot` goes down with every step, a step until all are done | `FairSpec => <>AllDone`, any threads, writers and closers: 363 + 628 + 919 obligations | as `StreamBufferWait.tla` | without `ClosedNoPark` a state of `SafeInv` has no step |
+| `StreamBufferWait.tla` | every thread any number of calls, each `read(b, 0, K[r])` (`K[r] = 1` is `read()`) or `waitForAtLeast(M[r])`; several writers and closers, any chunking | 2, 3, 4 threads with 2 writers and 2 closers, 2 threads with 3 and 3; any read sizes, requests, bytes and calls (`SafeModInv`) | `SafeInv`, any threads, writers and closers, with spurious wake-ups, 617 obligations | TLAPS for any number of readers (`RefineWaitProof.tla`, 2,729 obligations, spurious wake-ups included); TLC in all seven configurations of the current code (`Condition2`, `Condition3`, `Records2`, `Chunks2`, `Mixed2`, `WaitAndRead2`, `WaitChecked2`) and two with spurious wake-ups (`SpuriousWaitChecked2`, `SpuriousMixed2`) | `waitForAtLeast(M[r]) < M[r]` on an open buffer before `CheckedReturn`, 11 steps |
+| `StreamBufferWaitForeverLive.tla` | liveness with threads that call forever: with a closer, every call returns | TLC (`WaitForever*`, below) | `SpecRole => EveryCallReturns`, any threads, writers and closers, any budget of spurious wake-ups: 633 + 1,378 obligations | as `StreamBufferWait.tla` | with an endless writer and no close a reader starves, also with fair locks |
+| `StreamBufferWaitLive.tla` | liveness of `StreamBufferWait.tla`: with a closer, every call returns and all finish | 2 threads with 2 writers and 1 closer, 3 with 2 and 2: `LiveInv` inductive, `Pot` goes down with every step, a step until all are done | `FairSpec => <>AllDone`, any threads, writers and closers, any budget of spurious wake-ups: 363 + 628 + 956 obligations | as `StreamBufferWait.tla` | without `ClosedNoPark` a state of `SafeInv` has no step |
 
 **The abstractions.** The writer writes the bytes 1, 2, ... in order, and the FIFO hands them out
 in order, so the byte sequences reduce to counts:
@@ -230,9 +270,11 @@ behaviour of `StreamBufferWait.tla` with weak fairness of `Next` ends with every
 every thread, writer and closer done. Weak fairness of `Next` as a whole only says that the system
 does not halt while a step is possible; it assumes no fairness per thread or lock. The argument:
 - **`Pot` goes down with every step.** `Pot` is a natural number: the bytes to write and to commit,
-  the bytes buffered, the calls left, and a rank per thread (at most 10), writer and closer. Each
-  loop of the protocol is paid for: a wake-up by the signal that caused it, a failed re-check under
-  `bufferLock` by the commit that took the bytes, the next call by the budget. The thread part is
+  the bytes buffered, the calls left, the spurious wake-ups still to come (10 each), and a rank
+  per thread (at most 10), writer and closer. Each loop of the protocol is paid for: a wake-up by
+  the signal that caused it or by the budget of spurious wake-ups (the rank of the woken thread
+  rises from 1 to 6), a failed re-check under `bufferLock` by the commit that took the bytes, the
+  next call by the budget of calls. The thread part is
   the sum of 10 layers, layer k the number of threads of rank at least k, so the proof needs no sum
   over the threads, only cardinalities (`StreamBufferCountLemmas.tla`).
 - **A step is possible until all are done** (`StreamBufferWaitEnabled.tla`). A lock holder can always
@@ -280,7 +322,8 @@ above. With the ranges made non-empty, the torn record is found in 6 steps inste
   - A reader's lock-free read of `availableBytes` and of `streamClosed` is one step, where Java
     reads them one after the other. This is harmless for safety: `RereadClosed` needs only
     `closed`, and nothing raises the count after the close.
-  - Spurious wake-ups of `await` are not modelled. A woken thread checks again either way.
+  - Spurious wake-ups of `await` are modelled with a finite budget ("Spurious wake-ups" above):
+    safety holds for any budget, liveness assumes finitely many.
 - **The refinement proof is for the current code** (`Protocol = "condition"` and the four fixes on),
   the configuration the abstractions model; the older code is shown failing by the bounded models.
 - **The proofs** run every step as `OBVIOUS` under one large `USE DEF`, with `--stretch 3`. On a
@@ -351,11 +394,13 @@ for a counterexample).
 | `WaitForever2` | `StreamBufferWaitForever` | `read()`, `read(b, 0, 2)` and `waitForAtLeast(2)` calls, 3 bytes, 1 writer, 1 closer | every call returns, 364,866 states |
 | `WaitForever3` | same | 3 threads, 1 byte | every call returns, 838,813 states |
 | `WaitForever2W2` | same | 2 threads, 2 bytes, 2 writers, 1 closer | every call returns, 588,720 states |
+| `WaitForeverSpurious2` | same | as `WaitForever2`, up to two spurious wake-ups | every call returns, 1,103,018 states |
 | `WaitForeverNextOnly2` | same | as `WaitForever2`, fairness for `Next` only | violated: thread 2 is never scheduled again while thread 1 calls forever |
 | `WaitForeverNoClose2` | same | as `WaitForever2`, no closer | violated: the record reader waits forever for its second byte |
 | `WaitForeverRuns2` | same | as `WaitForever2`, probe `AllStop` | violated: fair runs in which the threads call forever exist |
 | `WaitForeverStarve2` | same | 2 threads, each call a `read()` or a `waitForAtLeast(2)`, an endless writer, no close, every thread step strongly fair | violated: the starvation lasso above (the starving thread's call is a `read()`) |
 | `WaitForeverMeasure2` | `StreamBufferWaitForeverLive` | as `WaitForever2` | the step property of the proof's measure, and fairness per thread implies fairness by role |
+| `WaitForeverMeasureSpurious2` | same | as `WaitForeverSpurious2` | the step property of the measure (a wake-up lowers it by its budget); without the budget in the measure it is violated (checked by hand, not committed). `FairRole` stays in `WaitForeverMeasure2`: a spurious wake-up takes no lock and is no step of a role |
 | `WaitForeverRole2` | same | as `WaitForever2`, fairness by role | every call returns |
 | `ForeverWaitAndRead2`, `ForeverWaitChecked2`, `ForeverMixed2`, `ForeverRecords2`, `ForeverChunks2`, `ForeverCondition3` | `StreamBufferForever` | the models of the current code, every thread calling again forever | every call returns; 3,038 to 294,862 states |
 | `ForeverNextOnlyWaitAndRead2` | same | fairness for `Next` only | violated |
@@ -377,7 +422,8 @@ finitely many threads, writers and closers.
 - **A measure per thread r**, a natural number. Every step but a return of r keeps it or lowers it,
   and a step that keeps it moves neither r nor a lock holder nor a writer or closer. Its parts, each
   weighted to pay for the largest rise of the parts below it:
-  1. what writers, closers and commits still have to do;
+  1. what writers, closers and commits still have to do, and the spurious wake-ups still to come
+     (each pays for the rank the waking gives);
   2. the bytes a copy can still take;
   3. the threads at `bufferLock` whose re-check fails (stale since a commit);
   4. a stage per thread, the same on the cycles of returns that take no lock (a fast-path return,
@@ -392,7 +438,8 @@ finitely many threads, writers and closers.
   `NatInduction`) gives the property from every state.
 
 Obligations: `StreamBufferWaitForeverEnabled.tla` 633 (the role actions are enabled where the
-proof needs them), `StreamBufferWaitForeverLiveProof.tla` 1,322. Negative controls (2026-11-13,
+proof needs them), `StreamBufferWaitForeverLiveProof.tla` 1,378 (1,322 before the spurious
+wake-ups). Negative controls (2026-11-13,
 not committed); each makes exactly the obligation fail that it should:
 
 - a lemma `FALSE` added: only that one fails, so no backend derives `FALSE` from the
@@ -420,7 +467,7 @@ without the buffered bytes, and without the stale lock holders.
 - `FairRole` is the proof's assumption; that it follows from fairness per thread is argued above
   and checked by TLC in bounded models.
 - A finite stream with a closer. With an endless writer, per-call liveness fails (above).
-- Spurious wake-ups of `await` are not modeled (see "Limits of A13").
+- Finitely many spurious wake-ups of `await` (any budget; see "Spurious wake-ups").
 
 ## The "max 1 permit" of the external signals (bug-hunt finding F280)
 
@@ -526,7 +573,8 @@ nothing, so these must reject:
 | older code with fewer behaviours: `AtomicRead = FALSE` (before #212, the `Records*` traces) | 3 of 6 |
 | the semaphore wait (before F278) | 17 of 33 |
 | no re-check under `bufferLock` (`ReCheck = FALSE`, before F278, the `Bytes*` traces) | 7 of 9 |
-| a mutated model whose writer never signals | 10 of 33 |
+| a mutated model whose writer never signals (without spurious wake-ups, which could stand in for the signal) | 10 of 33 (9 on 2026-11-13) |
+| a spurious wake-up written into a trace (unpark, the test, park right after a reader's park, before any other thread's line): accepted with the budget, rejected with `Spurious = 0` | 3 of 3 |
 | every trace with a completed read, its first returned byte changed by one | 33 of 33 |
 
 The traces a wrong model accepts are those that never reach the difference, e.g. no thread
@@ -543,7 +591,9 @@ runs have the properties is what model checking (`check.sh`) and the proofs show
 - Not traced: the FIFO itself and `positionAtCurrentBufferEntry`, which only the holder of
   `bufferLock` touches. The bytes every read returns are checked against the model's FIFO
   instead.
-- A spurious wake-up of `await()` is not in the model and would reject a trace; none occurred.
+- A spurious wake-up of `await()` is in the model within the trace's budget (`Spurious = 3`, set by
+  `TraceGenerator`); none occurred in the recorded runs. The control above shows a written one is
+  accepted only with a budget.
 - The lines name a method and its n-th access of a kind (`waitForAtLeast.getAvail#0`). A change of
   those methods needs the mapping in `TraceStreamBuffer.tla` changed with it (`TraceRecorderTest`
   fails first, with the fixed list of a single-threaded run).

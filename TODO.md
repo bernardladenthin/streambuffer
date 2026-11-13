@@ -64,11 +64,14 @@ annotated, so everything below is genuinely still open.
     rejected with `Spurious = 0`; README limits. The trace is written by `trace-controls.sh`
     (one more round of the wait loop right after a park); removing the signal lines of a recorded
     trace does not work, the model places the writer's signal silently before its exit line.
-  - [ ] `StreamBufferWait.tla`: the same step and budget; `inductive.sh` (Apalache, any budget);
+  - [x] (61e4cec, bae7484) `StreamBufferWait.tla`: the same step and budget; `inductive.sh` (Apalache, any budget);
     TLAPS: `StreamBufferWaitProof.tla` (`SafeInv`), `StreamBufferWaitLiveProof.tla` (the budget in
     `Pot`), `StreamBufferWaitEnabled.tla` if needed, the forever proof (the budget in `FIP`),
-    `RefineWaitProof.tla` (map `spurious` to `spurious`).
-  - [ ] README (model, properties, limits), CHANGELOG, CLAUDE.md, CI times.
+    `RefineWaitProof.tla` (map `spurious` to `spurious`). Every action keeps the budget, so the
+    fairness and the witness actions need nothing new; `Pot` weighs it 10, the forever `FIP` 1.
+    Run on Vultr (the local machine ran out of memory): proof.sh 8,036 obligations, inductive.sh
+    61 OK, check.sh 45 models and the mutant.
+  - [x] README (model, properties, limits), CHANGELOG, CLAUDE.md, CI times.
   - [ ] Review, one push, PR, CI green.
 
 - **Verification roadmap 2026-11 — packages A6–A14.** Each package is closed on its own, ends in a

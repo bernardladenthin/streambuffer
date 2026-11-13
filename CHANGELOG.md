@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Spurious wake-ups in the TLA+ models.** `Condition.await()` may return without a signal; the
+  models now have that step, `SpuriousWake(r)`: a parked thread is woken as by a signal, within a
+  ghost budget that starts at the constant `Spurious` (any natural number) and is not under
+  fairness:
+  - **TLC:** the detailed model with up to two spurious wake-ups checks clean (2 and 3 `read()`
+    readers, records, `waitForAtLeast`, and the forever abstraction), and a probe shows the step
+    happens. The existing configurations run with `Spurious = 0`, their state counts unchanged.
+    Negative control in `check.sh`: a mutant that skips the test of the wait loop after a wake-up
+    is clean next to a lone `waitForAtLeast(2)` without spurious wake-ups and returns short on an
+    open buffer with them;
+  - **TLAPS** for any number of threads and any budget: the safety of `StreamBufferWait.tla` (617
+    obligations), its liveness (the budget in `Pot`, 956), the forever liveness (the budget in the
+    measure, 1,378), and the refinement of `StreamBuffer.tla` (a spurious wake-up is one of the
+    abstraction, 2,729); Apalache (`inductive.sh`) with the budget symbolic, and TLC refinement
+    checks with spurious wake-ups;
+  - **trace validation (A6):** a parked reader may wake spuriously within a budget of 3; a
+    spurious wake-up written into a recorded trace is accepted with the budget and rejected
+    without.
 - **Liveness with threads that call forever (A13 follow-up).** With a finite stream and a closer,
   every call of every thread returns although threads call forever, with fair scheduling only (weak
   fairness per thread, writer and closer) and no lock fairness:
