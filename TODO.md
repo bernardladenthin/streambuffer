@@ -19,7 +19,7 @@ annotated, so everything below is genuinely still open.
   |---|---|---|---|---|
   | Prove that fairness per thread gives the fairness by role (`FairRole`, A13 follow-up; today argued and checked by TLC in bounded models) | 1–2 weeks | low, ~30 % | 2–3 weeks | tlapm cannot swap a quantifier over threads with a temporal operator (`\A q : P(q) ~> Q` to `(\E q : P(q)) ~> Q`), which is where it failed; another prover (e.g. Isabelle with a TLA embedding) would be the way out |
   | Liveness of the detailed model for any number of readers (A19) | 2–4 weeks | medium, ~50 % | 3–6 weeks | the pattern of `StreamBufferWaitForeverLiveProof.tla` carries over, but the detailed model is much larger (the FIFO as a sequence, more stages, the copy per entry), and the assumption of the row above stays |
-  | A6: spurious wake-ups in the model | 2–4 days | high, ~90 % | ~1 week | a small step (a parked thread may wake without a signal), but the model, the abstractions and the proofs must follow; safety and liveness should hold |
+  | A6: spurious wake-ups in the model (in progress, see below) | 1–2 weeks | ~75 % | 2–3 weeks | a small step (a parked thread may wake without a signal), but it is in four models and every proof above them (re-estimated 2026-11-13: the first estimate of 2–4 days missed that liveness needs the wake-ups bounded, a budget in `Pot` and in the forever measure) |
   | A6: several writers and closers in the detailed model | 1–2 weeks | ~70 % | 2–3 weeks | `StreamBuffer.tla` has one of each; `RefineWaitProof.tla` (2,656 obligations) must follow; the trace scenarios are easy afterwards |
   | A6: trim in the model | 1–2 weeks | ~60 % | 2–4 weeks | the merge of the entries touches the FIFO invariant and the refinement; the geometric merge is hard to state compactly |
   | A8: `ReentrantLock` instead of `synchronized` | 3–5 days, if taken up | technically high, ~90 %; the gain unclear | 1–2 weeks | the measurements show a trade-off (faster for platform threads, slower for virtual threads); it needs a workload that decides which kind matters |
@@ -32,6 +32,41 @@ annotated, so everything below is genuinely still open.
   review; then several writers in the detailed model, if that matters. The `FairRole` proof, A19
   and A9 are research with an open outcome. A17 is in the planned roadmap and covers most of what
   the Lock Checker would give.
+
+- **Spurious wake-ups in the model (started 2026-11-13, branch `feat/spurious-wakeups`).**
+  `Condition.await()` may return without a signal (JDK); the code tests again in its loop, but no
+  model has the step, and A6 rejects a trace with one. Run with `/loop` and the prompt in "Run
+  prompts" below.
+
+  Decisions (with reasons):
+  - **A budget, not unbounded:** a ghost counter `spurious` starting at the constant `Spurious`
+    (any natural number); a spurious wake-up of a parked thread uses one. Safety for every
+    `Spurious` covers every run, since a finite prefix has finitely many; liveness assumes
+    finitely many, the usual assumption (infinitely many with no progress is not a defect of the
+    code).
+  - **Not under fairness:** the step is not part of `ReaderStep`/`ThreadStep`, so fairness never
+    forces it; forced wake-ups would hide a lost wake-up in the liveness checks.
+  - **Existing configurations get `Spurious = 0`:** their behaviour and state counts stay; new
+    models check `Spurious = 2`.
+  - **In `StreamBuffer.tla` and `StreamBufferWait.tla`** (the abstraction with the TLAPS
+    refinement and the liveness proofs), not in `StreamBufferCounters.tla` and
+    `StreamBufferRecords.tla`: `StreamBufferWait.tla` covers their slices, and their TLC
+    refinement checks run with `Spurious = 0`, so they stay valid.
+
+  - [ ] Detailed model: `Spurious`, `spurious`, `SpuriousWake(r)` (parked to woken, one of the
+    budget) in `Next`, not in `Fairness`; every existing `.cfg` with `Spurious = 0`; new models
+    (2 and 3 readers, records, `waitForAtLeast`) with `Spurious = 2`; a negative control (the
+    woken thread skips the test of its loop: must fail once a spurious wake-up is possible);
+    `check.sh`.
+  - [ ] A6: `TraceStreamBuffer.tla` lets a parked thread wake spuriously; `TraceGenerator` writes
+    a budget; a hand-written trace with a wake-up without `signalAll` is accepted with a budget and
+    rejected with `Spurious = 0`; README limits.
+  - [ ] `StreamBufferWait.tla`: the same step and budget; `inductive.sh` (Apalache, any budget);
+    TLAPS: `StreamBufferWaitProof.tla` (`SafeInv`), `StreamBufferWaitLiveProof.tla` (the budget in
+    `Pot`), `StreamBufferWaitEnabled.tla` if needed, the forever proof (the budget in `FIP`),
+    `RefineWaitProof.tla` (map `spurious` to `spurious`).
+  - [ ] README (model, properties, limits), CHANGELOG, CLAUDE.md, CI times.
+  - [ ] Review, one push, PR, CI green.
 
 - **Verification roadmap 2026-11 — packages A6–A14.** Each package is closed on its own, ends in a
   machine-checked result and is listed with its acceptance criterion. The contract every package
@@ -385,6 +420,37 @@ annotated, so everything below is genuinely still open.
 Prompts for long `/loop` runs. The loop is started with a one-line reference to its section here,
 so the prompt can be changed in this file without restarting the loop; the next iteration reads
 the current text.
+
+### Spurious wake-ups
+
+Start: `/loop Work on the spurious wake-ups as described in TODO.md, section "Run prompts" / "Spurious wake-ups", re-read on every iteration.`
+
+````text
+Add spurious wake-ups to the TLA+ models of streambuffer (TODO.md, "Spurious wake-ups in the
+model": the decisions and the checkbox plan) fully automatically and as independently as
+possible. It may take longer than one session; there is no deadline. Work locally (TLC 1.7.4 as
+pinned in formal-verification.yml, Apalache as in src/test/tla/README.md, tlapm ff40755 in WSL;
+Maven with JAVA_HOME=/c/Users/berna/AppData/Local/Programs/jdk-25.0.4.1+1).
+
+Procedure:
+1. Every iteration: on the branch feat/spurious-wakeups in the real clone, do the next open step,
+   test it, tick it with its commit, add steps found on the way, with the reason for every
+   decision.
+2. No change to production code. Do not bend the models to make a property hold: a property that
+   fails is a finding (document it with its counterexample). Negative controls are mandatory.
+3. Every proof module that changes runs through tlapm with all obligations proved; inductive.sh
+   and check.sh pass; the A6 trace validation and its controls pass. Numbers in the READMEs;
+   CHANGELOG.md, CLAUDE.md, TODO.md updated. CI: only the existing workflow files.
+4. At the end: review of the branch by an agent with the stop criterion (only regressions,
+   moderate or high bugs of the branch, wrong statements in the docs block; the rest one line in
+   TODO.md; at most one more round). Then one push, open the PR (do not merge, no dispatch runs),
+   watch CI, work off CodeRabbit's still-valid findings; on a CI error of my own: cancel the run,
+   commit the fix, push.
+5. Rules: no questions (ask only for something that is the owner's to decide). No force-push, no
+   pkill -f, delete only with Remove-Item, no private data to external services. When the PR is
+   green, remove the done steps from TODO.md (only the result stays) before the push, a summary in
+   German, then end the loop.
+````
 
 ### Verification roadmap A15–A18
 
