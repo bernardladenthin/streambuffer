@@ -493,6 +493,14 @@ THEOREM EnThread ==
   <1> QED
     BY <1>1, <1>2, <1>3, <1>4, <1>5, <1>6, <1>7, <1>8, <1>9, <1>10, <1>11 DEF RFree
 
+\* the same with the ENABLED term behind an operator: tlapm does not instantiate a lemma at a
+\* term inside ENABLED, but it does expand a definition applied to one
+EnR(x) == ENABLED <<ThreadStep(x)>>_vars
+THEOREM EnThreadR ==
+  ASSUME SafeInv, NEW x \in Threads, RFree(x)
+  PROVE EnR(x)
+  BY EnThread DEF EnR
+
 THEOREM EnBL ==
   ASSUME SafeInv, bl # None
   PROVE ENABLED <<BLHolder>>_vars

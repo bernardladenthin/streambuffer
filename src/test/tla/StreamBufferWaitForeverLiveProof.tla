@@ -10,7 +10,8 @@
 (* although threads call forever, for any number of threads, writers and   *)
 (* closers.                                                                *)
 (***************************************************************************)
-EXTENDS StreamBufferWaitForeverLive, StreamBufferWaitLiveProof, NaturalsInduction, TLAPS
+EXTENDS StreamBufferWaitForeverLive, StreamBufferWaitLiveProof, StreamBufferWaitForeverEnabled,
+        NaturalsInduction, TLAPS
 
 \* the parts of the measure in the notation of the counting lemmas
 LEMMA FParts ==
@@ -978,4 +979,331 @@ LEMMA HolderMoves ==
            ThreadRet0, Return, EndCall
   <1> QED
     BY <1>2, <1>3
+
+-----------------------------------------------------------------------------
+(* The liveness argument for a thread r: a natural number that every step  *)
+(* but a return of r keeps or lowers, and that a fair step lowers in every *)
+(* state in which r has not stopped.                                       *)
+
+\* r does not stop without a return
+LEMMA NotDone ==
+  ASSUME LiveInv, NEW r \in Threads, [NextF]_vars, ~Ret(r), rpc[r] # "done"
+  PROVE rpc'[r] # "done"
+  <1> USE DEF LiveInv, SafeInv, TypeOK
+  <1> SUFFICES ASSUME rpc'[r] = "done" PROVE FALSE
+    OBVIOUS
+  <1>1 CASE (\E i \in Writers : WStep(i)) \/ (\E c \in Closers : CStep(c))
+    BY <1>1 DEF WStep, CStep, WriterWrite, WriterSigLock, CloserClose, CloserSigLock, WakeAll,
+           WGo, CGo
+  <1>2 CASE Refill
+    BY <1>2 DEF Refill
+  <1>3 CASE UNCHANGED vars
+    BY <1>3 DEF vars
+  <1>4 CASE \E q \in Threads : ThreadStep(q)
+    <2> PICK q \in Threads : ThreadStep(q)
+      BY <1>4
+    <2>1 CASE q # r
+      BY <2>1 DEF ThreadStep, ThreadStart, ThreadReread, ThreadWaitLock, ThreadInc, ThreadTest,
+             ThreadWaitReturn, ThreadLock, ThreadDecide, ThreadCopy, ThreadFinish, ThreadRet0,
+             Go, Return, EndCall
+    <2>2 CASE q = r
+      <3>1 rpc[r] # "decide"
+        BY <2>2 DEF ThreadStep, ThreadStart, ThreadReread, ThreadWaitLock, ThreadInc, ThreadTest,
+               ThreadWaitReturn, ThreadLock, ThreadDecide, ThreadCopy, ThreadFinish, ThreadRet0,
+               Go, Return, EndCall
+      <3> QED
+        BY <2>2, <3>1 DEF Ret
+    <2> QED
+      BY <2>1, <2>2
+  <1> QED
+    BY <1>1, <1>2, <1>3, <1>4 DEF NextF, Next, WStep, CStep
+
+LEMMA StutterM ==
+  ASSUME NEW r \in Threads, UNCHANGED vars
+  PROVE FMeas(r)' = FMeas(r)
+  BY DEF vars, FMeas, FIP, Buffered, InFlight, FBad, FBadSet, FOk, FSumV, FLay, FVF, FV, FPass,
+         Want, FRank
+
+\* a step that is no return of r: the measure goes down, or it stays and the frame holds
+LEMMA KeepOrDrop ==
+  ASSUME LiveInv, NEW r \in Threads, rpc[r] # "done", [NextF]_vars, [~Ret(r)]_vars
+  PROVE /\ LiveInv' /\ rpc'[r] # "done"
+        /\ \/ FMeas(r)' < FMeas(r)
+           \/ /\ FMeas(r)' = FMeas(r) /\ rpc'[r] = rpc[r] /\ bl' = bl /\ wl' = wl
+              /\ parked' = parked /\ wpc' = wpc /\ cpc' = cpc
+  <1>1 LiveInv'
+    BY LiveStepF
+  <1>2 CASE UNCHANGED vars
+    BY <1>1, <1>2, StutterM DEF vars
+  <1>3 CASE NextF /\ ~Ret(r)
+    <2>1 rpc'[r] # "done"
+      BY <1>3, NotDone
+    <2>2 FKeeps(r)
+      BY <1>3, StepKeeps
+    <2> QED
+      BY <1>1, <2>1, <2>2 DEF FKeeps, FFrame
+  <1> QED
+    BY <1>2, <1>3
+
+\* the steps of the fair actions lower the measure
+LEMMA DropOwn ==
+  ASSUME LiveInv, NEW r \in Threads, NextF, ~Ret(r), ThreadStep(r)
+  PROVE FMeas(r)' < FMeas(r)
+  <1>1 FKeeps(r)
+    BY StepKeeps
+  <1>2 rpc'[r] # rpc[r] \/ (hold'[r] # hold[r] /\ bl = r)
+    BY OwnMoves
+  <1> QED
+    BY <1>1, <1>2 DEF FKeeps, FFrame
+
+LEMMA DropHolder ==
+  ASSUME LiveInv, NEW r \in Threads, NextF, ~Ret(r), BLHolder \/ WLHolder
+  PROVE FMeas(r)' < FMeas(r)
+  <1>1 FKeeps(r)
+    BY StepKeeps
+  <1> PICK q \in Threads : (bl = q \/ wl = q) /\ ThreadStep(q)
+    BY DEF BLHolder, WLHolder
+  <1>2 rpc'[q] # rpc[q] \/ hold'[q] # hold[q]
+    BY HolderMoves
+  <1> QED
+    BY <1>1, <1>2 DEF FKeeps, FFrame
+
+LEMMA DropWC ==
+  ASSUME LiveInv, NEW r \in Threads, Signal \/ Closing
+  PROVE FMeas(r)' < FMeas(r)
+  BY WCStep DEF Signal, Closing, WStep, CStep
+
+\* the cases of r's state, and the fair action that lowers the measure in each
+FSig == (\E i \in Writers : wpc[i] = "siglock") \/ (\E c \in Closers : cpc[c] = "siglock")
+C1(r) == RFree(r)
+C2(r) == rpc[r] = "lock" /\ bl # None
+C3(r) == rpc[r] \in {"lockwait", "woken", "parked"} /\ wl # None
+C4(r) == rpc[r] = "parked" /\ wl = None /\ FSig
+C5(r) == rpc[r] = "parked" /\ wl = None /\ ~FSig /\ bl # None
+C6(r) == rpc[r] = "parked" /\ wl = None /\ ~FSig /\ bl = None
+
+LEMMA Cover ==
+  ASSUME LiveInv, NEW r \in Threads, rpc[r] # "done"
+  PROVE C1(r) \/ C2(r) \/ C3(r) \/ C4(r) \/ C5(r) \/ C6(r)
+  <1>1 rpc[r] \in States /\ rpc[r] # "nsee"
+    BY DEF LiveInv, SafeInv, TypeOK, Safety, NoEmptyTake
+  <1> QED
+    BY <1>1 DEF States, C1, C2, C3, C4, C5, C6, RFree
+
+\* C6: no closer is done (r is parked), none signals, so one is at close
+LEMMA CloserAtClose ==
+  ASSUME LiveInv, NEW r \in Threads, C6(r)
+  PROVE \E c \in Closers : cpc[c] = "close"
+  <1>1 parked # {}
+    BY DEF C6, LiveInv, SafeInv, ParkedInv
+  <1>2 \A c \in Closers : cpc[c] # "done" /\ cpc[c] # "siglock"
+    BY <1>1 DEF C6, FSig, LiveInv, ClosedNoPark
+  <1>3 1 \in Closers
+    BY LiveAssump DEF Closers
+  <1> QED
+    BY <1>2, <1>3 DEF LiveInv, SafeInv, TypeOK
+
+\* the premises of WF1 for each case (Base: r has not stopped, the measure is n)
+Base(r, n) == LiveInv /\ FMeas(r) = n /\ rpc[r] # "done"
+Goal(r, n) == LiveInv /\ FMeas(r) < n /\ rpc[r] # "done"
+
+LEMMA FairParts ==
+  ASSUME NEW r \in Threads
+  PROVE SpecRole => /\ [][NextF]_vars /\ WF_vars(ThreadStep(r))
+                    /\ WF_vars(BLHolder) /\ WF_vars(WLHolder) /\ WF_vars(Signal)
+                    /\ WF_vars(Closing)
+  BY DEF SpecRole, FairRole
+
+\* the two premises shared by the cases: a step keeps the case or reaches the goal; a step that
+\* lowers the measure reaches the goal
+LEMMA KeepCase ==
+  ASSUME NEW r \in Threads, NEW n \in Nat, Base(r, n), [NextF]_vars, [~Ret(r)]_vars
+  PROVE \/ Goal(r, n)'
+        \/ /\ Base(r, n)' /\ rpc'[r] = rpc[r] /\ bl' = bl /\ wl' = wl /\ parked' = parked
+           /\ wpc' = wpc /\ cpc' = cpc
+  BY KeepOrDrop DEF Base, Goal
+
+LEMMA DropCase ==
+  ASSUME NEW r \in Threads, NEW n \in Nat, Base(r, n), [NextF]_vars, [~Ret(r)]_vars,
+         FMeas(r)' < FMeas(r)
+  PROVE Goal(r, n)'
+  BY KeepOrDrop DEF Base, Goal
+
+LEMMA StepOf ==
+  ASSUME NEW r \in Threads, NEW ACTION A, [NextF]_vars, [~Ret(r)]_vars, <<A>>_vars
+  PROVE NextF /\ ~Ret(r) /\ A
+  OBVIOUS
+
+LEMMA Case1 ==
+  ASSUME NEW r \in Threads, NEW n \in Nat
+  PROVE SpecRole => [](Base(r, n) /\ C1(r) /\ [][~Ret(r)]_vars => <>Goal(r, n))
+  <1>1 Base(r, n) /\ C1(r) /\ [NextF]_vars /\ [~Ret(r)]_vars => (Base(r, n) /\ C1(r))' \/ Goal(r, n)'
+    BY KeepCase DEF C1, RFree
+  <1>2 Base(r, n) /\ C1(r) /\ [NextF]_vars /\ [~Ret(r)]_vars /\ <<ThreadStep(r)>>_vars => Goal(r, n)'
+    BY StepOf, DropOwn, DropCase DEF Base
+  <1>3 Base(r, n) /\ C1(r) => ENABLED <<ThreadStep(r)>>_vars
+    <2> SUFFICES ASSUME Base(r, n), C1(r) PROVE ENABLED <<ThreadStep(r)>>_vars
+      OBVIOUS
+    <2>1 SafeInv /\ RFree(r)
+      BY DEF Base, C1, LiveInv
+    <2>2 EnR(r)
+      BY <2>1, EnThreadR
+    <2> QED
+      BY <2>2 DEF EnR
+  <1> QED
+    BY <1>1, <1>2, <1>3, FairParts, PTL
+
+LEMMA Case2 ==
+  ASSUME NEW r \in Threads, NEW n \in Nat
+  PROVE SpecRole => [](Base(r, n) /\ C2(r) /\ [][~Ret(r)]_vars => <>Goal(r, n))
+  <1>1 Base(r, n) /\ C2(r) /\ [NextF]_vars /\ [~Ret(r)]_vars => (Base(r, n) /\ C2(r))' \/ Goal(r, n)'
+    BY KeepCase DEF C2
+  <1>2 Base(r, n) /\ C2(r) /\ [NextF]_vars /\ [~Ret(r)]_vars /\ <<BLHolder>>_vars => Goal(r, n)'
+    BY StepOf, DropHolder, DropCase DEF Base
+  <1>3 Base(r, n) /\ C2(r) => ENABLED <<BLHolder>>_vars
+    BY EnBL DEF Base, C2, LiveInv
+  <1> QED
+    BY <1>1, <1>2, <1>3, FairParts, PTL
+
+LEMMA Case3 ==
+  ASSUME NEW r \in Threads, NEW n \in Nat
+  PROVE SpecRole => [](Base(r, n) /\ C3(r) /\ [][~Ret(r)]_vars => <>Goal(r, n))
+  <1>1 Base(r, n) /\ C3(r) /\ [NextF]_vars /\ [~Ret(r)]_vars => (Base(r, n) /\ C3(r))' \/ Goal(r, n)'
+    BY KeepCase DEF C3
+  <1>2 Base(r, n) /\ C3(r) /\ [NextF]_vars /\ [~Ret(r)]_vars /\ <<WLHolder>>_vars => Goal(r, n)'
+    BY StepOf, DropHolder, DropCase DEF Base
+  <1>3 Base(r, n) /\ C3(r) => ENABLED <<WLHolder>>_vars
+    BY EnWL DEF Base, C3, LiveInv
+  <1> QED
+    BY <1>1, <1>2, <1>3, FairParts, PTL
+
+LEMMA Case4 ==
+  ASSUME NEW r \in Threads, NEW n \in Nat
+  PROVE SpecRole => [](Base(r, n) /\ C4(r) /\ [][~Ret(r)]_vars => <>Goal(r, n))
+  <1>1 Base(r, n) /\ C4(r) /\ [NextF]_vars /\ [~Ret(r)]_vars => (Base(r, n) /\ C4(r))' \/ Goal(r, n)'
+    BY KeepCase DEF C4, FSig
+  <1>2 Base(r, n) /\ C4(r) /\ [NextF]_vars /\ [~Ret(r)]_vars /\ <<Signal>>_vars => Goal(r, n)'
+    BY StepOf, DropWC, DropCase DEF Base
+  <1>3 Base(r, n) /\ C4(r) => ENABLED <<Signal>>_vars
+    <2> SUFFICES ASSUME Base(r, n), C4(r) PROVE ENABLED <<Signal>>_vars
+      OBVIOUS
+    <2>1 parked # {}
+      BY DEF Base, C4, LiveInv, SafeInv, ParkedInv
+    <2> QED
+      BY <2>1, EnSignal DEF Base, C4, FSig, LiveInv
+  <1> QED
+    BY <1>1, <1>2, <1>3, FairParts, PTL
+
+LEMMA Case5 ==
+  ASSUME NEW r \in Threads, NEW n \in Nat
+  PROVE SpecRole => [](Base(r, n) /\ C5(r) /\ [][~Ret(r)]_vars => <>Goal(r, n))
+  <1>1 Base(r, n) /\ C5(r) /\ [NextF]_vars /\ [~Ret(r)]_vars => (Base(r, n) /\ C5(r))' \/ Goal(r, n)'
+    BY KeepCase DEF C5, FSig
+  <1>2 Base(r, n) /\ C5(r) /\ [NextF]_vars /\ [~Ret(r)]_vars /\ <<BLHolder>>_vars => Goal(r, n)'
+    BY StepOf, DropHolder, DropCase DEF Base
+  <1>3 Base(r, n) /\ C5(r) => ENABLED <<BLHolder>>_vars
+    BY EnBL DEF Base, C5, LiveInv
+  <1> QED
+    BY <1>1, <1>2, <1>3, FairParts, PTL
+
+LEMMA Case6 ==
+  ASSUME NEW r \in Threads, NEW n \in Nat
+  PROVE SpecRole => [](Base(r, n) /\ C6(r) /\ [][~Ret(r)]_vars => <>Goal(r, n))
+  <1>1 Base(r, n) /\ C6(r) /\ [NextF]_vars /\ [~Ret(r)]_vars => (Base(r, n) /\ C6(r))' \/ Goal(r, n)'
+    BY KeepCase DEF C6, FSig
+  <1>2 Base(r, n) /\ C6(r) /\ [NextF]_vars /\ [~Ret(r)]_vars /\ <<Closing>>_vars => Goal(r, n)'
+    BY StepOf, DropWC, DropCase DEF Base
+  <1>3 Base(r, n) /\ C6(r) => ENABLED <<Closing>>_vars
+    <2> SUFFICES ASSUME Base(r, n), C6(r) PROVE ENABLED <<Closing>>_vars
+      OBVIOUS
+    <2>1 \E c \in Closers : cpc[c] = "close"
+      BY CloserAtClose DEF Base
+    <2> QED
+      BY <2>1, EnClosing DEF Base, C6, LiveInv
+  <1> QED
+    BY <1>1, <1>2, <1>3, FairParts, PTL
+
+\* from every state in which r has not stopped, the measure goes down, or r returns
+LEMMA Lower ==
+  ASSUME NEW r \in Threads, NEW n \in Nat
+  PROVE SpecRole => [](Base(r, n) /\ [][~Ret(r)]_vars => <>Goal(r, n))
+  <1>1 Base(r, n) => C1(r) \/ C2(r) \/ C3(r) \/ C4(r) \/ C5(r) \/ C6(r)
+    BY Cover DEF Base
+  <1> QED
+    BY <1>1, Case1, Case2, Case3, Case4, Case5, Case6, PTL
+
+\* the measure is bounded by a constant
+MB == FW * (3 * Bytes + 3 * NW + 3 * NC) + Bytes + 28 * FNT + 6
+
+LEMMA MeasBound ==
+  ASSUME LiveInv, NEW r \in Threads
+  PROVE FMeas(r) <= MB /\ MB \in Nat
+  <1>1 FNT \in Nat /\ FW \in Nat /\ FIP \in Nat /\ Buffered \in Nat /\ FBad \in Nat
+       /\ FBad <= FNT /\ FSumV \in Nat /\ FSumV <= 10 * FNT
+    BY FTypes
+  <1>2 /\ WW \in Nat /\ WS \in Nat /\ CC \in Nat /\ CS \in Nat
+       /\ WW <= NW /\ WS <= NW /\ CC <= NC /\ CS <= NC
+    BY Fin, AtType DEF WW, WS, CC, CS
+  <1>3 /\ w \in Nat /\ t \in Nat /\ w <= Bytes /\ t <= w /\ Bytes \in Nat /\ NW \in Nat
+       /\ NC \in Nat /\ Buffered <= Bytes
+    BY ConstAssump DEF LiveInv, SafeInv, TypeOK, BufNonNeg, Buffered, InFlight
+  <1>4 FIP <= 3 * Bytes + 3 * NW + 3 * NC
+    BY ONLY <1>2, <1>3, FParts
+  <1>5 FW * FIP <= FW * (3 * Bytes + 3 * NW + 3 * NC)
+    <2> DEFINE b == 3 * Bytes + 3 * NW + 3 * NC
+    <2>1 b \in Nat /\ b - FIP \in Nat
+      BY <1>1, <1>3, <1>4
+    <2>2 FW * b = FW * FIP + FW * (b - FIP) /\ FW * (b - FIP) \in Nat
+      BY <1>1, <2>1
+    <2> QED
+      BY <1>1, <2>1, <2>2
+  <1>6 FRank(r) \in 0..6
+    BY DEF FRank
+  <1> QED
+    BY <1>1, <1>3, <1>5, <1>6 DEF FMeas, MB
+
+THEOREM LiveInvariantF == SpecRole => []LiveInv
+  BY LiveInit, LiveStepF, PTL DEF SpecRole
+
+\* the liveness of r: every call of r returns, or r stopped
+THEOREM ForeverLivenessOf ==
+  ASSUME NEW r \in Threads
+  PROVE SpecRole => ([]<><<Ret(r)>>_vars \/ <>(rpc[r] = "done"))
+  <1> DEFINE P(n) == SpecRole => [](Goal(r, n) => <><<Ret(r)>>_vars)
+  <1> HIDE DEF P
+  <1>1 \A n \in Nat : P(n)
+    <2>1 P(0)
+      <3>1 Goal(r, 0) => FALSE
+        BY FMeasNat DEF Goal
+      <3> QED
+        BY <3>1, PTL DEF P
+    <2>2 ASSUME NEW n \in Nat PROVE P(n) => P(n + 1)
+      <3>1 Goal(r, n + 1) => Goal(r, n) \/ Base(r, n)
+        BY FMeasNat DEF Goal, Base
+      <3>2 SpecRole => [](Base(r, n) /\ [][~Ret(r)]_vars => <>Goal(r, n))
+        BY Lower
+      <3> QED
+        BY <3>1, <3>2, PTL DEF P
+    <2> QED
+      BY <2>1, <2>2, NatInduction, Isa
+  <1>2 P(MB + 1)
+    <2>1 MB \in Nat
+      BY Fin, FParts, ConstAssump DEF MB, FW
+    <2> QED
+      BY <1>1, <2>1
+  <1>3 LiveInv /\ ~(rpc[r] = "done") => Goal(r, MB + 1)
+    <2> SUFFICES ASSUME LiveInv, ~(rpc[r] = "done") PROVE Goal(r, MB + 1)
+      OBVIOUS
+    <2>1 FMeas(r) <= MB /\ MB \in Nat /\ FMeas(r) \in Nat
+      BY MeasBound, FMeasNat
+    <2> QED
+      BY <2>1 DEF Goal
+  <1> QED
+    BY <1>2, <1>3, LiveInvariantF, PTL DEF P
+
+THEOREM ForeverLiveness == SpecRole => EveryCallReturns
+  <1>1 \A r \in Threads : SpecRole => ([]<><<Ret(r)>>_vars \/ <>(rpc[r] = "done"))
+    BY ForeverLivenessOf
+  <1> QED
+    BY <1>1 DEF EveryCallReturns
 =============================================================================
