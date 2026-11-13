@@ -53,12 +53,13 @@ LEMMA PartsType ==
   PROVE /\ TP \in Nat /\ TP <= 10 * NT
         /\ WW \in Nat /\ WS \in Nat /\ CC \in Nat /\ CS \in Nat
         /\ Bytes - w \in Nat /\ Bytes - t \in Nat /\ Buffered \in Nat /\ calls \in Nat
-        /\ GP \in Nat /\ Pot \in Nat
+        /\ spurious \in Nat /\ GP \in Nat /\ Pot \in Nat
   <1>1 TP \in Nat /\ TP <= 10 * NT
     BY Fin, LSumType DEF TP, NT
   <1>2 WW \in Nat /\ WS \in Nat /\ CC \in Nat /\ CS \in Nat
     BY Fin, AtType DEF WW, WS, CC, CS
   <1>3 Bytes - w \in Nat /\ Bytes - t \in Nat /\ Buffered \in Nat /\ calls \in Nat
+       /\ spurious \in Nat
     BY ConstAssump DEF SafeInv, TypeOK, BufNonNeg, Buffered, InFlight
   <1>4 GP \in Nat
     BY <1>3, Fin DEF GP, GlobalPot
@@ -117,8 +118,10 @@ LEMMA LiveStep == LiveInv /\ [Next]_vars => LiveInv'
         BY <3>1, <3>2, <1>2, <1>3 DEF ClosedNoPark
     <2>4 CASE UNCHANGED vars
       BY <2>4, <1>2 DEF vars, ClosedNoPark
+    <2>5 CASE \E r \in Threads : SpuriousWake(r)
+      BY <2>5, <1>2 DEF SpuriousWake, Go, ClosedNoPark
     <2> QED
-      BY <2>1, <2>2, <2>3, <2>4 DEF Next
+      BY <2>1, <2>2, <2>3, <2>4, <2>5 DEF Next
   <1> QED
     BY <1>1, <1>4 DEF LiveInv
 
@@ -131,14 +134,17 @@ LEMMA PotDec == LiveInv /\ Next => Pot' < Pot
     BY DEF Pot, ThreadPot, Layer, LSum, LLo, LHi, Lay, WriterPot, CloserPot, At, TP, WW, WS, CC, CS, GP, GlobalPot
   <1>3 /\ TP \in Nat /\ TP <= 10 * NT /\ WW \in Nat /\ WS \in Nat /\ CC \in Nat /\ CS \in Nat
        /\ Bytes - w \in Nat /\ Bytes - t \in Nat /\ Buffered \in Nat /\ calls \in Nat /\ GP \in Nat
+       /\ spurious \in Nat
     BY <1>1, PartsType
   <1>4 /\ TP' \in Nat /\ TP' <= 10 * NT /\ WW' \in Nat /\ WS' \in Nat /\ CC' \in Nat /\ CS' \in Nat
        /\ Bytes - w' \in Nat /\ Bytes - t' \in Nat /\ Buffered' \in Nat /\ calls' \in Nat /\ GP' \in Nat
+       /\ spurious' \in Nat
     <2>1 TP' \in Nat /\ TP' <= 10 * NT
       BY Fin, LSumType DEF TP, NT
     <2>2 WW' \in Nat /\ WS' \in Nat /\ CC' \in Nat /\ CS' \in Nat
       BY Fin, AtType DEF WW, WS, CC, CS
     <2>3 Bytes - w' \in Nat /\ Bytes - t' \in Nat /\ Buffered' \in Nat /\ calls' \in Nat
+         /\ spurious' \in Nat
       BY <1>1, ConstAssump DEF SafeInv, TypeOK, BufNonNeg, Buffered, InFlight
     <2>4 GP' \in Nat
       BY <2>3, Fin DEF GP, GlobalPot
@@ -181,7 +187,7 @@ LEMMA PotDec == LiveInv /\ Next => Pot' < Pot
           BY <3>4, <2>1, <2>b, <2>c, <1>1, <1>3, <1>4 DEF WriterWrite, WGo, SafeInv, TypeOK
         <4>2 Wake * WS' = Wake * WS + Wake
           BY <4>1, <1>3, Fin
-        <4>3 Buffered' = Buffered + c /\ t' = t /\ calls' = calls
+        <4>3 Buffered' = Buffered + c /\ t' = t /\ calls' = calls /\ spurious' = spurious
           BY <2>1, <1>1 DEF WriterWrite, Buffered, InFlight, SafeInv, TypeOK
         <4>4 (Wake + 2) * (Bytes - w') = (Wake + 2) * (Bytes - w) - (Wake + 2) * c
           BY <1>1, <1>3, Fin DEF SafeInv, TypeOK
@@ -245,6 +251,10 @@ LEMMA PotDec == LiveInv /\ Next => Pot' < Pot
   <1>12 CASE \E r \in Threads : ThreadStep(r)
     <2> PICK r \in Threads : ThreadStep(r)
       BY <1>12
+    <2>0 spurious' = spurious
+      BY DEF ThreadStep, ThreadStart, ThreadReread, ThreadWaitLock, ThreadInc, ThreadTest,
+             ThreadWaitReturn, ThreadLock, ThreadDecide, ThreadCopy, ThreadFinish, ThreadRet0
+    <2> USE <2>0
     <2>1 CASE ThreadStart(r)
       <3>1 WW' = WW /\ WS' = WS /\ CC' = CC /\ CS' = CS
         BY <2>1 DEF ThreadStart, Go, Return, EndCall, Want, WW, WS, CC, CS
@@ -475,8 +485,30 @@ LEMMA PotDec == LiveInv /\ Next => Pot' < Pot
         BY <3>8, <3>9, PotSplit, <1>2, <1>3, <1>4, Fin
     <2> QED
       BY <2>1, <2>2, <2>3, <2>4, <2>5, <2>6, <2>7, <2>8, <2>9, <2>10, <2>11 DEF ThreadStep
+  \* a spurious wake-up lifts the woken thread's rank from 1 to 6 and pays 10 from the budget
+  <1>13 CASE \E r \in Threads : SpuriousWake(r)
+    <2> PICK r \in Threads : SpuriousWake(r)
+      BY <1>13
+    <2>1 WW' = WW /\ WS' = WS /\ CC' = CC /\ CS' = CS
+      BY DEF SpuriousWake, WW, WS, CC, CS
+    <2>2 RankF[r] = 1 /\ RankF'[r] = 6
+      BY <1>1 DEF SpuriousWake, Go, RankF, Rank, SafeInv, TypeOK
+    <2>3 \A x \in Threads \ {r} : RankF'[x] = RankF[x]
+      BY <1>1 DEF SpuriousWake, Go, RankF, Rank, Ok, SafeInv, TypeOK
+    <2>4 TP' = TP - RankF[r] + RankF'[r]
+      <3>1 RankF[r] \in 0..10 /\ RankF'[r] \in 0..10
+        BY DEF RankF, Rank
+      <3> QED
+        BY <2>3, <3>1, Fin, LSumExcept DEF TP
+    <2>5 GP' = GP - 10
+      <3>1 w' = w /\ t' = t /\ calls' = calls /\ Buffered' = Buffered /\ spurious' = spurious - 1
+        BY <1>1 DEF SpuriousWake, Buffered, InFlight, SafeInv, TypeOK
+      <3> QED
+        BY <3>1, <1>3, <1>4, Fin DEF GP, GlobalPot
+    <2> QED
+      BY <2>1, <2>2, <2>4, <2>5, PotSplit, <1>2, <1>3, <1>4, Fin
   <1> QED
-    BY <1>10, <1>11, <1>12 DEF Next
+    BY <1>10, <1>11, <1>12, <1>13 DEF Next
 
 THEOREM LiveInvariant == CSpec => []LiveInv
   BY LiveInit, LiveStep, PTL DEF CSpec
@@ -495,6 +527,7 @@ LEMMA EnabledLive == LiveInv /\ ~AllDone => ENABLED <<Next>>_vars
 
 \* an upper bound of Pot in the initial state
 PotMax == 10 * NT + NW + (Wake + 1) * NC + (Wake + 2) * Bytes + (10 * NT + 1) * Bytes + 9 * Calls0
+          + 10 * Spurious
 
 LEMMA InitPot == Init => Pot <= PotMax /\ PotMax \in Nat
   <1> SUFFICES ASSUME Init PROVE Pot <= PotMax /\ PotMax \in Nat
@@ -510,7 +543,7 @@ LEMMA InitPot == Init => Pot <= PotMax /\ PotMax \in Nat
     BY DEF Init, At
   <1>5 WS = 0 /\ CS = 0 /\ CC = NC
     BY <1>4, Fin, FS_EmptySet DEF WS, CS, CC
-  <1>6 GP = (Wake + 2) * Bytes + (10 * NT + 1) * Bytes + 9 * Calls0
+  <1>6 GP = (Wake + 2) * Bytes + (10 * NT + 1) * Bytes + 9 * Calls0 + 10 * Spurious
     BY ConstAssump, Fin DEF Init, GP, GlobalPot, Buffered, InFlight
   <1>7 PotMax \in Nat
     BY Fin, ConstAssump DEF PotMax

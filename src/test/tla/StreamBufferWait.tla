@@ -206,6 +206,7 @@ ThreadStart(r) ==
           ELSE /\ Go(r, IF avail >= Want(r) THEN "lock" ELSE IF closed THEN "reread" ELSE "lockwait")
                /\ UNCHANGED <<wres, wclosed, op, calls>>
     /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, hold, eofAt, parked, wl, bl>>
+    /\ UNCHANGED spurious
 
 \* closed seen: the wait returns availableBytes, read again
 ThreadReread(r) ==
@@ -215,17 +216,20 @@ ThreadReread(r) ==
           ELSE /\ Go(r, IF avail >= 1 THEN "lock" ELSE "ret0")
                /\ UNCHANGED <<wres, wclosed, op, calls>>
     /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, hold, eofAt, parked, wl, bl>>
+    /\ UNCHANGED spurious
 
 ThreadWaitLock(r) ==
     /\ rpc[r] \in {"lockwait", "woken"} /\ wl = None /\ wl' = r
     /\ Go(r, IF rpc[r] = "lockwait" THEN "inc" ELSE "test")
     /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, op, calls, hold, wres, wclosed, eofAt,
                    parked, bl>>
+    /\ UNCHANGED spurious
 
 ThreadInc(r) ==
     /\ rpc[r] = "inc" /\ Go(r, "test")
     /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, op, calls, hold, wres, wclosed, eofAt,
                    parked, wl, bl>>
+    /\ UNCHANGED spurious
 
 \* the loop condition under waitLock; a wait with enough bytes returns the checked count
 \* (CheckedReturn), else, once enough or closed, reads availableBytes again under waitLock
@@ -241,15 +245,18 @@ ThreadTest(r) ==
           ELSE /\ parked' = parked \cup {r} /\ Go(r, "parked") /\ wl' = None
                /\ UNCHANGED <<wres, wclosed, op, calls>>
     /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, hold, eofAt, bl>>
+    /\ UNCHANGED spurious
 
 ThreadWaitReturn(r) ==
     /\ rpc[r] = "wret" /\ wl = r /\ Return(r) /\ wl' = None
     /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, hold, eofAt, parked, bl>>
+    /\ UNCHANGED spurious
 
 ThreadLock(r) ==
     /\ rpc[r] = "lock" /\ bl = None /\ bl' = r /\ Go(r, "decide")
     /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, op, calls, hold, wres, wclosed, eofAt,
                    parked, wl>>
+    /\ UNCHANGED spurious
 
 \* under bufferLock (reads only): the re-check -- all K[r] bytes, or what is left of a closed
 \* stream -- then copy, or release and wait again
@@ -260,6 +267,7 @@ ThreadDecide(r) ==
           ELSE /\ Go(r, "start") /\ bl' = None /\ UNCHANGED left
     /\ UNCHANGED <<off, w, t, avail, closed, wpc, cpc, op, calls, hold, wres, wclosed, eofAt,
                    parked, wl>>
+    /\ UNCHANGED spurious
 
 \* under bufferLock: one turn of the copy loop takes k bytes, any k up to what is left
 ThreadCopy(r) ==
@@ -273,6 +281,7 @@ ThreadCopy(r) ==
                   /\ Go(r, IF left[r] = k THEN "finish" ELSE "copy")
     /\ UNCHANGED <<off, w, t, avail, closed, wpc, cpc, op, calls, wres, wclosed, eofAt, parked, wl,
                    bl>>
+    /\ UNCHANGED spurious
 
 \* under bufferLock: commit the bytes and the count, release; the read returns
 ThreadFinish(r) ==
@@ -283,18 +292,19 @@ ThreadFinish(r) ==
     /\ off' = IF off + hold[r] >= RecLen THEN off + hold[r] - RecLen ELSE off + hold[r]
     /\ bl' = None /\ EndCall(r)
     /\ UNCHANGED <<left, w, closed, wpc, cpc, wres, wclosed, eofAt, parked, wl>>
+    /\ UNCHANGED spurious
 
 \* the read returns -1
 ThreadRet0(r) ==
     /\ rpc[r] = "ret0" /\ eofAt' = (IF eofAt = -1 THEN w ELSE eofAt) /\ EndCall(r)
     /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, hold, wres, wclosed, parked, wl, bl>>
+    /\ UNCHANGED spurious
 
 \* a step of the protocol keeps the budget of spurious wake-ups
 ThreadStep(r) ==
-    /\ \/ ThreadStart(r) \/ ThreadReread(r) \/ ThreadWaitLock(r) \/ ThreadInc(r)
-       \/ ThreadTest(r) \/ ThreadWaitReturn(r) \/ ThreadLock(r) \/ ThreadDecide(r)
-       \/ ThreadCopy(r) \/ ThreadFinish(r) \/ ThreadRet0(r)
-    /\ UNCHANGED spurious
+    \/ ThreadStart(r) \/ ThreadReread(r) \/ ThreadWaitLock(r) \/ ThreadInc(r)
+    \/ ThreadTest(r) \/ ThreadWaitReturn(r) \/ ThreadLock(r) \/ ThreadDecide(r)
+    \/ ThreadCopy(r) \/ ThreadFinish(r) \/ ThreadRet0(r)
 
 \* a spurious wake-up: Condition.await() may return without a signal (JDK); the thread takes
 \* waitLock again and tests, as after a signal. At most Spurious in a run: safety for every
@@ -340,7 +350,7 @@ TypeOK ==
     /\ wres \in [Threads -> Int] /\ wclosed \in [Threads -> BOOLEAN]
     /\ eofAt \in Int /\ eofAt >= -1 /\ eofAt <= Bytes
     /\ parked \subseteq Threads /\ wl \in Threads \cup {None} /\ bl \in Threads \cup {None}
-    /\ spurious \in Nat
+    /\ spurious \in Nat /\ spurious <= Spurious
 
 BufLock == \A r \in Threads : (rpc[r] \in {"decide", "copy", "finish"}) <=> bl = r
 \* hold and left: zero outside a copy; in a copy hold + left is the read's size, at most K[r]

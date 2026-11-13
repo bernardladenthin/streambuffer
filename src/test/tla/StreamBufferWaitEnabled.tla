@@ -45,58 +45,70 @@ LEMMA RetStopReturn ==
 DStartRet(x) ==
     /\ TypeOK /\ rpc[x] = "start" /\ avail >= Want(x) /\ op[x] = "wait"
     /\ RetStop(x) /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, hold, eofAt, parked, wl, bl>>
+    /\ UNCHANGED spurious
 
 DStartGo(x) ==
     /\ TypeOK /\ rpc[x] = "start" /\ ~(avail >= Want(x) /\ op[x] = "wait")
     /\ Go(x, IF avail >= Want(x) THEN "lock" ELSE IF closed THEN "reread" ELSE "lockwait")
     /\ UNCHANGED <<wres, wclosed, op, calls>> /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, hold, eofAt, parked, wl, bl>>
+    /\ UNCHANGED spurious
 
 DRereadRet(x) ==
     /\ TypeOK /\ rpc[x] = "reread" /\ op[x] = "wait"
     /\ RetStop(x) /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, hold, eofAt, parked, wl, bl>>
+    /\ UNCHANGED spurious
 
 DRereadGo(x) ==
     /\ TypeOK /\ rpc[x] = "reread" /\ op[x] # "wait"
     /\ Go(x, IF avail >= 1 THEN "lock" ELSE "ret0")
     /\ UNCHANGED <<wres, wclosed, op, calls>> /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, hold, eofAt, parked, wl, bl>>
+    /\ UNCHANGED spurious
 
 DTestRet(x) ==
     /\ TypeOK /\ rpc[x] = "test" /\ wl = x /\ op[x] = "wait" /\ avail >= Want(x) /\ CheckedReturn
     /\ RetStop(x) /\ wl' = None /\ UNCHANGED parked /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, hold, eofAt, bl>>
+    /\ UNCHANGED spurious
 
 DTestWret(x) ==
     /\ TypeOK /\ rpc[x] = "test" /\ wl = x /\ op[x] = "wait" /\ ~(avail >= Want(x)) /\ closed
     /\ Go(x, "wret") /\ UNCHANGED <<wl, parked, wres, wclosed, op, calls>> /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, hold, eofAt, bl>>
+    /\ UNCHANGED spurious
 
 DTestRead(x) ==
     /\ TypeOK /\ rpc[x] = "test" /\ wl = x /\ op[x] # "wait" /\ (avail >= Want(x) \/ closed)
     /\ Go(x, IF avail >= 1 THEN "lock" ELSE "ret0") /\ wl' = None
     /\ UNCHANGED <<parked, wres, wclosed, op, calls>> /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, hold, eofAt, bl>>
+    /\ UNCHANGED spurious
 
 DTestPark(x) ==
     /\ TypeOK /\ rpc[x] = "test" /\ wl = x /\ ~(avail >= Want(x) \/ closed)
     /\ parked' = parked \cup {x} /\ Go(x, "parked") /\ wl' = None
     /\ UNCHANGED <<wres, wclosed, op, calls>> /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, hold, eofAt, bl>>
+    /\ UNCHANGED spurious
 
 DWaitReturn(x) ==
     /\ TypeOK /\ rpc[x] = "wret" /\ wl = x
     /\ RetStop(x) /\ wl' = None
     /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, hold, eofAt, parked, bl>>
+    /\ UNCHANGED spurious
 
 DDecideCopy(x) ==
     /\ TypeOK /\ rpc[x] = "decide" /\ bl = x /\ (avail >= K[x] \/ (closed /\ avail > 0))
     /\ left' = [left EXCEPT ![x] = Min(avail, K[x])] /\ Go(x, "copy") /\ UNCHANGED bl
     /\ UNCHANGED <<off, w, t, avail, closed, wpc, cpc, op, calls, hold, wres, wclosed, eofAt, parked, wl>>
+    /\ UNCHANGED spurious
 
 DDecideBack(x) ==
     /\ TypeOK /\ rpc[x] = "decide" /\ bl = x /\ ~(avail >= K[x] \/ (closed /\ avail > 0))
     /\ Go(x, "start") /\ bl' = None /\ UNCHANGED left /\ UNCHANGED <<off, w, t, avail, closed, wpc, cpc, op, calls, hold, wres, wclosed, eofAt, parked, wl>>
+    /\ UNCHANGED spurious
 
 DCopy(x) ==
     /\ TypeOK /\ rpc[x] = "copy" /\ bl = x /\ Buffered >= 1 /\ left[x] >= 1
     /\ hold' = [hold EXCEPT ![x] = @ + 1] /\ left' = [left EXCEPT ![x] = @ - 1]
     /\ Go(x, IF left[x] = 1 THEN "finish" ELSE "copy")
     /\ UNCHANGED <<off, w, t, avail, closed, wpc, cpc, op, calls, wres, wclosed, eofAt, parked, wl, bl>>
+    /\ UNCHANGED spurious
 
 DFinish(x) ==
     /\ TypeOK /\ rpc[x] = "finish" /\ bl = x
@@ -104,61 +116,74 @@ DFinish(x) ==
     /\ off' = IF off + hold[x] >= RecLen THEN off + hold[x] - RecLen ELSE off + hold[x]
     /\ bl' = None /\ EndStop(x)
     /\ UNCHANGED <<left, w, closed, wpc, cpc, wres, wclosed, eofAt, parked, wl>>
+    /\ UNCHANGED spurious
 
 DRet0(x) ==
     /\ TypeOK /\ rpc[x] = "ret0"
     /\ eofAt' = (IF eofAt = -1 THEN w ELSE eofAt) /\ EndStop(x)
     /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, hold, wres, wclosed, parked, wl, bl>>
+    /\ UNCHANGED spurious
 
 DWaitLock(x) ==
     /\ TypeOK /\ rpc[x] \in {"lockwait", "woken"} /\ wl = None
     /\ wl' = x /\ Go(x, IF rpc[x] = "lockwait" THEN "inc" ELSE "test")
     /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, op, calls, hold, wres, wclosed, eofAt, parked, bl>>
+    /\ UNCHANGED spurious
 
 DInc(x) ==
     /\ TypeOK /\ rpc[x] = "inc"
     /\ Go(x, "test")
     /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, op, calls, hold, wres, wclosed, eofAt, parked, wl, bl>>
+    /\ UNCHANGED spurious
 
 DLock(x) ==
     /\ TypeOK /\ rpc[x] = "lock" /\ bl = None
     /\ bl' = x /\ Go(x, "decide")
     /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, op, calls, hold, wres, wclosed, eofAt, parked, wl>>
+    /\ UNCHANGED spurious
 
 DWriteFail(i) ==
     /\ TypeOK /\ wpc[i] = "write" /\ bl = None /\ closed
     /\ WGo(i, "failed") /\ UNCHANGED <<w, avail>> /\ UNCHANGED <<off, t, closed, cpc, rpc, op, calls, hold, left, wres, wclosed, eofAt, parked, wl, bl>>
+    /\ UNCHANGED spurious
 
 DWriteDone(i) ==
     /\ TypeOK /\ wpc[i] = "write" /\ bl = None /\ ~closed /\ w >= Bytes
     /\ WGo(i, "done") /\ UNCHANGED <<w, avail>> /\ UNCHANGED <<off, t, closed, cpc, rpc, op, calls, hold, left, wres, wclosed, eofAt, parked, wl, bl>>
+    /\ UNCHANGED spurious
 
 DWriteAll(i) ==
     /\ TypeOK /\ wpc[i] = "write" /\ bl = None /\ ~closed /\ ~(w >= Bytes)
     /\ w' = Bytes /\ avail' = avail + (Bytes - w) /\ WGo(i, "siglock") /\ UNCHANGED <<off, t, closed, cpc, rpc, op, calls, hold, left, wres, wclosed, eofAt, parked, wl, bl>>
+    /\ UNCHANGED spurious
 
 DSigNone(i) ==
     /\ TypeOK /\ wpc[i] = "siglock" /\ parked = {}
     /\ UNCHANGED <<rpc, parked>> /\ WGo(i, WriterNext) /\ UNCHANGED <<off, w, t, avail, closed, cpc, op, calls, hold, left, wres, wclosed, eofAt, wl, bl>>
+    /\ UNCHANGED spurious
 
 DSigWake(i) ==
     /\ TypeOK /\ wpc[i] = "siglock" /\ parked # {} /\ wl = None
     /\ rpc' = [r \in Threads |-> IF r \in parked THEN "woken" ELSE rpc[r]] /\ parked' = {} /\ WGo(i, WriterNext)
     /\ UNCHANGED <<off, w, t, avail, closed, cpc, op, calls, hold, left, wres, wclosed, eofAt, wl, bl>>
+    /\ UNCHANGED spurious
 
 DClose(c) ==
     /\ TypeOK /\ cpc[c] = "close" /\ bl = None
     /\ closed' = TRUE /\ CGo(c, "siglock")
     /\ UNCHANGED <<off, w, t, avail, wpc, rpc, op, calls, hold, left, wres, wclosed, eofAt, parked, wl, bl>>
+    /\ UNCHANGED spurious
 
 DCSigNone(c) ==
     /\ TypeOK /\ cpc[c] = "siglock" /\ parked = {}
     /\ UNCHANGED <<rpc, parked>> /\ CGo(c, "done") /\ UNCHANGED <<off, w, t, avail, closed, wpc, op, calls, hold, left, wres, wclosed, eofAt, wl, bl>>
+    /\ UNCHANGED spurious
 
 DCSigWake(c) ==
     /\ TypeOK /\ cpc[c] = "siglock" /\ parked # {} /\ wl = None
     /\ rpc' = [r \in Threads |-> IF r \in parked THEN "woken" ELSE rpc[r]] /\ parked' = {} /\ CGo(c, "done")
     /\ UNCHANGED <<off, w, t, avail, closed, wpc, op, calls, hold, left, wres, wclosed, eofAt, wl, bl>>
+    /\ UNCHANGED spurious
 
 LEMMA DStartRetImpl == ASSUME NEW x \in Threads, DStartRet(x) PROVE ThreadStart(x)
   BY RetStopReturn, ConstAssump DEF DStartRet, ThreadStart, TypeOK, Go, WGo, CGo, WakeAll, WriterNext, Return, RetStop, EndStop, Want, Buffered, InFlight, Ops
@@ -244,7 +269,7 @@ LEMMA En1 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "start" /\ avail >= Want
   <1>3 <<Next>>_vars \in BOOLEAN
     OBVIOUS
   <1>4 <<DStartRet(x)>>_vars => <<Next>>_vars
-    BY DStartRetImpl DEF Next, ThreadStep
+    BY DStartRetImpl DEF Next, ThreadStep, DStartRet
   <1>5 (ENABLED <<DStartRet(x)>>_vars) => ENABLED <<Next>>_vars
     BY <1>2, <1>3, <1>4, ENABLEDaxioms
   <1> QED
@@ -259,7 +284,7 @@ LEMMA En2 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "start" /\ ~(avail >= Wa
   <1>3 <<Next>>_vars \in BOOLEAN
     OBVIOUS
   <1>4 <<DStartGo(x)>>_vars => <<Next>>_vars
-    BY DStartGoImpl DEF Next, ThreadStep
+    BY DStartGoImpl DEF Next, ThreadStep, DStartGo
   <1>5 (ENABLED <<DStartGo(x)>>_vars) => ENABLED <<Next>>_vars
     BY <1>2, <1>3, <1>4, ENABLEDaxioms
   <1> QED
@@ -274,7 +299,7 @@ LEMMA En3 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "reread" /\ op[x] = "wai
   <1>3 <<Next>>_vars \in BOOLEAN
     OBVIOUS
   <1>4 <<DRereadRet(x)>>_vars => <<Next>>_vars
-    BY DRereadRetImpl DEF Next, ThreadStep
+    BY DRereadRetImpl DEF Next, ThreadStep, DRereadRet
   <1>5 (ENABLED <<DRereadRet(x)>>_vars) => ENABLED <<Next>>_vars
     BY <1>2, <1>3, <1>4, ENABLEDaxioms
   <1> QED
@@ -289,7 +314,7 @@ LEMMA En4 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "reread" /\ op[x] # "wai
   <1>3 <<Next>>_vars \in BOOLEAN
     OBVIOUS
   <1>4 <<DRereadGo(x)>>_vars => <<Next>>_vars
-    BY DRereadGoImpl DEF Next, ThreadStep
+    BY DRereadGoImpl DEF Next, ThreadStep, DRereadGo
   <1>5 (ENABLED <<DRereadGo(x)>>_vars) => ENABLED <<Next>>_vars
     BY <1>2, <1>3, <1>4, ENABLEDaxioms
   <1> QED
@@ -304,7 +329,7 @@ LEMMA En5 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "test" /\ wl = x /\ op[x
   <1>3 <<Next>>_vars \in BOOLEAN
     OBVIOUS
   <1>4 <<DTestRet(x)>>_vars => <<Next>>_vars
-    BY DTestRetImpl DEF Next, ThreadStep
+    BY DTestRetImpl DEF Next, ThreadStep, DTestRet
   <1>5 (ENABLED <<DTestRet(x)>>_vars) => ENABLED <<Next>>_vars
     BY <1>2, <1>3, <1>4, ENABLEDaxioms
   <1> QED
@@ -319,7 +344,7 @@ LEMMA En6 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "test" /\ wl = x /\ op[x
   <1>3 <<Next>>_vars \in BOOLEAN
     OBVIOUS
   <1>4 <<DTestWret(x)>>_vars => <<Next>>_vars
-    BY DTestWretImpl DEF Next, ThreadStep
+    BY DTestWretImpl DEF Next, ThreadStep, DTestWret
   <1>5 (ENABLED <<DTestWret(x)>>_vars) => ENABLED <<Next>>_vars
     BY <1>2, <1>3, <1>4, ENABLEDaxioms
   <1> QED
@@ -334,7 +359,7 @@ LEMMA En7 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "test" /\ wl = x /\ op[x
   <1>3 <<Next>>_vars \in BOOLEAN
     OBVIOUS
   <1>4 <<DTestRead(x)>>_vars => <<Next>>_vars
-    BY DTestReadImpl DEF Next, ThreadStep
+    BY DTestReadImpl DEF Next, ThreadStep, DTestRead
   <1>5 (ENABLED <<DTestRead(x)>>_vars) => ENABLED <<Next>>_vars
     BY <1>2, <1>3, <1>4, ENABLEDaxioms
   <1> QED
@@ -349,7 +374,7 @@ LEMMA En8 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "test" /\ wl = x /\ ~(av
   <1>3 <<Next>>_vars \in BOOLEAN
     OBVIOUS
   <1>4 <<DTestPark(x)>>_vars => <<Next>>_vars
-    BY DTestParkImpl DEF Next, ThreadStep
+    BY DTestParkImpl DEF Next, ThreadStep, DTestPark
   <1>5 (ENABLED <<DTestPark(x)>>_vars) => ENABLED <<Next>>_vars
     BY <1>2, <1>3, <1>4, ENABLEDaxioms
   <1> QED
@@ -364,7 +389,7 @@ LEMMA En9 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "wret" /\ wl = x PROVE E
   <1>3 <<Next>>_vars \in BOOLEAN
     OBVIOUS
   <1>4 <<DWaitReturn(x)>>_vars => <<Next>>_vars
-    BY DWaitReturnImpl DEF Next, ThreadStep
+    BY DWaitReturnImpl DEF Next, ThreadStep, DWaitReturn
   <1>5 (ENABLED <<DWaitReturn(x)>>_vars) => ENABLED <<Next>>_vars
     BY <1>2, <1>3, <1>4, ENABLEDaxioms
   <1> QED
@@ -379,7 +404,7 @@ LEMMA En10 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "decide" /\ bl = x /\ (
   <1>3 <<Next>>_vars \in BOOLEAN
     OBVIOUS
   <1>4 <<DDecideCopy(x)>>_vars => <<Next>>_vars
-    BY DDecideCopyImpl DEF Next, ThreadStep
+    BY DDecideCopyImpl DEF Next, ThreadStep, DDecideCopy
   <1>5 (ENABLED <<DDecideCopy(x)>>_vars) => ENABLED <<Next>>_vars
     BY <1>2, <1>3, <1>4, ENABLEDaxioms
   <1> QED
@@ -394,7 +419,7 @@ LEMMA En11 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "decide" /\ bl = x /\ ~
   <1>3 <<Next>>_vars \in BOOLEAN
     OBVIOUS
   <1>4 <<DDecideBack(x)>>_vars => <<Next>>_vars
-    BY DDecideBackImpl DEF Next, ThreadStep
+    BY DDecideBackImpl DEF Next, ThreadStep, DDecideBack
   <1>5 (ENABLED <<DDecideBack(x)>>_vars) => ENABLED <<Next>>_vars
     BY <1>2, <1>3, <1>4, ENABLEDaxioms
   <1> QED
@@ -409,7 +434,7 @@ LEMMA En12 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "copy" /\ bl = x /\ Buf
   <1>3 <<Next>>_vars \in BOOLEAN
     OBVIOUS
   <1>4 <<DCopy(x)>>_vars => <<Next>>_vars
-    BY DCopyImpl DEF Next, ThreadStep
+    BY DCopyImpl DEF Next, ThreadStep, DCopy
   <1>5 (ENABLED <<DCopy(x)>>_vars) => ENABLED <<Next>>_vars
     BY <1>2, <1>3, <1>4, ENABLEDaxioms
   <1> QED
@@ -424,7 +449,7 @@ LEMMA En13 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "finish" /\ bl = x PROV
   <1>3 <<Next>>_vars \in BOOLEAN
     OBVIOUS
   <1>4 <<DFinish(x)>>_vars => <<Next>>_vars
-    BY DFinishImpl DEF Next, ThreadStep
+    BY DFinishImpl DEF Next, ThreadStep, DFinish
   <1>5 (ENABLED <<DFinish(x)>>_vars) => ENABLED <<Next>>_vars
     BY <1>2, <1>3, <1>4, ENABLEDaxioms
   <1> QED
@@ -439,7 +464,7 @@ LEMMA En14 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "ret0" PROVE ENABLED <<
   <1>3 <<Next>>_vars \in BOOLEAN
     OBVIOUS
   <1>4 <<DRet0(x)>>_vars => <<Next>>_vars
-    BY DRet0Impl DEF Next, ThreadStep
+    BY DRet0Impl DEF Next, ThreadStep, DRet0
   <1>5 (ENABLED <<DRet0(x)>>_vars) => ENABLED <<Next>>_vars
     BY <1>2, <1>3, <1>4, ENABLEDaxioms
   <1> QED
@@ -454,7 +479,7 @@ LEMMA En15 == ASSUME NEW x \in Threads, TypeOK, rpc[x] \in {"lockwait", "woken"}
   <1>3 <<Next>>_vars \in BOOLEAN
     OBVIOUS
   <1>4 <<DWaitLock(x)>>_vars => <<Next>>_vars
-    BY DWaitLockImpl DEF Next, ThreadStep
+    BY DWaitLockImpl DEF Next, ThreadStep, DWaitLock
   <1>5 (ENABLED <<DWaitLock(x)>>_vars) => ENABLED <<Next>>_vars
     BY <1>2, <1>3, <1>4, ENABLEDaxioms
   <1> QED
@@ -469,7 +494,7 @@ LEMMA En16 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "inc" PROVE ENABLED <<N
   <1>3 <<Next>>_vars \in BOOLEAN
     OBVIOUS
   <1>4 <<DInc(x)>>_vars => <<Next>>_vars
-    BY DIncImpl DEF Next, ThreadStep
+    BY DIncImpl DEF Next, ThreadStep, DInc
   <1>5 (ENABLED <<DInc(x)>>_vars) => ENABLED <<Next>>_vars
     BY <1>2, <1>3, <1>4, ENABLEDaxioms
   <1> QED
@@ -484,7 +509,7 @@ LEMMA En17 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "lock" /\ bl = None PRO
   <1>3 <<Next>>_vars \in BOOLEAN
     OBVIOUS
   <1>4 <<DLock(x)>>_vars => <<Next>>_vars
-    BY DLockImpl DEF Next, ThreadStep
+    BY DLockImpl DEF Next, ThreadStep, DLock
   <1>5 (ENABLED <<DLock(x)>>_vars) => ENABLED <<Next>>_vars
     BY <1>2, <1>3, <1>4, ENABLEDaxioms
   <1> QED
@@ -499,7 +524,7 @@ LEMMA En18 == ASSUME NEW i \in Writers, TypeOK, wpc[i] = "write" /\ bl = None /\
   <1>3 <<Next>>_vars \in BOOLEAN
     OBVIOUS
   <1>4 <<DWriteFail(i)>>_vars => <<Next>>_vars
-    BY DWriteFailImpl DEF Next
+    BY DWriteFailImpl DEF Next, DWriteFail
   <1>5 (ENABLED <<DWriteFail(i)>>_vars) => ENABLED <<Next>>_vars
     BY <1>2, <1>3, <1>4, ENABLEDaxioms
   <1> QED
@@ -514,7 +539,7 @@ LEMMA En19 == ASSUME NEW i \in Writers, TypeOK, wpc[i] = "write" /\ bl = None /\
   <1>3 <<Next>>_vars \in BOOLEAN
     OBVIOUS
   <1>4 <<DWriteDone(i)>>_vars => <<Next>>_vars
-    BY DWriteDoneImpl DEF Next
+    BY DWriteDoneImpl DEF Next, DWriteDone
   <1>5 (ENABLED <<DWriteDone(i)>>_vars) => ENABLED <<Next>>_vars
     BY <1>2, <1>3, <1>4, ENABLEDaxioms
   <1> QED
@@ -529,7 +554,7 @@ LEMMA En20 == ASSUME NEW i \in Writers, TypeOK, wpc[i] = "write" /\ bl = None /\
   <1>3 <<Next>>_vars \in BOOLEAN
     OBVIOUS
   <1>4 <<DWriteAll(i)>>_vars => <<Next>>_vars
-    BY DWriteAllImpl DEF Next
+    BY DWriteAllImpl DEF Next, DWriteAll
   <1>5 (ENABLED <<DWriteAll(i)>>_vars) => ENABLED <<Next>>_vars
     BY <1>2, <1>3, <1>4, ENABLEDaxioms
   <1> QED
@@ -544,7 +569,7 @@ LEMMA En21 == ASSUME NEW i \in Writers, TypeOK, wpc[i] = "siglock" /\ parked = {
   <1>3 <<Next>>_vars \in BOOLEAN
     OBVIOUS
   <1>4 <<DSigNone(i)>>_vars => <<Next>>_vars
-    BY DSigNoneImpl DEF Next
+    BY DSigNoneImpl DEF Next, DSigNone
   <1>5 (ENABLED <<DSigNone(i)>>_vars) => ENABLED <<Next>>_vars
     BY <1>2, <1>3, <1>4, ENABLEDaxioms
   <1> QED
@@ -559,7 +584,7 @@ LEMMA En22 == ASSUME NEW i \in Writers, TypeOK, wpc[i] = "siglock" /\ parked # {
   <1>3 <<Next>>_vars \in BOOLEAN
     OBVIOUS
   <1>4 <<DSigWake(i)>>_vars => <<Next>>_vars
-    BY DSigWakeImpl DEF Next
+    BY DSigWakeImpl DEF Next, DSigWake
   <1>5 (ENABLED <<DSigWake(i)>>_vars) => ENABLED <<Next>>_vars
     BY <1>2, <1>3, <1>4, ENABLEDaxioms
   <1> QED
@@ -574,7 +599,7 @@ LEMMA En23 == ASSUME NEW c \in Closers, TypeOK, cpc[c] = "close" /\ bl = None PR
   <1>3 <<Next>>_vars \in BOOLEAN
     OBVIOUS
   <1>4 <<DClose(c)>>_vars => <<Next>>_vars
-    BY DCloseImpl DEF Next
+    BY DCloseImpl DEF Next, DClose
   <1>5 (ENABLED <<DClose(c)>>_vars) => ENABLED <<Next>>_vars
     BY <1>2, <1>3, <1>4, ENABLEDaxioms
   <1> QED
@@ -589,7 +614,7 @@ LEMMA En24 == ASSUME NEW c \in Closers, TypeOK, cpc[c] = "siglock" /\ parked = {
   <1>3 <<Next>>_vars \in BOOLEAN
     OBVIOUS
   <1>4 <<DCSigNone(c)>>_vars => <<Next>>_vars
-    BY DCSigNoneImpl DEF Next
+    BY DCSigNoneImpl DEF Next, DCSigNone
   <1>5 (ENABLED <<DCSigNone(c)>>_vars) => ENABLED <<Next>>_vars
     BY <1>2, <1>3, <1>4, ENABLEDaxioms
   <1> QED
@@ -604,7 +629,7 @@ LEMMA En25 == ASSUME NEW c \in Closers, TypeOK, cpc[c] = "siglock" /\ parked # {
   <1>3 <<Next>>_vars \in BOOLEAN
     OBVIOUS
   <1>4 <<DCSigWake(c)>>_vars => <<Next>>_vars
-    BY DCSigWakeImpl DEF Next
+    BY DCSigWakeImpl DEF Next, DCSigWake
   <1>5 (ENABLED <<DCSigWake(c)>>_vars) => ENABLED <<Next>>_vars
     BY <1>2, <1>3, <1>4, ENABLEDaxioms
   <1> QED

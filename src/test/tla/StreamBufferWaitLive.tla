@@ -68,12 +68,15 @@ CloserPot ==
     (Wake + 1) * Cardinality({c \in Closers : cpc[c] = "close"})
     + Wake * Cardinality({c \in Closers : cpc[c] = "siglock"})
 
-\* the bytes to write and to commit, the bytes buffered, the calls left
+\* the bytes to write and to commit, the bytes buffered, the calls left, the spurious wake-ups
+\* still to come (one lifts a parked thread's rank from 1 to 6)
 GlobalPot == (Wake + 2) * (Bytes - w) + Buffered + (10 * NT + 1) * (Bytes - t) + 9 * calls
+             + 10 * spurious
 Pot == ThreadPot + WriterPot + CloserPot + GlobalPot
 
 \* Pot in the initial state
 Pot0 == 8 * NT + NW + (Wake + 1) * NC + (Wake + 2) * Bytes + (10 * NT + 1) * Bytes + 9 * Calls0
+        + 10 * Spurious
 
 -----------------------------------------------------------------------------
 \* Apalache (fixed threads): the parts of the argument, as invariants

@@ -176,13 +176,19 @@ LEMMA StepSafe == SafeInv /\ [Next]_vars => SafeInv'
       BY <1>3
     \* a step of the protocol keeps the budget of spurious wake-ups
     <2>0 spurious' = spurious
-      BY DEF ThreadStep
+      BY DEF ThreadStep, ThreadStart, ThreadReread, ThreadWaitLock, ThreadInc, ThreadTest,
+             ThreadWaitReturn, ThreadLock, ThreadDecide, ThreadCopy, ThreadFinish, ThreadRet0
     <2> USE <2>0
     <2>1 CASE ThreadStart(r)
       <3> USE <2>1 DEF ThreadStart, Go, Return, EndCall
       <3>1 TypeOK'
         <4>1 rpc' \in [Threads -> States] /\ op' \in [Threads -> Ops] /\ calls' \in Nat
-          OBVIOUS
+          <5>1 CASE avail >= Want(r) /\ op[r] = "wait"
+            BY <5>1
+          <5>2 CASE ~(avail >= Want(r) /\ op[r] = "wait")
+            BY <5>2
+          <5> QED
+            BY <5>1, <5>2
         <4>2 wres' \in [Threads -> Int] /\ wclosed' \in [Threads -> BOOLEAN]
           OBVIOUS
         <4>3 parked' \subseteq Threads /\ wl' \in Threads \cup {None} /\ bl' \in Threads \cup {None}

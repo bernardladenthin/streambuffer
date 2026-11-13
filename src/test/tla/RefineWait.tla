@@ -21,7 +21,7 @@ W == INSTANCE StreamBufferWait WITH
         Threads <- Readers, None <- None, NW <- 1, NC <- 1, Bytes <- Bytes,
         K <- [r \in Readers |-> LenOf(r)], M <- [r \in Readers |-> ReadLen], RecLen <- ReadLen,
         Calls0 <- Bytes + Cardinality(Readers),
-        CheckedReturn <- CheckedReturn,
+        CheckedReturn <- CheckedReturn, Spurious <- Spurious,
         w <- Len(written), t <- Len(taken), avail <- avail, closed <- closed,
         wpc <- [i \in 1..1 |-> MapSig(wpc)], cpc <- [c \in 1..1 |-> MapSig(cpc)],
         rpc <- [r \in Readers |-> MapPc(rpc[r])],
@@ -33,7 +33,8 @@ W == INSTANCE StreamBufferWait WITH
         wres <- wres, wclosed <- wclosed,
         eofAt <- eofAt,
         parked <- parked,
-        wl <- wl, bl <- bl
+        wl <- wl, bl <- bl,
+        spurious <- spurious
 
 Refines == W!CSpec
 =============================================================================

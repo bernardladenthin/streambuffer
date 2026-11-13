@@ -20,7 +20,7 @@ WP == INSTANCE StreamBufferWaitProof WITH
         Threads <- Readers, None <- None, NW <- 1, NC <- 1, Bytes <- Bytes,
         K <- [r \in Readers |-> LenOf(r)], M <- [r \in Readers |-> ReadLen], RecLen <- ReadLen,
         Calls0 <- Bytes + Cardinality(Readers),
-        CheckedReturn <- CheckedReturn,
+        CheckedReturn <- CheckedReturn, Spurious <- Spurious,
         w <- Len(written), t <- Len(taken), avail <- avail, closed <- closed,
         wpc <- [i \in 1..1 |-> MapSig(wpc)], cpc <- [c \in 1..1 |-> MapSig(cpc)],
         rpc <- [r \in Readers |-> MapPc(rpc[r])],
@@ -32,7 +32,8 @@ WP == INSTANCE StreamBufferWaitProof WITH
         wres <- wres, wclosed <- wclosed,
         eofAt <- eofAt,
         parked <- parked,
-        wl <- wl, bl <- bl
+        wl <- wl, bl <- bl,
+        spurious <- spurious
 
 \* the configuration of the current code; a finite set of readers, none of them None
 ASSUME Current == Protocol = "condition" /\ ReCheck = TRUE /\ AtomicRead = TRUE
@@ -287,7 +288,7 @@ LEMMA EndNext ==
   <1> QED
     BY <1>4, <1>5, <1>6 DEF WP!EndCall, WP!Go, MCalls, MOp, MRpc, NotDone
 
-LEMMA SWriterWrite == ASSUME Inv, WriterWrite PROVE DInv' /\ [WP!Next]_WP!vars
+LEMMA SWriterWrite == ASSUME Inv, WriterWrite, UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
   <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
     BY DEF Inv, DInv, DType
   <1>g wpc = "write" /\ bl = None
@@ -434,7 +435,7 @@ LEMMA SWriterWrite == ASSUME Inv, WriterWrite PROVE DInv' /\ [WP!Next]_WP!vars
   <1> QED
     BY <1>a, <1>b
 
-LEMMA SWriterSigRead == ASSUME Inv, WriterSigRead PROVE DInv' /\ [WP!Next]_WP!vars
+LEMMA SWriterSigRead == ASSUME Inv, WriterSigRead, UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
   <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
     BY DEF Inv, DInv, DType
   <1>g wpc = "sigread"
@@ -491,7 +492,7 @@ LEMMA SWriterSigRead == ASSUME Inv, WriterSigRead PROVE DInv' /\ [WP!Next]_WP!va
   <1> QED
     BY <1>3, <1>4
 
-LEMMA SCloserSigRead == ASSUME Inv, CloserSigRead PROVE DInv' /\ [WP!Next]_WP!vars
+LEMMA SCloserSigRead == ASSUME Inv, CloserSigRead, UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
   <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
     BY DEF Inv, DInv, DType
   <1>g cpc = "sigread"
@@ -548,7 +549,7 @@ LEMMA SCloserSigRead == ASSUME Inv, CloserSigRead PROVE DInv' /\ [WP!Next]_WP!va
   <1> QED
     BY <1>3, <1>4
 
-LEMMA SWriterSigLock == ASSUME Inv, WriterSigLock PROVE DInv' /\ [WP!Next]_WP!vars
+LEMMA SWriterSigLock == ASSUME Inv, WriterSigLock, UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
   <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
     BY DEF Inv, DInv, DType
   <1>g wpc = "siglock" /\ wl = None
@@ -609,7 +610,7 @@ LEMMA SWriterSigLock == ASSUME Inv, WriterSigLock PROVE DInv' /\ [WP!Next]_WP!va
   <1> QED
     BY <1>D, <1>d DEF WP!Next, WP!Writers, WP!Closers
 
-LEMMA SCloserSigLock == ASSUME Inv, CloserSigLock PROVE DInv' /\ [WP!Next]_WP!vars
+LEMMA SCloserSigLock == ASSUME Inv, CloserSigLock, UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
   <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
     BY DEF Inv, DInv, DType
   <1>g cpc = "siglock" /\ wl = None
@@ -670,7 +671,7 @@ LEMMA SCloserSigLock == ASSUME Inv, CloserSigLock PROVE DInv' /\ [WP!Next]_WP!va
   <1> QED
     BY <1>D, <1>d DEF WP!Next, WP!Writers, WP!Closers
 
-LEMMA SCloserClose == ASSUME Inv, CloserClose PROVE DInv' /\ [WP!Next]_WP!vars
+LEMMA SCloserClose == ASSUME Inv, CloserClose, UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
   <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
     BY DEF Inv, DInv, DType
   <1>g cpc = "close" /\ bl = None
@@ -706,7 +707,7 @@ LEMMA SCloserClose == ASSUME Inv, CloserClose PROVE DInv' /\ [WP!Next]_WP!vars
   <1> QED
     BY <1>D, <1>4 DEF WP!Next, WP!Closers
 
-LEMMA SReaderLock == ASSUME Inv, NEW r \in Readers, ReaderLock(r) PROVE DInv' /\ [WP!Next]_WP!vars
+LEMMA SReaderLock == ASSUME Inv, NEW r \in Readers, ReaderLock(r), UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
   <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
     BY DEF Inv, DInv, DType
   <1>g rpc[r] = "lock" /\ bl = None
@@ -758,7 +759,7 @@ LEMMA SReaderLock == ASSUME Inv, NEW r \in Readers, ReaderLock(r) PROVE DInv' /\
   <1> QED
     BY <1>D, <1>s DEF WP!Next, WP!ThreadStep
 
-LEMMA SReaderInc == ASSUME Inv, NEW r \in Readers, ReaderInc(r) PROVE DInv' /\ [WP!Next]_WP!vars
+LEMMA SReaderInc == ASSUME Inv, NEW r \in Readers, ReaderInc(r), UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
   <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
     BY DEF Inv, DInv, DType
   <1>g rpc[r] = "inc"
@@ -805,7 +806,7 @@ LEMMA SReaderInc == ASSUME Inv, NEW r \in Readers, ReaderInc(r) PROVE DInv' /\ [
   <1> QED
     BY <1>D, <1>s DEF WP!Next, WP!ThreadStep
 
-LEMMA SReaderWaitLock == ASSUME Inv, NEW r \in Readers, ReaderWaitLock(r) PROVE DInv' /\ [WP!Next]_WP!vars
+LEMMA SReaderWaitLock == ASSUME Inv, NEW r \in Readers, ReaderWaitLock(r), UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
   <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
     BY DEF Inv, DInv, DType
   <1>g rpc[r] \in {"lockwait", "woken"} /\ wl = None
@@ -852,7 +853,7 @@ LEMMA SReaderWaitLock == ASSUME Inv, NEW r \in Readers, ReaderWaitLock(r) PROVE 
   <1> QED
     BY <1>D, <1>s DEF WP!Next, WP!ThreadStep
 
-LEMMA SReaderRet0 == ASSUME Inv, NEW r \in Readers, ReaderRet0(r) PROVE DInv' /\ [WP!Next]_WP!vars
+LEMMA SReaderRet0 == ASSUME Inv, NEW r \in Readers, ReaderRet0(r), UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
   <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
     BY DEF Inv, DInv, DType
   <1>g rpc[r] = "ret0" /\ cur[r] = <<>>
@@ -897,7 +898,7 @@ LEMMA SReaderRet0 == ASSUME Inv, NEW r \in Readers, ReaderRet0(r) PROVE DInv' /\
   <1> QED
     BY <1>D, <1>s
 
-LEMMA SReaderEof == ASSUME Inv, NEW r \in Readers, ReaderEof(r) PROVE DInv' /\ [WP!Next]_WP!vars
+LEMMA SReaderEof == ASSUME Inv, NEW r \in Readers, ReaderEof(r), UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
   <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
     BY DEF Inv, DInv, DType
   <1>g rpc[r] = "eof"
@@ -942,7 +943,7 @@ LEMMA SReaderEof == ASSUME Inv, NEW r \in Readers, ReaderEof(r) PROVE DInv' /\ [
   <1> QED
     BY <1>D, <1>s DEF WP!Next, WP!ThreadStep
 
-LEMMA SReaderWaitReturn == ASSUME Inv, NEW r \in Readers, ReaderWaitReturn(r) PROVE DInv' /\ [WP!Next]_WP!vars
+LEMMA SReaderWaitReturn == ASSUME Inv, NEW r \in Readers, ReaderWaitReturn(r), UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
   <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
     BY DEF Inv, DInv, DType
   <1>g rpc[r] = "wret" /\ wl = r
@@ -993,7 +994,7 @@ LEMMA SReaderWaitReturn == ASSUME Inv, NEW r \in Readers, ReaderWaitReturn(r) PR
   <1> QED
     BY <1>D, <1>s DEF WP!Next, WP!ThreadStep
 
-LEMMA SReaderStart == ASSUME Inv, NEW r \in Readers, ReaderStart(r) PROVE DInv' /\ [WP!Next]_WP!vars
+LEMMA SReaderStart == ASSUME Inv, NEW r \in Readers, ReaderStart(r), UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
   <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
     BY DEF Inv, DInv, DType
   <1>g rpc[r] = "start"
@@ -1084,7 +1085,7 @@ LEMMA SReaderStart == ASSUME Inv, NEW r \in Readers, ReaderStart(r) PROVE DInv' 
   <1> QED
     BY <1>a, <1>b
 
-LEMMA SReaderReread == ASSUME Inv, NEW r \in Readers, ReaderReread(r) PROVE DInv' /\ [WP!Next]_WP!vars
+LEMMA SReaderReread == ASSUME Inv, NEW r \in Readers, ReaderReread(r), UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
   <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
     BY DEF Inv, DInv, DType
   <1>g rpc[r] = "reread"
@@ -1195,7 +1196,7 @@ LEMMA BufNonNegR == ASSUME Inv PROVE MBuffered >= 0
 LEMMA BufferedSame == WP!Buffered = MBuffered
   BY DEF WP!Buffered, WP!InFlight, MBuffered, MHold
 
-LEMMA SReaderTest == ASSUME Inv, NEW r \in Readers, ReaderTest(r) PROVE DInv' /\ [WP!Next]_WP!vars
+LEMMA SReaderTest == ASSUME Inv, NEW r \in Readers, ReaderTest(r), UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
   <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
     BY DEF Inv, DInv, DType
   <1>g rpc[r] = "test" /\ wl = r /\ want[r] = LenOf(r)
@@ -1358,7 +1359,7 @@ LEMMA SReaderTest == ASSUME Inv, NEW r \in Readers, ReaderTest(r) PROVE DInv' /\
   <1> QED
     BY <1>T1, <1>T2, <1>T3, <1>T4
 
-LEMMA SReaderDecide == ASSUME Inv, NEW r \in Readers, ReaderDecide(r) PROVE DInv' /\ [WP!Next]_WP!vars
+LEMMA SReaderDecide == ASSUME Inv, NEW r \in Readers, ReaderDecide(r), UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
   <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
     BY DEF Inv, DInv, DType
   <1>g rpc[r] = "decide" /\ bl = r
@@ -1448,7 +1449,7 @@ LEMMA SReaderDecide == ASSUME Inv, NEW r \in Readers, ReaderDecide(r) PROVE DInv
   <1> QED
     BY <1>D1, <1>D2
 
-LEMMA SReaderCopy == ASSUME Inv, NEW r \in Readers, ReaderCopy(r) PROVE DInv' /\ [WP!Next]_WP!vars
+LEMMA SReaderCopy == ASSUME Inv, NEW r \in Readers, ReaderCopy(r), UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
   <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
     BY DEF Inv, DInv, DType
   <1>g rpc[r] = "copy" /\ bl = r /\ left[r] > 0
@@ -1648,7 +1649,7 @@ LEMMA SReaderCopy == ASSUME Inv, NEW r \in Readers, ReaderCopy(r) PROVE DInv' /\
   <1> QED
     BY <1>D, <1>s DEF WP!Next, WP!ThreadStep
 
-LEMMA SReaderFinish == ASSUME Inv, NEW r \in Readers, ReaderFinish(r) PROVE DInv' /\ [WP!Next]_WP!vars
+LEMMA SReaderFinish == ASSUME Inv, NEW r \in Readers, ReaderFinish(r), UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
   <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
     BY DEF Inv, DInv, DType
   <1>g rpc[r] = "finish" /\ bl = r
@@ -1716,9 +1717,51 @@ LEMMA SReaderFinish == ASSUME Inv, NEW r \in Readers, ReaderFinish(r) PROVE DInv
   <1> QED
     BY <1>D, <1>s DEF WP!Next, WP!ThreadStep
 
-LEMMA SReaderAcquire == ASSUME Inv, NEW r \in Readers, ReaderAcquire(r) PROVE DInv' /\ [WP!Next]_WP!vars
+LEMMA SReaderAcquire == ASSUME Inv, NEW r \in Readers, ReaderAcquire(r), UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
   \* not possible with Protocol = "condition": no thread is in "acquire"
   BY DEF ReaderAcquire, Inv, DInv, DType, DTThr
+
+\* a spurious wake-up of a parked reader is one of the abstraction
+LEMMA SSpuriousWake == ASSUME Inv, NEW r \in Readers, SpuriousWake(r) PROVE DInv' /\ [WP!Next]_WP!vars
+  <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
+    BY DEF Inv, DInv, DType
+  <1>1 /\ rpc' = [rpc EXCEPT ![r] = "woken"] /\ parked' = parked \ {r} /\ r \in parked
+       /\ spurious > 0 /\ spurious' = spurious - 1
+       /\ buf' = buf /\ pos' = pos /\ avail' = avail /\ written' = written /\ taken' = taken /\ toff' = toff /\ closed' = closed /\ nextByte' = nextByte /\ wpc' = wpc /\ cpc' = cpc /\ want' = want /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ wres' = wres /\ wclosed' = wclosed /\ eofAt' = eofAt /\ permits' = permits /\ waiters' = waiters /\ wl' = wl /\ bl' = bl
+    BY DEF SpuriousWake, Goto, Shared
+  <1>p rpc[r] = "parked"
+    BY <1>1 DEF Inv, WP!SafeInv, WP!ParkedInv, MapPc
+  <1>w WSet' = WSet
+    BY <1>0, <1>1, <1>p DEF WSet, DTThr
+  <1>q NotDone' = NotDone
+    BY <1>0, <1>1, <1>p DEF NotDone, DTThr
+  <1>DTBuf DTBuf'
+    BY <1>0, <1>1, FrDTBuf
+  <1>DTSeq DTSeq'
+    BY <1>0, <1>1, FrDTSeq
+  <1>DTSca DTSca'
+    BY <1>0, <1>1, FrDTSca
+  <1>DTThr DTThr'
+    BY <1>0, <1>1 DEF DTThr, ReaderStates
+  <1>DWriter DWriter'
+    BY <1>0, <1>1, FrDWriter
+  <1>DBuf DBuf'
+    BY <1>0, <1>1, FrDBuf
+  <1>DWait DWait'
+    BY <1>0, <1>1, <1>w DEF DWait
+  <1>DHold DHold'
+    BY <1>0, <1>1, FrDHold
+  <1>DWant DWant'
+    BY <1>0, <1>1, <1>p DEF DWant, DTThr
+  <1>D DInv'
+    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType
+  <1>c /\ MRpc' = [MRpc EXCEPT ![r] = "woken"] /\ MHold' = MHold /\ MWpc' = MWpc /\ MCpc' = MCpc
+       /\ MCalls' = MCalls
+    BY <1>0, <1>1, <1>q DEF MRpc, MHold, MWpc, MCpc, MCalls, MapPc, DTThr
+  <1>s WP!SpuriousWake(r)
+    BY <1>1, <1>p, <1>c, MOpConst DEF WP!SpuriousWake, WP!Go, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc
+  <1> QED
+    BY <1>D, <1>s DEF WP!Next
 
 \* every step of StreamBuffer.tla keeps DInv and is a step of the abstraction or stutters
 LEMMA Step == Inv /\ [Next]_vars => DInv' /\ [WP!Next]_WP!vars
@@ -1740,8 +1783,10 @@ LEMMA Step == Inv /\ [Next]_vars => DInv' /\ [WP!Next]_WP!vars
       BY <1>4 DEF vars, WP!vars, MapPc, MapSig, NotDone
     <2> QED
       BY <2>1, <2>2
+  <1>5 CASE \E r \in Readers : SpuriousWake(r)
+    BY <1>5, SSpuriousWake
   <1> QED
-    BY <1>1, <1>2, <1>3, <1>4 DEF Next, Terminated
+    BY <1>1, <1>2, <1>3, <1>4, <1>5 DEF Next, ProtocolNext, Terminated
 
 LEMMA InvInit == Init => Inv
   BY InitD, InitW, CA, WP!InitSafe DEF Inv
