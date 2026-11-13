@@ -215,20 +215,31 @@ annotated, so everything below is genuinely still open.
       `check.sh`. A6 trace validation unchanged: 33/33 accepted, every control as before.
     - [x] TLAPS: the refinement proof still proves with the new `Fairness`: all 2,656 obligations
       (WSL, tlapm `ff40755`, the 1.6.0-pre asset with the SHA-256 the README names).
-    - [ ] TLAPS proof of every call returning for any number of threads (time-boxed, see above).
-    - [ ] tlapm 1.6.0-pre (`ff40755`) quirks met on the way, both worked around; at the end:
-      reproduce each in a minimal module, check tlapm's issues and main, then report upstream
-      (or fix, if small) and note the link here:
-      - a lemma cannot be instantiated at a term inside ENABLED (`ASSUME NEW x ... PROVE
-        ENABLED <<A(x)>>_v`, used at `r`: every backend fails, also from a `\A x` form);
-        workaround: an operator `EnR(x) == ENABLED <<ThreadStep(x)>>_vars`, expanded only where it
-        is used (`StreamBufferWaitForeverEnabled.tla`);
-      - expanding ENABLED crashes (`e_substitutive.ml`, line 143, assertion) in a context with the
-        temporal definitions of the liveness modules (already known from
-        `StreamBufferWaitEnabled.tla`); workaround: the role actions in a module of their own
-        (`StreamBufferWaitForeverRoles.tla`).
-    - [ ] README (Fairness, Properties, Liveness, Limits), CHANGELOG, CLAUDE.md, CI
-      (`check.sh` is in `tla-model`; `proof.sh` in `tlaps-proofs` if a proof is added).
+    - [x] TLAPS proof of every call returning for any number of threads (`6b645a9` to `3ee81f1`):
+      `StreamBufferWaitForeverLiveProof.tla` 1,322 obligations, `StreamBufferWaitForeverEnabled.tla`
+      633, under the fairness by role (`FairRole`: r, the two lock holders, a signaler, a closer),
+      which TLC shows to follow from the fairness per thread in `WaitForeverMeasure2` (tlapm
+      cannot derive it for a symbolic set of threads, which is why the proof assumes it). Four
+      negative controls fail where they should: a `FALSE` lemma, a weight of the first part too
+      small (the payment arithmetic fails), the stage of `decide` raised to that of `lock` (the
+      step that takes `bufferLock` fails), the closer's fairness removed.
+    - [ ] tlapm 1.6.0-pre (`ff40755`) quirks met on the way, both worked around (README, "tlapm
+      1.6.0-pre quirks"); reproduced 2026-11-13 in minimal modules, upstream issues searched:
+      - a lemma cannot be instantiated at a term inside ENABLED: with `A(q) == x' = q /\ x # q`,
+        `LEMMA L == ASSUME NEW q \in S, x # q PROVE ENABLED <<A(q)>>_x` proves by
+        `ExpandENABLED`, `ASSUME NEW r \in S, x # r PROVE ENABLED <<A(r)>>_x BY L` fails with every
+        backend; through `EnA(q) == ENABLED <<A(q)>>_x` (lemma about `EnA(q)`, `DEF EnA` at the
+        use) it proves. Probably the same cause as tlapm#75 ("ENABLED is not coalesced", open);
+      - expanding ENABLED crashes (`e_substitutive.ml`, line 143, assertion) when the module also
+        has, unused, `G(q) == CASE y = q -> 1 [] OTHER -> 0`, `GF == [q \in S |-> G(q)]` and
+        `GK == GF' = GF` (10 lines, nothing of StreamBuffer; with `IF` instead of `CASE`, or without
+        the function, no crash). No issue found for it.
+      Open: report both (an issue on tlaplus/tlapm, from the owner's account, is the owner's to
+      decide), then note the links here.
+    - [x] README (`e4ca8eb`, `6d4ad14`: a section of its own, Fairness, Properties, the A13 table,
+      Limits), the top README, CHANGELOG, CLAUDE.md; CI: `check.sh` with 32 models 594 s and
+      `proof.sh` with nine modules 2,866 s on 4 cores, so `tla-model` has 75 min and `tlaps-proofs`
+      120 min.
     - [ ] Review, one push, PR, CI green.
 
     The detailed model covers `read()`, fixed-size `read(b, off, len)` (#212, F279), writes of
