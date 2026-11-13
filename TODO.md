@@ -299,10 +299,10 @@ annotated, so everything below is genuinely still open.
     mutation of the class file in the test) turns it red.
 
     Plan (branch `feat/a16-a17`, started 2026-11-13), with the reasons:
-    - [ ] `asm-tree` and `asm-analysis` as explicit test dependencies (9.9.1, the version Lincheck
+    - [x] (531ac60) `asm-tree` and `asm-analysis` as explicit test dependencies (9.9.1, the version Lincheck
       already brings, so the convergence check stays quiet): the check needs the control flow and
       the origin of the monitor operand, which the tree and analysis APIs give.
-    - [ ] The checker (test code, `net.ladenthin.streambuffer.drf`): for every method of
+    - [x] (531ac60) The checker (test code, `net.ladenthin.streambuffer.drf`): for every method of
       `StreamBuffer` and its inner classes, the locks held at each instruction (a forward data
       flow over the control flow graph: `monitorenter` of a value loaded from the field
       `bufferLock` or `signalLock` adds it, `monitorexit` removes it, a merge keeps what every path
@@ -312,10 +312,11 @@ annotated, so everything below is genuinely still open.
       held. Synthetic accessors (`access$NNN`, Java 8 bytecode has no nestmates) pass their needs
       on to their callers. Constructors are exempt (before publication); lambda bodies are not
       (their call sites cannot be seen, so they must take the lock themselves).
-    - [ ] The field table: reflection gives every instance field and its kind (final, volatile,
+    - [x] (531ac60) The field table: reflection gives every instance field and its kind (final, volatile,
       atomic, plain); the README's "Data-Race Freedom" table must list each one with the matching
-      kind, both ways. (`ownedPrefix`, a `@GuardedBy("bufferLock")` int, is missing there today.)
-    - [ ] Negative controls in the test, on class files mutated with ASM: an unguarded read of a
+      kind, both ways. It found `ownedPrefix` (a `@GuardedBy("bufferLock")` int since A14) missing
+      from the table; added.
+    - [x] (531ac60) Negative controls in the test, on class files mutated with ASM: an unguarded read of a
       guarded field, an unguarded call of a `@GuardedBy` method, the annotation stripped from a
       guarded method, a plain field without `@GuardedBy`, and a field table without one row: each
       must fail with its own message.
