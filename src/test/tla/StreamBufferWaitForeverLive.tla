@@ -33,7 +33,7 @@
 (* measure take no lock, so a thread that waits for a lock waits for its   *)
 (* holder only, and that holder's step lowers the measure.                 *)
 (***************************************************************************)
-EXTENDS StreamBufferWaitForever
+EXTENDS StreamBufferWaitForever, StreamBufferWaitForeverRoles
 
 \* the wait of q would not park now; the re-check of q under bufferLock would succeed now
 FPass(q) == avail >= Want(q) \/ closed
@@ -95,10 +95,7 @@ FKeeps(r) == FMeas(r)' < FMeas(r) \/ (FMeas(r)' = FMeas(r) /\ FFrame(r))
 
 -----------------------------------------------------------------------------
 \* fairness by role
-BLHolder == \E q \in Threads : bl = q /\ ThreadStep(q)
-WLHolder == \E q \in Threads : wl = q /\ ThreadStep(q)
-Signal == (\E i \in Writers : WriterSigLock(i)) \/ (\E c \in Closers : CloserSigLock(c))
-Closing == \E c \in Closers : CloserClose(c)
+\* BLHolder, WLHolder, Signal, Closing: StreamBufferWaitForeverRoles.tla
 FairRole ==
     /\ \A r \in Threads : WF_vars(ThreadStep(r))
     /\ WF_vars(BLHolder) /\ WF_vars(WLHolder) /\ WF_vars(Signal) /\ WF_vars(Closing)
