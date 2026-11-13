@@ -203,13 +203,18 @@ annotated, so everything below is genuinely still open.
       holders and the thread's rank; the lock waits through the holder's fairness). Time-boxed:
       if it does not close, the bounded TLC results stand and the proof stays open here.
 
-    - [ ] `StreamBufferWaitForever.tla` and TLC models (2 and 3 threads, 1-2 writers and closers,
-      read sizes and requests mixed), the negative controls, the infinite-stream starvation
-      model; all in `check.sh` with their expected outcomes.
-    - [ ] Detailed model: `WF` for the readers; forever callers through `Restart`; TLC models in
-      `check.sh`; re-run all of `check.sh` and the A6 trace validation (it uses `Init`/`Next` only).
-    - [ ] TLAPS: the refinement proof still proves with the new `Fairness` (`Spec => WP!CSpec`,
-      which drops the fairness by `PTL`); run `proof.sh` once (WSL or Docker).
+    - [x] `StreamBufferWaitForever.tla` and TLC models (`f3438b9`): 2 threads 364,866 states; in
+      CI 3 threads with 1 byte (838,813) and 2 writers with 1 closer (588,720); locally 3 threads
+      with 2 bytes (5,377,658, 13 min) and 2 writers with 2 closers (3 bytes 6,138,012, 11 min).
+      Controls fail for the right reason: `WF(Next)` only (a thread never scheduled again), no
+      closer (a record reader waits for its second byte), forever runs exist; the starvation
+      lasso with `SF` (the starving reader gets `bufferLock` each round, the bytes are gone).
+      `check.sh` takes a `model@module` entry now; 30 models, 249 s locally.
+    - [x] Detailed model (`f3438b9`): `WF` for the readers; `StreamBufferForever.tla` with
+      `Restart`, six models (up to 3 readers, 294,862 states) and the `WF(Next)` control in
+      `check.sh`. A6 trace validation unchanged: 33/33 accepted, every control as before.
+    - [x] TLAPS: the refinement proof still proves with the new `Fairness`: all 2,656 obligations
+      (WSL, tlapm `ff40755`, the 1.6.0-pre asset with the SHA-256 the README names).
     - [ ] TLAPS proof of every call returning for any number of threads (time-boxed, see above).
     - [ ] README (Fairness, Properties, Liveness, Limits), CHANGELOG, CLAUDE.md, CI
       (`check.sh` is in `tla-model`; `proof.sh` in `tlaps-proofs` if a proof is added).
