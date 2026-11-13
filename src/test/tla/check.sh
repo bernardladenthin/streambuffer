@@ -12,7 +12,7 @@
 #
 # Usage: src/test/tla/check.sh <path to tla2tools.jar>   (run from anywhere; needs java on PATH)
 set -euo pipefail
-jar="$1"
+jar="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
 cd "$(dirname "$0")"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
