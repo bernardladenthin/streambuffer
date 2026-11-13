@@ -167,80 +167,34 @@ annotated, so everything below is genuinely still open.
       `RefineWait.tla`) in the bounded configurations.
     - Details and limits in `src/test/tla/README.md`.
 
-    Still open: liveness with a thread that calls forever (the guess was that it needs lock
-    fairness, which the JDK does not promise; see the follow-up below).
+    **Liveness with threads that call forever. Done (2026-11-13, branch
+    `feat/a13-liveness-forever`).** With a finite stream and a closer every call of every thread
+    returns although threads call forever, with fair scheduling only (weak fairness per thread,
+    writer and closer), no lock fairness: TLC on `StreamBufferWaitForever.tla` (the abstraction
+    with a ghost `Refill` of the call budget) and `StreamBufferForever.tla` (the detailed model, a
+    thread calls again when done), and TLAPS for the abstraction and any number of threads, writers
+    and closers (`StreamBufferWaitForeverLiveProof.tla`, 1,322 + 633 obligations) under the
+    fairness by role. With an endless writer and no close a reader starves even with every thread
+    step strongly fair (the bytes go to whoever commits first). The detailed model's readers have
+    weak fairness now (was strong). Details, numbers, controls and limits in
+    `src/test/tla/README.md`, "Liveness with threads that call forever".
 
-    **Liveness with threads that call forever (A13 follow-up, 2026-11-13).** Run with `/loop` and the
-    prompt in "Run prompts" below. Branch `feat/a13-liveness-forever`. First TLC probes (scratchpad,
-    2026-11-13) showed that the guess above was wrong in both directions:
-    - with a finite stream and a closer, every call returns although threads call forever, with
-      fair scheduling only (weak fairness per thread, writer and closer), no lock fairness
-      (`StreamBufferWait`, 2 threads, read sizes 1 and 2, `waitForAtLeast(2)`: 364,866 states);
-    - with a writer that writes forever and no close, a reader can starve even with strong
-      fairness for every thread step: it gets `bufferLock` every round and finds the bytes taken
-      by the other reader. Lock fairness does not help; the bytes go to whoever commits first;
-    - the detailed model's readers need weak fairness only: all eight current-code models check
-      clean with `WF` instead of `SF`.
-
-    Decisions (with reasons):
-    - **Calls forever without touching `StreamBufferWait.tla`:** a new module
-      `StreamBufferWaitForever.tla` extends it with a ghost step `Refill` that tops the call budget
-      up (`calls = 0` to 1). Every run of threads calling forever is a run of it with `Refill`
-      inserted after each return; it also has runs where threads stop, which only adds behaviours,
-      so "every call returns" there implies it for the forever runs. Why: the safety, refinement and
-      liveness proofs of `StreamBufferWait.tla` stay valid unchanged.
-    - **Fairness:** `WF` per thread, writer and closer (the OS schedules a runnable thread), no
-      `SF` (the JDK's monitor and `ReentrantLock(false)` barge). Negative controls: `WF(Next)`
-      only, no closer, and a probe that forever runs exist must all fail.
-    - **Infinite stream:** a ghost `Shift` lowers `w` and `t` together, so the writer writes forever
-      in a finite state space (the code sees only their difference); the starvation lasso is the
-      expected result, with `SF` for every thread step.
-    - **Detailed model:** `Fairness` in `StreamBuffer.tla` becomes `WF` for the readers (the weakest
-      that holds); readers that call again after -1 and `waitForAtLeast` callers that call forever
-      through a ghost `Restart` in an extending module, checked by TLC.
-    - **Any number of threads:** a TLAPS proof of "every call returns" for the forever abstraction,
-      if it can be done (WF1 per thread with a measure of the global potential, the stale lock
-      holders and the thread's rank; the lock waits through the holder's fairness). Time-boxed:
-      if it does not close, the bounded TLC results stand and the proof stays open here.
-
-    - [x] `StreamBufferWaitForever.tla` and TLC models (`f3438b9`): 2 threads 364,866 states; in
-      CI 3 threads with 1 byte (838,813) and 2 writers with 1 closer (588,720); locally 3 threads
-      with 2 bytes (5,377,658, 13 min) and 2 writers with 2 closers (3 bytes 6,138,012, 11 min).
-      Controls fail for the right reason: `WF(Next)` only (a thread never scheduled again), no
-      closer (a record reader waits for its second byte), forever runs exist; the starvation
-      lasso with `SF` (the starving reader gets `bufferLock` each round, the bytes are gone).
-      `check.sh` takes a `model@module` entry now; 30 models, 249 s locally.
-    - [x] Detailed model (`f3438b9`): `WF` for the readers; `StreamBufferForever.tla` with
-      `Restart`, six models (up to 3 readers, 294,862 states) and the `WF(Next)` control in
-      `check.sh`. A6 trace validation unchanged: 33/33 accepted, every control as before.
-    - [x] TLAPS: the refinement proof still proves with the new `Fairness`: all 2,656 obligations
-      (WSL, tlapm `ff40755`, the 1.6.0-pre asset with the SHA-256 the README names).
-    - [x] TLAPS proof of every call returning for any number of threads (`6b645a9` to `3ee81f1`):
-      `StreamBufferWaitForeverLiveProof.tla` 1,322 obligations, `StreamBufferWaitForeverEnabled.tla`
-      633, under the fairness by role (`FairRole`: r, the two lock holders, a signaler, a closer),
-      which TLC shows to follow from the fairness per thread in `WaitForeverMeasure2` (tlapm
-      cannot derive it for a symbolic set of threads, which is why the proof assumes it). Four
-      negative controls fail where they should: a `FALSE` lemma, a weight of the first part too
-      small (the payment arithmetic fails), the stage of `decide` raised to that of `lock` (the
-      step that takes `bufferLock` fails), the closer's fairness removed.
-    - [ ] tlapm 1.6.0-pre (`ff40755`) quirks met on the way, both worked around (README, "tlapm
-      1.6.0-pre quirks"); reproduced 2026-11-13 in minimal modules, upstream issues searched:
-      - a lemma cannot be instantiated at a term inside ENABLED: with `A(q) == x' = q /\ x # q`,
-        `LEMMA L == ASSUME NEW q \in S, x # q PROVE ENABLED <<A(q)>>_x` proves by
-        `ExpandENABLED`, `ASSUME NEW r \in S, x # r PROVE ENABLED <<A(r)>>_x BY L` fails with every
-        backend; through `EnA(q) == ENABLED <<A(q)>>_x` (lemma about `EnA(q)`, `DEF EnA` at the
-        use) it proves. Probably the same cause as tlapm#75 ("ENABLED is not coalesced", open);
-      - expanding ENABLED crashes (`e_substitutive.ml`, line 143, assertion) when the module also
-        has, unused, `G(q) == CASE y = q -> 1 [] OTHER -> 0`, `GF == [q \in S |-> G(q)]` and
-        `GK == GF' = GF` (10 lines, nothing of StreamBuffer; with `IF` instead of `CASE`, or without
-        the function, no crash). No issue found for it.
-      Open: report both (an issue on tlaplus/tlapm, from the owner's account, is the owner's to
-      decide), then note the links here.
-    - [x] README (`e4ca8eb`, `6d4ad14`: a section of its own, Fairness, Properties, the A13 table,
-      Limits), the top README, CHANGELOG, CLAUDE.md; CI: `check.sh` with 32 models 594 s and
-      `proof.sh` with nine modules 2,866 s on 4 cores, so `tla-model` has 75 min and `tlaps-proofs`
-      120 min.
-    - [ ] Review, one push, PR, CI green.
+    Still open:
+    - [ ] The new models (`check.sh`, `tla-model`) and proofs (`proof.sh`, `tlaps-proofs`) have
+      not run on GitHub yet; check the first scheduled run (Monday 04:17 UTC) for green and its
+      times against the local ones (594 s and 2,866 s on 4 cores; the timeouts are 75 and 120 min).
+    - [ ] `FairRole` is the proof's assumption; that it follows from the fairness per thread is
+      argued and checked by TLC in bounded models only (tlapm cannot derive it for a symbolic set
+      of threads: no rule from `\A q : P(q) ~> Q` to `(\E q : P(q)) ~> Q`).
+    - [ ] The detailed model's forever liveness rests on TLC's bounded models; the refinement
+      proof does not carry liveness.
+    - [ ] tlapm 1.6.0-pre (`ff40755`) quirks, both worked around and reproduced in minimal modules
+      (README, "tlapm 1.6.0-pre quirks"): a lemma cannot be instantiated at a term inside ENABLED
+      (probably tlapm#75, "ENABLED is not coalesced"); expanding ENABLED crashes
+      (`e_substitutive.ml`, line 143) when the module also has, unused,
+      `G(q) == CASE y = q -> 1 [] OTHER -> 0`, `GF == [q \in S |-> G(q)]` and `GK == GF' = GF`
+      (no issue found). Report both on tlaplus/tlapm (the owner's to decide: an issue from the
+      owner's account), then note the links here.
 
     The detailed model covers `read()`, fixed-size `read(b, off, len)` (#212, F279), writes of
     several bytes, readers of two sizes and `waitForAtLeast` (the A5 rest, 2026-11-11).
@@ -354,37 +308,4 @@ Prompts for long `/loop` runs. The loop is started with a one-line reference to 
 so the prompt can be changed in this file without restarting the loop; the next iteration reads
 the current text.
 
-### Liveness with threads that call forever
-
-Start: `/loop Work on the liveness follow-up as described in TODO.md, section "Run prompts" / "Liveness with threads that call forever", re-read on every iteration.`
-
-````text
-Do the A13 follow-up "Liveness with threads that call forever" for streambuffer (TODO.md, under
-A13: the decisions and the checkbox plan) fully automatically and as independently as possible.
-It may take longer than one session; there is no deadline. Work locally (TLC: tla2tools.jar in the
-version and with the SHA256 from .github/workflows/formal-verification.yml, verified; TLAPS in WSL
-Ubuntu-24.04 or Docker, from the pinned commit or the rolling asset as in src/test/tla/README.md).
-A rented instance (see ../workspacePrivate/remote.md) is allowed for up to about 10-15 EUR in total:
-enter it in remote.md while it runs, delete it and sweep when done. Web search and Chrome are
-allowed.
-
-Procedure:
-1. Every iteration: switch to the branch feat/a13-liveness-forever in the real clone, do the next
-   open step of the plan, test it, tick it with its commit, add steps found on the way. Give the
-   reason for every decision in the TODO step.
-2. No change to production code. Do not bend the models to make a property hold: a property that
-   fails is a result (document it with the counterexample). Negative controls are mandatory for
-   every positive result.
-3. Results with numbers (models, states, time, obligations) in src/test/tla/README.md; CHANGELOG.md,
-   CLAUDE.md, TODO.md updated. CI: only the existing formal-verification.yml.
-4. At the end: review of the branch by an agent. Only regressions against main, moderate or high
-   bugs in the branch's own changes, and wrong statements in the docs block the push; the rest goes
-   as one line under the item in TODO.md. At most one more round. Then exactly one push, open the
-   PR (do not merge, no dispatch runs), watch CI; on a CI error of my own: cancel the run, commit
-   the fix, push.
-5. Rules: no questions (ask only for something that is the owner's to decide, such as more budget).
-   No force-push, no pkill -f (kill by PID), delete only with Remove-Item, no private data to
-   external services. At the end remove the done steps from TODO.md; only the result stays.
-6. When the PR is open and CI is green: summary in German (what was decided and why, numbers, open
-   points), then end the loop.
-````
+No run open.
