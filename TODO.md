@@ -14,64 +14,38 @@ annotated, so everything below is genuinely still open.
 - **Verification roadmap 2026-11 — packages A6–A14.** Each package is closed on its own, ends in a
   machine-checked result and is listed with its acceptance criterion. The contract every package
   checks: several readers and writers are supported, without fairness (decided with bug-hunt finding
-  F278). Order: A6 on the A5 spec (A13 is done for `read()`); A8 is measured and parked (no throughput
-  reason, see there); A9 is long-term. A6 also builds infrastructure that a later memory-model project can reuse (jcstress on
-  several architectures, formal tools pinned in CI, checking real executions against a formal model)
-  — so pinned tool setups belong in a composite action of bernardladenthin/actions rather than in
-  this workflow.
+  F278). State: A6, A13 and A14 are done (open points left under each); A8 is measured and parked
+  (no throughput reason, see there); A9 is long-term. The infrastructure (jcstress on several
+  architectures, formal tools pinned in CI, checking real executions against a formal model) is
+  reusable by a later memory-model project — so pinned tool setups belong in a composite action of
+  bernardladenthin/actions rather than in this workflow (not done yet: TLC, Apalache and TLAPS are
+  still set up inline in `formal-verification.yml`).
 
-  - **A6 — Trace validation (1–2 weeks).** Record the events of real runs (JPF listener, or
-    test-side wrappers / an agent — no change to production code) and check the traces against the
-    A5 spec (`src/test/tla/StreamBuffer.tla`) with TLC (the approach of Cirstea, Kuppe, Merz et al.,
-    2024). Closes the gap between model and code. Done when: a deliberately wrong spec rejects
-    recorded traces. Run with `/loop` and the prompt in "Run prompts" below.
-    Run plan (branch `feat/a6-trace-validation`; decisions with reasons, ticked with their commit):
-    - Decisions (2026-11-12, after the paper, arXiv 2404.16075, and Merz's TLA+ 2024 slides):
-      - **Recording:** a test-side class loader rewrites the bytecode of `StreamBuffer` with ASM
-        (already on the test classpath through Lincheck, declared explicitly): every access to
-        shared state (`availableBytes`, `streamClosed`, `waitingReaders`, `bufferLock` enter and
-        exit, `waitLock`, `modified.await`/`signalAll`, the FIFO and `positionAtCurrentBufferEntry`)
-        calls a tracer. Non-blocking accesses run and log under one global trace lock, so the log
-        order is the real order of those accesses; a blocking one (monitor enter, `lock()`,
-        `await()`) logs right after it returns, a release right before it. Why: real JVM threads
-        instead of JPF's scheduler, no `-javaagent` in Surefire, the source and the shipped jar
-        untouched. Seeded random yields in the tracer vary the interleavings.
-      - **Trace format:** the test writes each trace as a TLA+ module (`Trace == << [...], ... >>`)
-        instead of ndjson. Why: `ndJsonDeserialize` needs the CommunityModules jar, a second pinned
-        dependency; a generated module needs only the pinned `tla2tools.jar` (MongoDB's conformance
-        checking did the same).
-      - **Trace spec:** `TraceStreamBuffer.tla` extends `StreamBuffer.tla` unchanged and adds the
-        line counter `l`. Each event belongs to one code step of one thread (a group of accesses,
-        e.g. the two volatile reads of the fast path of `waitForAtLeast`); within its group the
-        thread may take its spec step(s) at any of the group's events, outside it the thread
-        stutters, and at the group's end the thread's spec state must match what the code did (the
-        values it read and returned, the bytes it got). Why: the model is coarser than the code in
-        places (the fast path reads `availableBytes` and `streamClosed` in one step,
-        `ReaderTest` decrements `waitingReaders` in the step that reads the count); where the code
-        allows an outcome no placement explains, the trace is rejected, which is a finding about
-        the model, not a reason to bend it. Accepted = every line consumed (`l > Len(Trace)`),
-        checked as an invariant TLC must violate or as a postcondition if TLC 1.7.4 has one;
-        deadlock checking off (the paper).
-      - **Scenarios** = the model's: one writer of `Bytes` bytes (values 1, 2, ...) in writes of
-        `ChunkLen`, one closer, readers of `read()` or `read(b, 0, ReadLen)`, `waitForAtLeast`
-        callers; `maxBufferElements` above the number of writes (trim is not modeled).
-    - [x] Tracer and instrumenting class loader, unit test (`ebac6b8`): a single-threaded write/read gives the
-      expected event list.
-    - [x] Trace spec for the writer and the closer, then the readers; first trace accepted (`ebac6b8`).
-    - [x] Trace generator (`ebac6b8`, a main class run by the script, not a test): scenarios x seeds, traces written to `target/traces/`; a script
-      `src/test/tla/trace.sh` runs TLC over them.
-    - [x] Negative controls (`ebac6b8`, `trace-controls.sh`; CountOnce = FALSE and CheckedReturn =
-      FALSE allow more behaviours and accept, see the script): at least two wrong specs (e.g. `ReCheck = FALSE`, `CheckedReturn =
-      FALSE`, a mutated action) reject recorded traces; a corrupted trace is rejected by the
-      correct spec.
-    - [x] Numbers (traces, events, states, time) and the mismatches found in
-      `src/test/tla/README.md`; CI step in `formal-verification.yml`; CHANGELOG, CLAUDE.md. No
-      mismatch between model and code; the three places where the model is coarser are in the README.
-    - [x] Wider runs: 990 traces (11 scenarios x 30 seeds x 3 yield rates), all accepted (again
-      after the review, with assertions on). On the way:
-      TLC runs in parallel truncated each other's standard modules in `java.io.tmpdir`, and a large
-      here-string hung Git Bash; `trace.sh` gives each run its own temp directory and an output file.
-    - [ ] Review, one push, PR, CI green.
+  - **A6 — Trace validation. Done (2026-11-13, PR #227).** Real runs of the code, recorded on the
+    test side (an ASM class loader rewrites `StreamBuffer`'s bytecode; source and jar untouched),
+    are checked with TLC against `StreamBuffer.tla` unchanged (`TraceStreamBuffer.tla`,
+    `trace.sh`): 990 traces (11 scenarios x 30 seeds x 3 yield rates), all accepted; every
+    negative control rejects (the wait before F278, no re-check, `read(b, off, len)` before #212, a
+    writer that never signals, corrupted traces). No mismatch between model and code. Details,
+    numbers and limits in `src/test/tla/README.md`, "Trace validation".
+
+    Still open:
+    - [ ] The CI step (job `tla-model`, scheduled only) has not run on GitHub yet; check the first
+      scheduled run (Monday 04:17 UTC) for green and its time (local estimate about 5 min for
+      the 33 traces and the controls).
+    - [ ] Not covered by the scenarios: several writers and several closers (the detailed model has
+      one of each; the A13 abstractions have several, but no trace check against them), trim (not
+      modeled; the scenarios set `maxBufferElements` above the number of writes), and
+      `waitForAtLeast` with a timeout (`awaitNanos` is not rewritten, not in the model).
+    - [ ] A spurious wake-up of `await()` is not in the model and would reject a trace (none
+      occurred in 990 runs). If one shows up in CI: model it (a parked waiter may wake without a
+      signal), not a retry.
+    - [ ] The trace lines name a method and its n-th access (`waitForAtLeast.getAvail#0`): a
+      change of the wait or read paths needs the mapping in `TraceStreamBuffer.tla` changed with
+      it (`TraceRecorderTest` fails first).
+    - [ ] Reuse for the memory-model project: the recorder serializes all traced accesses under
+      one global lock, so it records sequentially consistent runs only; a weak-memory trace check
+      would need another recording.
   - **A8 — `ReentrantLock` instead of `synchronized (bufferLock)` — measured 2026-11-12: no
     throughput reason, parked.** The waiting part landed with F278 (`waitLock`, a `Condition`,
     `signalAll`, the re-check under `bufferLock`). Still on `synchronized`: every FIFO access, so a
@@ -173,10 +147,15 @@ annotated, so everything below is genuinely still open.
       abstractions now use ranges that are never empty, and `inductive.sh` rejects any other
       (README "An Apalache pitfall"). Reported as
       [apalache#3503](https://github.com/apalache-mc/apalache/issues/3503) (2026-11-12, a 15-line
-      reproduction); waiting for a maintainer to confirm it, since Apalache wants a confirmed issue
-      before a fix PR. Then the prepared fix (`QuantRule.skolemExistsInRange`, the bounds as a
-      conjunct of the result, with a regression test that fails on 0.63.0). The workaround and the
-      guard stay until a release has the fix.
+      reproduction), fixed by
+      [apalache#3505](https://github.com/apalache-mc/apalache/pull/3505) (merged 2026-11-12,
+      `QuantRule.skolemExistsInRange`, the bounds as a conjunct of the result, with a regression
+      test). Latest release is still v0.63.0 (without the fix).
+      - [ ] On the first Apalache release after 2026-11-12: bump `APALACHE_VERSION` and its
+        SHA-256 in `formal-verification.yml`, run `inductive.sh` once with a range that can be
+        empty to see the fix, then decide whether the never-empty workaround and the guard in
+        `inductive.sh` go (they stay correct either way; keep them if older versions must still
+        work).
     - **Older code:** each older version reaches a violation of the safety property itself in a
       bounded search from `Init`: without the F278 re-check, with the two-phase read before #212,
       and with `waitForAtLeast` reading the count again before `CheckedReturn`.
@@ -188,8 +167,34 @@ annotated, so everything below is genuinely still open.
       `RefineWait.tla`) in the bounded configurations.
     - Details and limits in `src/test/tla/README.md`.
 
-    Still open: liveness with a thread that calls forever (it needs lock fairness, which the JDK
-    does not promise).
+    **Liveness with threads that call forever. Done (2026-11-13, branch
+    `feat/a13-liveness-forever`).** With a finite stream and a closer every call of every thread
+    returns although threads call forever, with fair scheduling only (weak fairness per thread,
+    writer and closer), no lock fairness: TLC on `StreamBufferWaitForever.tla` (the abstraction
+    with a ghost `Refill` of the call budget) and `StreamBufferForever.tla` (the detailed model, a
+    thread calls again when done), and TLAPS for the abstraction and any number of threads, writers
+    and closers (`StreamBufferWaitForeverLiveProof.tla`, 1,322 + 633 obligations) under the
+    fairness by role. With an endless writer and no close a reader starves even with every thread
+    step strongly fair (the bytes go to whoever commits first). The detailed model's readers have
+    weak fairness now (was strong). Details, numbers, controls and limits in
+    `src/test/tla/README.md`, "Liveness with threads that call forever".
+
+    Still open:
+    - [ ] The new models (`check.sh`, `tla-model`) and proofs (`proof.sh`, `tlaps-proofs`) have
+      not run on GitHub yet; check the first scheduled run (Monday 04:17 UTC) for green and its
+      times against the local ones (594 s and 2,866 s on 4 cores; the timeouts are 75 and 120 min).
+    - [ ] `FairRole` is the proof's assumption; that it follows from the fairness per thread is
+      argued and checked by TLC in bounded models only (tlapm cannot derive it for a symbolic set
+      of threads: no rule from `\A q : P(q) ~> Q` to `(\E q : P(q)) ~> Q`).
+    - [ ] The detailed model's forever liveness rests on TLC's bounded models; the refinement
+      proof does not carry liveness.
+    - [ ] tlapm 1.6.0-pre (`ff40755`) quirks, both worked around and reproduced in minimal modules
+      (README, "tlapm 1.6.0-pre quirks"): a lemma cannot be instantiated at a term inside ENABLED
+      (probably tlapm#75, "ENABLED is not coalesced"); expanding ENABLED crashes
+      (`e_substitutive.ml`, line 143) when the module also has, unused,
+      `G(q) == CASE y = q -> 1 [] OTHER -> 0`, `GF == [q \in S |-> G(q)]` and `GK == GF' = GF`
+      (no issue found). Report both on tlaplus/tlapm (the owner's to decide: an issue from the
+      owner's account), then note the links here.
 
     The detailed model covers `read()`, fixed-size `read(b, off, len)` (#212, F279), writes of
     several bytes, readers of two sizes and `waitForAtLeast` (the A5 rest, 2026-11-11).
@@ -283,6 +288,12 @@ annotated, so everything below is genuinely still open.
     the ESC scope, bounded; **Infer/RacerD v1.3.0** — explicitly "avoids reasoning about weak
     memory and Java's volatile keyword", i.e. blind to exactly this class's design.
 
+- **CI: `claude-review` fails on every PR, at least since #214 (owner action).** The job
+  (`claude-code-review.yml`, `anthropic_api_key: secrets.ANTHROPIC_API_KEY`) ends after 0.4 s
+  with `is_error: true`, one turn, cost 0, empty `modelUsage` (checked on #214-#227; run
+  43326281438). So the API is never reached with a usable key: check the secret (expired,
+  revoked or out of credit) in the repository settings. Not related to the branches.
+
 - **jqwik pin policy** — see [`../workspace/policies/jqwik-prompt-injection.md`](../workspace/policies/jqwik-prompt-injection.md). `jqwik.version ≤ 1.9.3` is mandatory. A standing constraint, not a task: it has to be re-checked whenever the dependency is bumped.
 
 - **`@VisibleForTesting` audit.** `StreamBuffer` has **15** package-private methods that exist so tests can reach them (`decideTrimExecution`, `shouldTrim`, `clampToMaxInt`, `decrementAvailableBytesBudget`, `calculateResultingChunks`, the five `shouldSkipTrim*`/`should*` predicates, `isAvailableBytesPositive`, `isMaxAllocSizeLessThanAvailable`, `shouldCheckEdgeCase`, `recordReadStatistics`, `shouldUpdateMaxObservedBytes`, `updateMaxObservedBytesIfNeeded`). None is annotated, and Guava is not a dependency here — so closing this means deciding between (a) adding a project-local marker annotation, which puts a new public type into the API surface of a deliberately one-class library, and (b) recording that the convention does not apply to this repo. Decide and act; do not leave it as a permanently open audit.
@@ -297,52 +308,4 @@ Prompts for long `/loop` runs. The loop is started with a one-line reference to 
 so the prompt can be changed in this file without restarting the loop; the next iteration reads
 the current text.
 
-### A6 trace validation
-
-Start: `/loop Work on A6 as described in TODO.md, section "Run prompts" / "A6 trace validation", re-read on every iteration.`
-
-````text
-Implement A6 trace validation for streambuffer fully automatically and as independently as
-possible. It may take longer than one session; there is no deadline. Work locally by default; for
-heavy runs a rented instance (e.g. Vultr, see ../workspacePrivate/remote.md) is allowed for up to
-about 10-15 EUR in total: enter it in remote.md while it runs, delete it and sweep when done.
-Web search is allowed, and so is Chrome (Claude in Chrome) for pages a search does not show.
-
-Goal (TODO.md, roadmap A6): record the events of real runs and check them with TLC against the A5
-spec src/test/tla/StreamBuffer.tla (the approach of Cirstea, Kuppe, Merz et al. 2024, "Validating
-Traces of Distributed Programs Against TLA+ Specifications"). Done when: recorded traces of the
-current code are accepted, AND a deliberately wrong spec (e.g. without the F278 re-check, without
-CheckedReturn, or a mutated action) rejects the same traces.
-
-Procedure:
-1. First iteration: switch to the branch feat/a6-trace-validation in the real clone (git switch;
-   create it from main if it does not exist). Web-search the current state of TLA+ trace
-   validation (trace spec with TraceNext, ndjson log, IOUtils/JSON deserialization, TLC
-   configuration; examples from tlaplus/Examples and the paper). Then write a plan as checkbox
-   steps under A6 in TODO.md and commit it. Every later iteration: do the next open step, test
-   it, tick it with its commit, add steps found on the way.
-2. No change to production code: record only on the test side (wrappers, listener, agent or JPF
-   listener). The events must match the actions of StreamBuffer.tla, including lock boundaries and
-   waitingReaders; where the model is finer than what can be observed, fill in
-   nondeterministically (trace spec with stuttering/auxiliary steps), do not bend the model.
-3. Local: download TLC in the version and with the SHA256 from
-   .github/workflows/formal-verification.yml into the scratchpad and verify it. Maven build with
-   JAVA_HOME=/c/Users/berna/AppData/Local/Programs/jdk-25.0.4.1+1. JPF only in Docker
-   (eclipse-temurin:11-jdk + apt-get install git, MSYS_NO_PATHCONV=1). Several traces: different
-   numbers of readers, read() / read(b, off, len) / waitForAtLeast, close, several writers.
-4. Negative controls are mandatory: at least two wrong specs or mutations that must reject the
-   real traces; and a deliberately corrupted trace that the correct spec must reject. Results
-   with numbers (traces, events, states, time) in src/test/tla/README.md.
-5. CI: hook into the existing formal-verification.yml (no new workflow file), keep the run time
-   small. Update CHANGELOG.md, CLAUDE.md and TODO.md.
-6. At the end: review of the branch by an agent. Only regressions against main, moderate or high
-   bugs in the branch's own changes, and wrong statements in the docs block the push; the rest
-   goes as one line under Known limits in TODO.md. At most one more round. Then exactly one push,
-   open the PR (do not merge, no dispatch runs), watch CI; on a CI error of my own: cancel the
-   run, commit the fix, push.
-7. Rules: no questions (ask only for something that is the owner's to decide, such as more
-   budget), decide by best practice and give the reason for each decision in the TODO step. No force-push, no pkill -f, delete only with Remove-Item, no private data to external
-   services. At the end remove the done steps from TODO.md; only the result stays.
-8. When the PR is open and CI is green: summary in German (what was decided and why, numbers,
-   open points), then end the loop.
-````
+No run open.

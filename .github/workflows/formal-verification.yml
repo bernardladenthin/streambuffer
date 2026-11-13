@@ -34,12 +34,13 @@
 #   tla-model     (scheduled/dispatch only) TLC model-checks the TLA+ model of the wait/wake-up/
 #                 close protocol and the reads (src/test/tla/StreamBuffer.tla): the current code
 #                 checks clean, the older code fails with the F278, #212 and F279 counterexamples;
-#                 recorded runs of the instrumented code are runs of the model (A6).
+#                 recorded runs of the instrumented code are runs of the model (A6); with
+#                 threads that call forever every call returns, without lock fairness.
 #
 #   tlaps-proofs  (scheduled/dispatch only) TLAPS proves the A13 inductive invariants, the
 #                 liveness of the calls abstraction for any number of threads, writers and
-#                 closers, and that the model refines it for any number of readers; tlapm is
-#                 built from a pinned commit and cached.
+#                 closers (also with threads that call forever), and that the model refines it for
+#                 any number of readers; tlapm is built from a pinned commit and cached.
 #
 #   jcstress-default  (scheduled/dispatch only) jcstress in its default mode on x86; every pull
 #                 request runs the quick mode (jcstress.mode in pom.xml) to keep the Test job short.
@@ -435,8 +436,9 @@ jobs:
           if-no-files-found: ignore
 
   # ---------------------------------------------------------------------------------------------
-  # TLA+ model of the protocol (TODO roadmap A5) -- scheduled/dispatch only, ~90 s of TLC, then
-  # the A13 checks of inductive.sh (Apalache and the TLC refinements, about 20 min).
+  # TLA+ model of the protocol (TODO roadmap A5) -- scheduled/dispatch only, about 10 min of TLC
+  # (check.sh, with the models of threads that call forever), then the A13 checks of inductive.sh
+  # (Apalache and the TLC refinements, about 20 min).
   # src/test/tla/check.sh runs every model against its expected outcome: the models of the code
   # since F278 (Protocol "condition" with the re-check) must check clean, safety and liveness; the
   # models of the code before it must fail with exactly the error that shows the defect
@@ -450,8 +452,9 @@ jobs:
     name: TLA+ model of the protocol (TLC, Apalache)
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    # inductive.sh took about 20 min on 4 cores with the A13 calls and liveness checks (2026-11-12)
-    timeout-minutes: 60
+    # inductive.sh took about 20 min on 4 cores with the A13 calls and liveness checks (2026-11-12),
+    # check.sh 594 s with the 32 models (2026-11-13, 4 cores), the trace validation about 5 min
+    timeout-minutes: 75
     env:
       TLA_TOOLS_VERSION: "v1.7.4"
       TLA_TOOLS_SHA256: "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88"
@@ -516,8 +519,8 @@ jobs:
   # ---------------------------------------------------------------------------------------------
   # TLAPS proofs of the A13 invariants -- scheduled/dispatch only. proof.sh fails unless every
   # obligation of every proof is proved (SafeInv inductive, the liveness of StreamBufferWait.tla,
-  # and the refinement of StreamBuffer.tla into it, for any number of threads, writers and
-  # closers). tlapm has no tagged 1.6 release, and the rolling 1.6.0-pre asset is replaced with
+  # also with threads that call forever, and the refinement of StreamBuffer.tla into it, for any
+  # number of threads, writers and closers). tlapm has no tagged 1.6 release, and the rolling 1.6.0-pre asset is replaced with
   # every tlapm commit, so a checksum pin would break: tlapm is built from a pinned commit
   # (opam, dune, make release, which downloads its backend provers) and the release tarball is
   # cached per commit and OCaml version. The opam dependencies resolve when the cache is filled.
@@ -526,8 +529,9 @@ jobs:
     name: TLAPS proofs of the A13 invariants
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    # tlapm build about 10 min, proof.sh with the refinement proof about 30 min on 4 cores (2026-11-12)
-    timeout-minutes: 90
+    # tlapm build about 10 min; proof.sh with the refinement proof about 30 min on 4 cores
+    # (2026-11-12), with the forever liveness proof 2866 s (2026-11-13, 4 local cores)
+    timeout-minutes: 120
     env:
       # tlaplus/tlapm main of 2026-11-10 ("Add soundness test for ENABLED binder order"); its
       # 1.6.0-pre asset had SHA-256 99db29f119cb6f43ffed653b212ba2d005e5bf8e242c53468876cb0d08da6bcc

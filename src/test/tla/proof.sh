@@ -19,6 +19,13 @@
 # every behaviour with weak fairness of Next ends with every call returned and all done; it uses
 # StreamBufferCountLemmas.tla (sums as layers of cardinalities) and StreamBufferWaitEnabled.tla (a
 # step is possible until all are done), both proved here too.
+# Liveness with threads that call forever, StreamBufferWaitForeverLiveProof.tla: with at least one
+# closer, in every behaviour of StreamBufferWaitForever.tla with the fairness by role, every call
+# of every thread returns (or the thread stopped), for any number of threads, writers and closers;
+# it uses StreamBufferWaitForeverEnabled.tla (the role actions are enabled where needed).
+# The external signals, StreamBufferSignalProof.tla: with the release of the code since F280 a
+# registered semaphore never holds more than one permit and no signal is lost, for any number of
+# signalers.
 # Fails unless every obligation of every proof is proved. In CI: the scheduled tlaps-proofs job of
 # formal-verification.yml, with tlapm built from a pinned commit (no tagged 1.6 release; README.md).
 #
@@ -32,15 +39,19 @@ cp StreamBufferCounters.tla StreamBufferCountersProof.tla \
    StreamBufferRecords.tla StreamBufferRecordsProof.tla \
    StreamBufferWait.tla StreamBufferWaitProof.tla \
    StreamBufferWaitLive.tla StreamBufferCountLemmas.tla StreamBufferWaitEnabled.tla \
-   StreamBufferWaitLiveProof.tla StreamBuffer.tla RefineWait.tla RefineWaitProof.tla "$work/"
+   StreamBufferWaitLiveProof.tla StreamBuffer.tla RefineWait.tla RefineWaitProof.tla \
+   StreamBufferWaitForever.tla StreamBufferWaitForeverRoles.tla StreamBufferWaitForeverLive.tla \
+   StreamBufferWaitForeverEnabled.tla StreamBufferWaitForeverLiveProof.tla    StreamBufferSignal.tla StreamBufferSignalProof.tla "$work/"
 cd "$work"
 failed=0
 for proof in StreamBufferCountersProof StreamBufferRecordsProof StreamBufferWaitProof \
-             StreamBufferCountLemmas StreamBufferWaitEnabled StreamBufferWaitLiveProof RefineWaitProof; do
+             StreamBufferCountLemmas StreamBufferWaitEnabled StreamBufferWaitLiveProof RefineWaitProof \
+             StreamBufferWaitForeverEnabled StreamBufferWaitForeverLiveProof StreamBufferSignalProof; do
   # the ENABLED steps need more time on a loaded machine (one timed out at --stretch 3 and 6
   # with the other cores busy, none in three runs at 12; 2026-11-12)
   stretch=3
   [ "$proof" = StreamBufferWaitEnabled ] && stretch=12
+  [ "$proof" = StreamBufferWaitForeverEnabled ] && stretch=12
   # tlapm can leave backend provers running after it ends (an Isabelle or z3 started for an
   # obligation another backend proved); in their own process group they are killed before the
   # next proof, which they would otherwise slow down into timeouts

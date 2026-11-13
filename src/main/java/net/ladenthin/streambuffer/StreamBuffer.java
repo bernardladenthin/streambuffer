@@ -141,6 +141,37 @@ public class StreamBuffer implements Closeable {
     private final CopyOnWriteArrayList<Semaphore> trimEndSignals = new CopyOnWriteArrayList<>();
 
     /**
+     * Guards {@link #releasingSignals}, so that the "max 1 permit" check of a signal and the
+     * decision to release it are one step for every thread that signals this buffer (several
+     * writers and a closer signal after they released {@link #bufferLock}). Held only for that
+     * check, never while a semaphore's {@code release()} runs, and never while waiting for
+     * {@link #bufferLock}: a thread may take it while holding {@code bufferLock} (a trim signal,
+     * a write from a trim signal), never the other way round.
+     */
+    private final Object signalLock = new Object();
+
+    /**
+     * The registered semaphores (all three kinds) whose release a thread of this buffer has
+     * decided and not finished yet. A thread that finds a semaphore here notes its signal in
+     * {@link #signaledWhileReleasing} instead of releasing. Searched by identity ({@link #contains}): a subclass's
+     * {@code equals} plays no part. A deque rather than an identity set: OpenJML RAC instruments
+     * {@code IdentityHashMap} into an access to its private fields, which the module system
+     * refuses. Bug-hunt finding F280: before, two threads could both see no permit and both
+     * release, leaving two.
+     */
+    @GuardedBy("signalLock")
+    private final ArrayDeque<Semaphore> releasingSignals = new ArrayDeque<>();
+
+    /**
+     * The claimed semaphores that another signal reached while they were being released. The
+     * claimant checks this after its {@code release()}: if its permit is gone by then (the observer
+     * took it), it releases again, so that signal is not lost. A plain skip lost it: the observer
+     * could take the permit, wait again and sleep with unread bytes (found in review of F280).
+     */
+    @GuardedBy("signalLock")
+    private final ArrayDeque<Semaphore> signaledWhileReleasing = new ArrayDeque<>();
+
+    /**
      * A variable for the current position of the current element in the
      * {@link #buffer}.
      */
@@ -365,9 +396,13 @@ public class StreamBuffer implements Closeable {
      * Register an external {@link Semaphore} to be released when the buffer is
      * modified (data written or stream closed). The semaphore uses the
      * "max 1 permit" pattern: a permit is released
-     * only if the semaphore currently has zero permits. This enables
+     * only if the semaphore currently has zero permits, so it holds at most one, also when
+     * several threads write or close at the same time. That holds while only this buffer
+     * releases the semaphore: a semaphore registered with two buffers, or released by its
+     * observer, can get more. This enables
      * thread-decoupled notification where the observer blocks on its own
-     * semaphore in its own thread.
+     * semaphore in its own thread. Its {@code availablePermits()} is called under a short
+     * internal lock and must return promptly; its {@code release()} is not.
      *
      * @param semaphore the semaphore to register
      * @throws NullPointerException if semaphore is null
@@ -537,10 +572,95 @@ public class StreamBuffer implements Closeable {
         }
         // release all registered external signals using the max 1 permit pattern
         for (Semaphore signal : signals) {
-            if (signal.availablePermits() == 0) {
-                signal.release();
+            releaseMaxOnePermit(signal);
+        }
+    }
+
+    /**
+     * Releases a registered semaphore if it has no permit (the "max 1 permit" pattern), so that it
+     * holds at most one permit and no signal is lost, also with several threads signaling at once.
+     * Under {@link #signalLock} a thread checks for no permit and claims the semaphore in one step;
+     * a thread that finds it claimed notes that it signaled ({@link #signaledWhileReleasing}) and
+     * leaves the release to the claimant. The claimant releases outside the lock, so an overridden
+     * {@code release()} that writes to, reads from or closes this buffer cannot deadlock with a
+     * thread waiting for that lock; then, under the lock, it releases again if another signal came
+     * meanwhile and the permit is gone, else it drops the claim. If {@code release()} throws, the
+     * claim and the note are dropped and the exception propagates, as before.
+     *
+     * @param semaphore the registered semaphore
+     */
+    private void releaseMaxOnePermit(final Semaphore semaphore) {
+        synchronized (signalLock) {
+            if (contains(releasingSignals, semaphore)) {
+                if (!contains(signaledWhileReleasing, semaphore)) {
+                    signaledWhileReleasing.add(semaphore);
+                }
+                return;
+            }
+            if (semaphore.availablePermits() != 0) {
+                return;
+            }
+            releasingSignals.add(semaphore);
+        }
+        boolean again = true;
+        while (again) {
+            try {
+                semaphore.release();
+            } catch (Throwable t) {
+                // the release threw: drop the claim and the note, and let the exception through
+                synchronized (signalLock) {
+                    remove(signaledWhileReleasing, semaphore);
+                    remove(releasingSignals, semaphore);
+                }
+                throw t;
+            }
+            synchronized (signalLock) {
+                again = remove(signaledWhileReleasing, semaphore) && semaphore.availablePermits() == 0;
+                if (!again) {
+                    remove(releasingSignals, semaphore);
+                }
             }
         }
+    }
+
+    /**
+     * Whether the semaphore is in the deque, compared by identity.
+     *
+     * @param semaphores {@link #releasingSignals} or {@link #signaledWhileReleasing}, under
+     *     {@link #signalLock}
+     * @param semaphore a registered semaphore
+     * @return {@code true} if it is in the deque
+     */
+    // identity on purpose: the claim is of this semaphore object, whatever a subclass's equals says
+    @SuppressWarnings("ReferenceEquality")
+    private static boolean contains(final Iterable<Semaphore> semaphores, final Semaphore semaphore) {
+        for (Semaphore element : semaphores) {
+            if (element == semaphore) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Removes the semaphore from the deque, compared by identity.
+     *
+     * @param semaphores {@link #releasingSignals} or {@link #signaledWhileReleasing}, under
+     *     {@link #signalLock}
+     * @param semaphore a registered semaphore
+     * @return {@code true} if it was in the deque
+     */
+    // identity on purpose, as in contains
+    @SuppressWarnings("ReferenceEquality")
+    private static boolean remove(final Iterable<Semaphore> semaphores, final Semaphore semaphore) {
+        final Iterator<Semaphore> elements = semaphores.iterator();
+        while (elements.hasNext()) {
+            if (elements.next() == semaphore) {
+                elements.remove();
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -670,9 +790,7 @@ public class StreamBuffer implements Closeable {
      */
     private void releaseTrimStartSignals() {
         for (Semaphore semaphore : trimStartSignals) {
-            if (semaphore.availablePermits() == 0) {
-                semaphore.release();
-            }
+            releaseMaxOnePermit(semaphore);
         }
     }
 
@@ -682,9 +800,7 @@ public class StreamBuffer implements Closeable {
      */
     private void releaseTrimEndSignals() {
         for (Semaphore semaphore : trimEndSignals) {
-            if (semaphore.availablePermits() == 0) {
-                semaphore.release();
-            }
+            releaseMaxOnePermit(semaphore);
         }
     }
 

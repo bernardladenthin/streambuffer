@@ -212,4 +212,52 @@ public class StreamBufferSeveralReadersInterleavingTest {
             throw new AssertionError(e);
         }
     }
+    /**
+     * Two writers and an observer of a registered signal (bug-hunt finding F280): the observer
+     * takes a permit if there is one ({@code tryAcquire}, so it never blocks an interleaving) and
+     * then looks at the buffer. Whatever the interleaving, the signal holds at most one permit,
+     * and none is lost: without the observer's take it ends with one; if it ends with none, the
+     * observer took the permit after both writes and saw both bytes. This is the data-race check
+     * of the claims and notes ({@code releasingSignals}, {@code signaledWhileReleasing}, under
+     * {@code signalLock}); vmlens ran out of interleavings at 14 (2026-11-13). It does not reach
+     * the window in which a signal was lost before the fix (the observer taking the permit between
+     * a release and the end of the claim): vmlens interleaves at the buffer's locks and volatile
+     * fields, not inside {@link Semaphore}, and this scenario stays green against that version
+     * too. The window is covered by the deterministic
+     * {@code StreamBufferTest#signal_observerTakesThePermitDuringTheRelease_nextWriteIsNotLost}
+     * and by {@code StreamBufferSignal.tla} ({@code SignalSkip2}).
+     *
+     * @throws InterruptedException if joining a worker thread is interrupted
+     */
+    @Test
+    public void twoWritersAndAnObserver_signalHoldsAtMostOnePermitAndLosesNone() throws InterruptedException {
+        try (AllInterleavings all = interleavings("StreamBuffer.twoWritersAndAnObserver")) {
+            while (all.hasNext()) {
+                final StreamBuffer sb = new StreamBuffer();
+                final OutputStream out = sb.getOutputStream();
+                final Semaphore signal = new Semaphore(0);
+                sb.addSignal(signal);
+                final AtomicReference<Throwable> failure = new AtomicReference<>();
+                final long[] seen = {-1L};
+
+                final Thread writerA = thread(failure, () -> out.write(1));
+                final Thread writerB = thread(failure, () -> out.write(2));
+                final Thread observer = thread(failure, () -> {
+                    if (signal.tryAcquire()) {
+                        seen[0] = sb.getAvailableBytesExact();
+                    }
+                });
+                joinAll(writerA, writerB, observer);
+
+                final int permits = signal.availablePermits();
+                assertThat(failure.get(), is(nullValue()));
+                assertThat(permits <= 1, is(true));
+                if (seen[0] < 0) {
+                    assertThat(permits, is(1));
+                } else if (permits == 0) {
+                    assertThat(seen[0], is(2L));
+                }
+            }
+        }
+    }
 }

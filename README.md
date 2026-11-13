@@ -139,7 +139,7 @@ The `InputStream` and `OutputStream` can be used concurrently from different thr
 - Each `write` is atomic: its bytes enter the buffer together and in order.
 - Each `read(b, off, len)` is atomic too: it takes its `len` bytes in one step once all of them are buffered, so they are contiguous in the stream (see [Fixed-Size Records with Several Readers](#fixed-size-records-with-several-readers-work-queue)).
 - Each buffered byte is delivered to exactly one reader, in the order it was written. No reader blocks while bytes are buffered, and after `close()` every waiting reader returns. `read()` throws no unchecked exception when another reader took the bytes first (bug-hunt finding F278; before 2.0.0 the buffer was correct for one reader only).
-- There is no fairness between readers: which reader gets the next bytes is up to the scheduler.
+- There is no fairness between readers: which reader gets the next bytes is up to the scheduler. On a stream that is closed after finitely many bytes, every call still returns, even with threads that call forever and without fair locks, as long as the scheduler eventually runs every thread that can go on (weak fairness per thread, writer and closer): model-checked in bounded models, and proved with TLAPS for the counter abstraction of the calls and any number of threads. Separately, while a writer writes forever and nobody closes, a reader can lose every race for the bytes (model-checked). See [`src/test/tla/`](./src/test/tla/).
 - All `Deque` accesses are guarded by a `bufferLock` object.
 - State fields (`streamClosed`, `safeWrite`, `availableBytes`, `positionAtCurrentBufferEntry`, `maxBufferElements`, `maxAllocationSize`, `isTrimRunning`, `maxObservedBytes`) are `volatile`; the cumulative counters `totalBytesWritten` and `totalBytesRead` are `final AtomicLong` (atomic read-modify-write under concurrent I/O).
 - `close()` takes the same lock, so it waits for a write or trim in progress on another thread: a write racing the close is either fully buffered or fails with "Stream closed", never appended after a reader saw the end of the stream. A trim copies every buffered byte, so with a large buffer that wait can be noticeable.
@@ -239,7 +239,7 @@ while (!done) {
 
 For trim lifecycle events specifically, see [Trim Observer Signals](#trim-observer-signals) below.
 
-Signals are stored in a `CopyOnWriteArrayList` for thread-safe iteration. The "max 1 permit" pattern means rapid writes collapse into a single wake-up — the observer should check buffer state (e.g., `isClosed()`, `available()`) after waking to determine what changed.
+Signals are stored in a `CopyOnWriteArrayList` for thread-safe iteration. The "max 1 permit" pattern means rapid writes collapse into a single wake-up — the observer should check buffer state (e.g., `isClosed()`, `available()`) after waking to determine what changed. A semaphore holds at most one permit also when several threads write or close at the same time (bug-hunt finding F280, with a TLAPS proof in [`src/test/tla/`](./src/test/tla/)), as long as only this buffer releases it: a semaphore registered with two buffers, or released by its observer, can get more. Its `availablePermits()` is called under a short internal lock and must return promptly.
 
 ### Statistics Tracking
 
@@ -545,6 +545,12 @@ verified in a separate CI pipeline
   - **Trace validation:** recorded runs of the code (an instrumented copy of the class in the tests,
     every access to shared state logged in order) are checked against the model with TLC; 990 runs
     were accepted, and models of older code, a mutated model and corrupted runs are rejected.
+  - **Threads that call forever:** with a finite stream and a closer every call returns, with fair
+    scheduling only and no lock fairness: TLC in bounded models of the abstraction and the
+    detailed model, TLAPS for the abstraction and any number of threads (assuming fairness by role,
+    which follows from fairness per thread and is checked by TLC in bounded models).
+    With a writer that writes forever and no close, TLC finds a reader that starves even with fair
+    locks.
 
 Concurrency itself is outside the deductive scope by JML doctrine (JML specifies sequential
 behavior; OpenJML does not model `volatile` or monitors) and is covered empirically by the
@@ -570,7 +576,7 @@ and not only about the interleavings they enumerate:
    reports a data race by the memory model's happens-before; the `vmlens` job of the Publish pipeline
    fails the build on one (`There are N data races`). Scenarios: a reader against a writer, two
    readers and a close, two record readers, a trim with a trim start signal, `safeWrite` with a
-   concurrent single-byte write. All but one run out of interleavings within the iteration limit
+   concurrent single-byte write, two writers and an observer of a registered signal (F280). All but one run out of interleavings within the iteration limit
    (all of them explored); two readers and a close stops at vmlens's limit, and JPF explores that
    case exhaustively (`TwoReaders.jpf`, `WaitAndRead.jpf`).
 
@@ -593,6 +599,8 @@ program; the JDK classes it builds on (`ReentrantLock`/`Condition`/AQS, `Semapho
 | `waitingReaders` | `final AtomicInteger` | under `waitLock` | lock-free by the writer's signal |
 | `totalBytesWritten`, `totalBytesRead` | `final AtomicLong` | under `bufferLock` (`addAndGet`) | lock-free by the getters |
 | `signals`, `trimStartSignals`, `trimEndSignals` | `final CopyOnWriteArrayList` | by add/remove, any thread | iterated over a snapshot |
+| `signalLock` | `final` | constructor | anywhere (the lock of the two deques below; taken after `bufferLock`, never before it) |
+| `releasingSignals`, `signaledWhileReleasing` (`ArrayDeque<Semaphore>`) | `final`, `@GuardedBy("signalLock")` | under `signalLock` | under `signalLock` (the claims and notes of F280) |
 
 The **`byte[]` contents** are published through `bufferLock`: the writer adds the array under the
 lock, a reader copies from it under the lock, so the monitor's happens-before orders the two. With

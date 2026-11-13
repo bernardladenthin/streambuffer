@@ -40,9 +40,11 @@ part of the Maven build and never touches the shipped jar.
   - `CountOnce` — `availableBytes` lowered once per read after the copy (since F279), not per entry.
   - `CheckedReturn` — `waitForAtLeast`'s waiting branch returns the count it checked (since
     2026-11-12); without it, it read `availableBytes` again for the result.
-- **Fairness:** weak for the writer and the closer, strong for the readers (a free lock or permit
-  that a reader keeps finding taken is eventually its; the JDK locks are not fair, so this is an
-  assumption).
+- **Fairness:** weak for every thread: a thread that can go on all the time eventually does (the
+  scheduler runs a runnable thread). No lock fairness: a thread that keeps finding a lock taken may
+  never get it, as the JDK's monitor and `ReentrantLock(false)` allow. Until 2026-11-13 the readers
+  had strong fairness (fair locks); every model of the current code checks with weak fairness too
+  (see "Liveness with threads that call forever").
 
 ## Properties
 
@@ -58,11 +60,14 @@ part of the Maven build and never touches the shipped jar.
 | `NoWriteAfterEof` | invariant | no write returns normally after a reader reported the end (F149) |
 | `EofOnlyWhenClosedAndEmpty` | invariant | only a closed buffer reports the end, and it stays empty |
 | `AllReadersFinish` | liveness | every read and every `waitForAtLeast` call returns, from every wait (no lost wake-up, F278) |
+| `EveryCallReturns` | liveness | `StreamBufferForever.tla`: with every thread calling again forever, every call returns |
 
 ## Models and results
 
-`check.sh` runs every model and compares it with its **expected** outcome. Last run 2026-11-11, TLC
-v1.7.4, 16 models, about 90 s in total. Writes are single bytes unless the row says otherwise:
+`check.sh` runs every model and compares it with its **expected** outcome: the 16 models below
+(last run 2026-11-13, TLC v1.7.4, about 90 s), the 16 of "Liveness with threads that call
+forever" and the 3 of the external signals (F280), 35 in all, 594 s on 4 cores (with 32; the
+signal models take a second). Writes are single bytes unless the row says otherwise:
 
 | Model | Code | Reads | Threads | Expected and found |
 |---|---|---|---|---|
@@ -131,6 +136,7 @@ therefore true by construction there, and the F279 defect is only shown by the b
 | `StreamBufferCounters.tla` | `read()`, single-byte writes | N = 2, 3, 4, 8, 12; any bytes (`IndInv`) | `SafeInv`, 216 obligations | `Condition2`, `Condition3` | the empty take without the re-check (F278), 10 steps |
 | `StreamBufferRecords.tla` | `read(b, 0, K)`, several writers and closers, any chunking | 2, 3, 4 readers with 2 writers and 2 closers, 2 readers with 3 and 3; any K and bytes (`SafeModInv`) | `SafeInv`, any readers, writers and closers, 488 obligations | `Records2`, `Chunks2` | a torn record with the two-phase read (#212), 6 steps |
 | `StreamBufferWait.tla` | every thread any number of calls, each `read(b, 0, K[r])` (`K[r] = 1` is `read()`) or `waitForAtLeast(M[r])`; several writers and closers, any chunking | 2, 3, 4 threads with 2 writers and 2 closers, 2 threads with 3 and 3; any read sizes, requests, bytes and calls (`SafeModInv`) | `SafeInv`, any threads, writers and closers, 577 obligations | TLAPS for any number of readers (`RefineWaitProof.tla`, 2,656 obligations); TLC in all seven configurations of the current code (`Condition2`, `Condition3`, `Records2`, `Chunks2`, `Mixed2`, `WaitAndRead2`, `WaitChecked2`) | `waitForAtLeast(M[r]) < M[r]` on an open buffer before `CheckedReturn`, 11 steps |
+| `StreamBufferWaitForeverLive.tla` | liveness with threads that call forever: with a closer, every call returns | TLC (`WaitForever*`, below) | `SpecRole => EveryCallReturns`, any threads, writers and closers: 633 + 1,322 obligations | as `StreamBufferWait.tla` | with an endless writer and no close a reader starves, also with fair locks |
 | `StreamBufferWaitLive.tla` | liveness of `StreamBufferWait.tla`: with a closer, every call returns and all finish | 2 threads with 2 writers and 1 closer, 3 with 2 and 2: `LiveInv` inductive, `Pot` goes down with every step, a step until all are done | `FairSpec => <>AllDone`, any threads, writers and closers: 363 + 628 + 919 obligations | as `StreamBufferWait.tla` | without `ClosedNoPark` a state of `SafeInv` has no step |
 
 **The abstractions.** The writer writes the bytes 1, 2, ... in order, and the FIFO hands them out
@@ -267,9 +273,9 @@ above. With the ranges made non-empty, the torn record is found in 6 steps inste
 **Limits of A13:**
 - **Liveness of the detailed model** for any number of readers is not shown; the proof is about
   the abstraction (above), TLC checks the detailed model's liveness in its bounded configurations.
-- **Liveness needs finite programs.** Every call returns when every thread makes finitely many
-  calls. With a thread that calls forever, the others still progress only if the locks are fair to
-  them, which the JDK does not promise; that is not shown.
+- **Liveness with threads that call forever** is in its own section below: with a finite stream
+  and a closer every call returns without lock fairness; with an endless writer a reader can
+  starve.
 - **Inherited from `StreamBuffer.tla`:**
   - A reader's lock-free read of `availableBytes` and of `streamClosed` is one step, where Java
     reads them one after the other. This is harmless for safety: `RereadClosed` needs only
@@ -294,11 +300,156 @@ above. With the ranges made non-empty, the torn record is found in 6 steps inste
   in five runs for the three safety proofs, all obligations proved. With the liveness proof
   (2026-11-12, 4 cores, the other cores busy with `inductive.sh`): `proof.sh` 1098 s, all six
   modules proved; `inductive.sh` about 20 min, which is why `tla-model` has 60 min now. With the
-  refinement proof: `proof.sh` 2114 s, all seven modules proved, so `tlaps-proofs` has 90 min. tlapm can
+  refinement proof: `proof.sh` 2114 s, all seven modules proved. With the forever liveness proof
+  (2026-11-13, 4 cores of a local machine): 2866 s, all nine modules (the F280 signal proof, added after, takes seconds), so `tlaps-proofs` has
+  120 min. tlapm can
   leave backend provers running after it ends, which slowed the next module into timeouts, so
   `proof.sh` runs each tlapm in a process group of its own and kills it afterwards; the ENABLED
   steps run with `--stretch 12`. The 1.6.0-pre asset of that commit had SHA-256
   `99db29f119cb6f43ffed653b212ba2d005e5bf8e242c53468876cb0d08da6bcc`.
+
+## Liveness with threads that call forever (A13 follow-up)
+
+The liveness of A13 needs finite programs: every thread makes finitely many calls. The open
+question was a thread that calls forever. The guess was that the others then progress only with
+fair locks, which the JDK does not promise. That guess was wrong in both directions:
+
+- **A finite stream with a closer.** Every call of every thread returns, although threads call
+  forever. That needs fair scheduling only: weak fairness per thread, writer and closer. It needs no
+  lock fairness. TLC checks it in bounded models of the abstraction and of the detailed model, and
+  TLAPS proves it for the abstraction, for any number of threads, writers and closers, under the
+  fairness by role, which follows from that (see "Limits" below).
+- **An endless writer and no close.** A reader can starve even when every thread step is strongly
+  fair. The starving reader gets `bufferLock` every round and finds the bytes gone: the other
+  reader committed them first. The bytes go to whoever commits first, so a fair lock would not
+  help. Nothing in the contract promises otherwise; it supports several readers without fairness
+  (F278).
+- **The detailed model** needs weak fairness for its readers only. Its `Fairness` has been weak
+  since 2026-11-13 (it was strong before); every model of the current code checks with it.
+
+**Calls forever, without changing the models.** `StreamBufferWaitForever.tla` extends
+`StreamBufferWait.tla` with a ghost step `Refill`, which tops up the budget of calls whenever it is
+used up. Every run in which threads call forever is a run of it, with a `Refill` whenever the budget is
+used up.
+It also has runs in which threads stop, which only adds behaviours: what holds for all its fair
+runs holds for the forever runs. So the safety, refinement and liveness proofs of
+`StreamBufferWait.tla` stay as they are. `StreamBufferForever.tla` does the same for the detailed
+model: a thread that is done calls again (`Restart`), so a reader reads again after -1 and a
+`waitForAtLeast` caller waits again. The property `EveryCallReturns`: each thread returns again and
+again, or it stopped. A failed re-check under `bufferLock` goes back to `start` too, but is no
+return.
+
+**The endless writer.** A ghost step `Shift` lowers `w` and `t` together. The code sees only
+their difference (`availableBytes` and the buffered bytes), so with `Shift` the writer writes
+forever in a finite state space, with its backlog bounded by `Bytes` (a subset of its runs, enough
+for a counterexample).
+
+**Models** (`check.sh`, 2026-11-13, TLC v1.7.4, the sizes CI runs):
+
+| Model | Module | Threads | Expected and found |
+|---|---|---|---|
+| `WaitForever2` | `StreamBufferWaitForever` | `read()`, `read(b, 0, 2)` and `waitForAtLeast(2)` calls, 3 bytes, 1 writer, 1 closer | every call returns, 364,866 states |
+| `WaitForever3` | same | 3 threads, 1 byte | every call returns, 838,813 states |
+| `WaitForever2W2` | same | 2 threads, 2 bytes, 2 writers, 1 closer | every call returns, 588,720 states |
+| `WaitForeverNextOnly2` | same | as `WaitForever2`, fairness for `Next` only | violated: thread 2 is never scheduled again while thread 1 calls forever |
+| `WaitForeverNoClose2` | same | as `WaitForever2`, no closer | violated: the record reader waits forever for its second byte |
+| `WaitForeverRuns2` | same | as `WaitForever2`, probe `AllStop` | violated: fair runs in which the threads call forever exist |
+| `WaitForeverStarve2` | same | 2 threads, each call a `read()` or a `waitForAtLeast(2)`, an endless writer, no close, every thread step strongly fair | violated: the starvation lasso above (the starving thread's call is a `read()`) |
+| `WaitForeverMeasure2` | `StreamBufferWaitForeverLive` | as `WaitForever2` | the step property of the proof's measure, and fairness per thread implies fairness by role |
+| `WaitForeverRole2` | same | as `WaitForever2`, fairness by role | every call returns |
+| `ForeverWaitAndRead2`, `ForeverWaitChecked2`, `ForeverMixed2`, `ForeverRecords2`, `ForeverChunks2`, `ForeverCondition3` | `StreamBufferForever` | the models of the current code, every thread calling again forever | every call returns; 3,038 to 294,862 states |
+| `ForeverNextOnlyWaitAndRead2` | same | fairness for `Next` only | violated |
+
+Locally, larger models check as well: 3 threads with 2 bytes (5,377,658 states, 13 min) and 2
+writers with 2 closers and 3 bytes (6,138,012 states, 11 min).
+
+**The proof for any number of threads** (`StreamBufferWaitForeverLiveProof.tla`, in `proof.sh`).
+The theorem `ForeverLiveness == SpecRole => EveryCallReturns`, with at least one closer and
+finitely many threads, writers and closers.
+
+- **Fairness by role** (`FairRole`, `StreamBufferWaitForeverLive.tla`). Weak fairness for the
+  thread r itself, for the holder of `bufferLock`, for the holder of `waitLock`, for a signaling
+  writer or closer, and for a closing closer. Each follows from the weak fairness per thread of
+  `FairProc`: a holder stays the holder while its step is possible (only its own step releases
+  the lock), and a closer at `close` or a signaler at `siglock` stays enabled while the lock it
+  needs is free. TLC checks `FairProc => FairRole` in `WaitForeverMeasure2`; the proof assumes
+  `FairRole`, because tlapm cannot derive it for a symbolic set of threads.
+- **A measure per thread r**, a natural number. Every step but a return of r keeps it or lowers it,
+  and a step that keeps it moves neither r nor a lock holder nor a writer or closer. Its parts, each
+  weighted to pay for the largest rise of the parts below it:
+  1. what writers, closers and commits still have to do;
+  2. the bytes a copy can still take;
+  3. the threads at `bufferLock` whose re-check fails (stale since a commit);
+  4. a stage per thread, the same on the cycles of returns that take no lock (a fast-path return,
+     -1, the closed branch), lower with every lock taken; a wait that will not park ranks above one
+     that will;
+  5. r's position in its call.
+- **In every state in which r has not stopped, some fair step lowers the measure:** r's own step;
+  the holder of the lock r waits for; for a parked r, a signaler while `waitLock` is free, else the
+  holder of `waitLock`, else a closer at `close` or the holder of `bufferLock`. A closer is at
+  `close` there, since a parked thread means no closer is done (`ClosedNoPark`).
+- **The measure is bounded by a constant**, so one induction over it (WF1 for each case,
+  `NatInduction`) gives the property from every state.
+
+Obligations: `StreamBufferWaitForeverEnabled.tla` 633 (the role actions are enabled where the
+proof needs them), `StreamBufferWaitForeverLiveProof.tla` 1,322. Negative controls (2026-11-13,
+not committed); each makes exactly the obligation fail that it should:
+
+- a lemma `FALSE` added: only that one fails, so no backend derives `FALSE` from the
+  assumptions;
+- the weight of the first part too small (20 · threads + 1 instead of 30 · threads + 10, changed
+  everywhere the proof names it): the arithmetic that pays for the rise of the lower parts fails;
+- the stage of `decide` raised to that of `lock`, in the definition and the lemmas that restate
+  it: the step that takes `bufferLock` no longer lowers the measure;
+- the fairness of the closing closer removed: the fairness the proof unpacks is missing.
+
+Before the proof, TLC checked the measure on the bounded models (`MeasureSteps`), and three
+mutations of it fail there: a stage that does not drop when `bufferLock` is taken, the measure
+without the buffered bytes, and without the stale lock holders.
+
+**tlapm 1.6.0-pre quirks** the proof works around:
+- a lemma cannot be instantiated at a term inside ENABLED (`ENABLED <<ThreadStep(x)>>_vars` at
+  `r`, every backend fails): the operator `EnR(x)` is expanded only where it is used;
+- expanding ENABLED in a context with the temporal definitions of the liveness modules crashes
+  tlapm (an assertion in `e_substitutive.ml`): the role actions are in a module of their own,
+  `StreamBufferWaitForeverRoles.tla`.
+
+**Limits.**
+- The proof is about the abstraction. As for A13, liveness does not carry over by the refinement;
+  the detailed model's forever liveness rests on TLC's bounded models.
+- `FairRole` is the proof's assumption; that it follows from fairness per thread is argued above
+  and checked by TLC in bounded models.
+- A finite stream with a closer. With an endless writer, per-call liveness fails (above).
+- Spurious wake-ups of `await` are not modeled (see "Limits of A13").
+
+## The "max 1 permit" of the external signals (bug-hunt finding F280)
+
+`addSignal`, `addTrimStartSignal` and `addTrimEndSignal` register semaphores that the buffer
+releases only while they have no permit. `StreamBufferSignal.tla` models the release of one such
+semaphore (they are independent):
+- any number of signalers: every write, close or trim, on its own thread or nested in another one's
+  `release()`, signals after its change;
+- a `release()` may throw;
+- the observer acquires at any time and then looks at the buffer.
+
+Two properties. `MaxOne`: never more than one permit, the documented contract. `NoLostSignal`: once
+no signaler is busy, a change the observer has not seen since its last acquire has a permit waiting
+for it (after a release that threw, a signal may be lost, as before F280). Three versions of the
+code, by the constant `Mode`:
+
+| Model | Mode | Code | Expected and found |
+|---|---|---|---|
+| `SignalNone2` | `none` | before F280: check for no permit, then release | `MaxOne` violated: two signalers both see no permit and both release (the race an external review reported) |
+| `SignalSkip2` | `skip` | the first fix: check and claim in one step under `signalLock`, release outside it; a signaler that finds the claim skips | `NoLostSignal` violated: the claimant released, the observer took the permit and waits again, a second change finds the claim and skips, the claim is dropped, no permit (CodeRabbit found it in review, before the merge) |
+| `SignalReplay3` | `replay` | since: a signaler that finds the claim notes its signal; the claimant releases again after its release if the note is there and the permit is gone | no error, 70 states, with the inductive invariant `Inv` |
+
+`StreamBufferSignalProof.tla` proves `Spec => [](MaxOne /\ NoLostSignal)` for Mode `replay` with
+TLAPS, for any number of signalers (28 obligations). Its inductive invariant: at most one signaler
+between its claim and dropping it, the claim set exactly then, no permit while it releases, a note
+only with a claim, and a change the observer has not seen has a permit, or during a release the
+note or the release still to come. Negative control (2026-11-13): with Mode `skip` assumed, exactly
+the steps Check and Clear fail. Not modeled: a semaphore registered with two buffers, or released
+by its observer (outside the contract, see `addSignal`).
 
 ## Trace validation: recorded runs of the code (roadmap A6)
 
