@@ -65,6 +65,61 @@ sed -i 's/IF waiters # 0 THEN "siglock" ELSE WriterDone/WriterDone/' "$d/StreamB
 sed -i 's/    Spurious = [0-9]*/    Spurious = 0/' "$d"/*.cfg
 control "mutant: the writer never signals" "$d" 1
 
+# A spurious wake-up written into a trace: right after a reader's park, before any other thread's
+# line, the lines of one more round of the loop of awaitAtLeast (unpark, the test of availableBytes
+# and streamClosed, park). Nothing can wake the reader there (the other threads move only at their
+# own lines), so the trace must be accepted with the budget of TraceGenerator and rejected with
+# Spurious = 0. One trace each from up to three; each in a directory of its own.
+d=$(copy spurious "")
+names=$("$py" -I - "$d" <<'EOF'
+import glob, os, re, sys
+d = sys.argv[1]
+done = 0
+for f in sorted(glob.glob(os.path.join(d, 'Trace_*.tla'))):
+    name = os.path.basename(f)[:-4]
+    lines = open(f, encoding='utf-8').read().split('\n')
+    park = [i for i, l in enumerate(lines) if 'a |-> "park"' in l]
+    if done >= 3 or not park:
+        os.remove(f)
+        os.remove(f[:-4] + '.cfg')
+        continue
+    p = park[0]
+    t = re.search(r'\[t \|-> "([^"]+)"', lines[p]).group(1)
+    # the value of availableBytes at the park: the last access of it before
+    v = [re.search(r'v \|-> (\d+)', lines[j]).group(1) for j in range(p)
+         if re.search(r'a \|-> "(getAvail|putAvail)"', lines[j])][-1]
+    row = ', [t |-> "%s", m |-> "awaitAtLeast", a |-> "%s", n |-> %d, v |-> %s, b |-> <<>>]'
+    lines[p + 1:p + 1] = [row % (t, 'unpark', 0, 0), row % (t, 'getAvail', 2, v),
+                          row % (t, 'getClosed', 0, 0), row % (t, 'park', 0, 0)]
+    os.makedirs(os.path.join(d, name))
+    open(os.path.join(d, name, name + '.tla'), 'w', encoding='utf-8', newline='\n').write('\n'.join(lines))
+    os.replace(f[:-4] + '.cfg', os.path.join(d, name, name + '.cfg'))
+    os.remove(f)
+    print(name)
+    done += 1
+EOF
+)
+names=$(printf '%s\n' "$names" | tr -d '\r')
+ok=0
+for n in $names; do
+  with=$(bash "$here/trace.sh" "$jar" "$d/$n" accept 2>&1 || true)
+  sed -i 's/    Spurious = [0-9]*/    Spurious = 0/' "$d/$n/$n.cfg"
+  without=$(bash "$here/trace.sh" "$jar" "$d/$n" reject 2>&1 || true)
+  if printf '%s\n' "$with" | grep -q 'accepted: 1, rejected: 0' \
+     && printf '%s\n' "$without" | grep -q 'accepted: 0, rejected: 1'; then
+    ok=$((ok + 1))
+  else
+    echo "      $n: with the budget: $(printf '%s\n' "$with" | tail -n 1); without: $(printf '%s\n' "$without" | tail -n 1)"
+  fi
+done
+count=$(printf '%s\n' "$names" | grep -c . || true)
+if [ "$count" -gt 0 ] && [ "$ok" = "$count" ]; then
+  echo "OK    a spurious wake-up written into a trace: $ok/$count accepted with the budget, rejected without"
+else
+  echo "FAIL  a spurious wake-up written into a trace: $ok/$count accepted with the budget, rejected without"
+  failed=1
+fi
+
 d=$(copy corrupted "")
 corrupted=$("$py" -I - "$d" <<'EOF'
 import glob, re, sys, os

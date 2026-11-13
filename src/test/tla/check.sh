@@ -42,10 +42,13 @@ models=(
   "SpuriousWaitAndRead2|Model checking completed. No error has been found."
   "SpuriousWaitChecked2|Model checking completed. No error has been found."
   "SpuriousReached2|Error: Invariant NoSpuriousWake is violated."
+  "WaitAlone1|Model checking completed. No error has been found."
+  "SpuriousWaitAlone1|Model checking completed. No error has been found."
   # model@module: threads that call forever; fairness per process, no lock fairness
   "WaitForever2@StreamBufferWaitForever|Model checking completed. No error has been found."
   "WaitForever3@StreamBufferWaitForever|Model checking completed. No error has been found."
   "WaitForever2W2@StreamBufferWaitForever|Model checking completed. No error has been found."
+  "WaitForeverSpurious2@StreamBufferWaitForever|Model checking completed. No error has been found."
   "WaitForeverNextOnly2@StreamBufferWaitForever|Error: Temporal properties were violated."
   "WaitForeverNoClose2@StreamBufferWaitForever|Error: Temporal properties were violated."
   # AllStop fails because forever runs exist; that no run gets stuck is WaitForever2, same constants
@@ -57,6 +60,7 @@ models=(
   "SignalReplay3@StreamBufferSignal|Model checking completed. No error has been found."
   # the argument of the TLAPS proof: the measure, and fairness per thread implies fairness by role
   "WaitForeverMeasure2@StreamBufferWaitForeverLive|Model checking completed. No error has been found."
+  "WaitForeverMeasureSpurious2@StreamBufferWaitForeverLive|Model checking completed. No error has been found."
   "WaitForeverRole2@StreamBufferWaitForeverLive|Model checking completed. No error has been found."
   # the detailed model, every thread calling again when done, forever
   "ForeverWaitAndRead2@StreamBufferForever|Model checking completed. No error has been found."
@@ -69,26 +73,48 @@ models=(
 )
 
 failed=0
-for entry in "${models[@]}"; do
-  model="${entry%%|*}"
-  expected="${entry#*|}"
-  module=StreamBuffer
+check() {  # check <entry> [label prefix]: run the model in the current directory
+  local model="${1%%|*}" expected="${1#*|}" prefix="${2:-}" module=StreamBuffer log states
   if [[ "$model" == *@* ]]; then
     module="${model#*@}"
     model="${model%@*}"
   fi
-  log="$work/$model.log"
+  log="$work/$prefix$model.log"
   set +e
-  java -XX:+UseParallelGC -cp "$jar" tlc2.TLC -workers auto -metadir "$work/$model" \
+  java -XX:+UseParallelGC -cp "$jar" tlc2.TLC -workers auto -metadir "$work/$prefix$model" \
     -config "$model.cfg" "$module.tla" > "$log" 2>&1
   set -e
   states="$(grep -oE '[0-9]+ distinct states found' "$log" | tail -1 || true)"
   if grep -qF "$expected" "$log"; then
-    echo "OK   $model: $expected ($states)"
+    echo "OK   $prefix$model: $expected ($states)"
   else
-    echo "FAIL $model: expected \"$expected\""
+    echo "FAIL $prefix$model: expected \"$expected\""
     grep -E 'Error:|No error has been found' "$log" | head -3 | sed 's/^/     /'
     failed=1
   fi
+}
+for entry in "${models[@]}"; do
+  check "$entry"
 done
+
+# the negative control of the spurious wake-ups: a mutant whose woken thread skips the test of its
+# loop (ReaderWaitLock goes to "wret" instead of "test"). Next to a lone waitForAtLeast(2) every
+# signal wakes it to enough bytes or a closed buffer, so the mutant checks clean without spurious
+# wake-ups and returns short on an open buffer with them: the step reaches what the test is for.
+mutant="$work/mutant"
+mkdir -p "$mutant"
+cp ./*.tla ./*.cfg "$mutant/"
+sed -i 's/Goto(r, IF rpc\[r\] = "lockwait" THEN "inc" ELSE "test")/Goto(r, IF rpc[r] = "lockwait" THEN "inc" ELSE "wret")/' \
+  "$mutant/StreamBuffer.tla"
+if grep -q 'THEN "inc" ELSE "wret")' "$mutant/StreamBuffer.tla"; then
+  (
+    cd "$mutant"
+    check "WaitAlone1|Model checking completed. No error has been found." "mutant-"
+    check "SpuriousWaitAlone1|Error: Invariant WaitEnoughOrClosed is violated." "mutant-"
+    exit "$failed"
+  ) || failed=1
+else
+  echo "FAIL mutant: the step of ReaderWaitLock was not found"
+  failed=1
+fi
 exit "$failed"
