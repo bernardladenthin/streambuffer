@@ -269,6 +269,23 @@ annotated, so everything below is genuinely still open.
     (bounded or unbounded; abstraction, detailed model or code) → assumptions → CI job. Every scheduled formal run writes a manifest (commit SHA,
     tool versions and SHA-256, obligations, states) as an artifact. Done when every verification
     claim in the READMEs points to a row of that table, and every row has a run with a SHA.
+
+    Plan (branch `feat/a16-a17`, started 2026-11-13), with the reasons:
+    - [ ] `VERIFICATION-ASSUMPTIONS.md` at the root: the trusted base, the caller contracts, what
+      no model covers, what the models assume; one table property → tool → scope → assumptions →
+      CI job → script, each row with an id (`V1`, `V2`, ...). At the root, not under `docs/`,
+      because the README links it next to the verification overview.
+    - [ ] Every verification claim of `README.md`, `src/test/tla/README.md` and
+      `src/test/jpf/README.md` names its row id; a test script checks both directions (every id
+      in the READMEs exists in the table, every row is referenced), so a new claim without a row
+      fails. A negative control: a README with an unknown id must fail it.
+    - [ ] The manifest: every formal job of `formal-verification.yml` writes a small JSON (commit
+      SHA, tool name, version and SHA-256, the job's counts: obligations, states, models, traces)
+      and uploads it as an artifact; one shared script writes it, so the jobs stay alike. No new
+      workflow file.
+    - [ ] The table's rows point to the manifest of the job that checks them; "every row has a run
+      with a SHA" closes with the first scheduled run after the merge (noted as such until then).
+    - [ ] README, CHANGELOG, CLAUDE.md.
   - **A15 — Proofs as a release gate (1–2 days; last, see the table).** `formal-verification.yml` gets a `workflow_call`
     trigger; `publish.yml` calls it for a `v*` tag and its deploy job needs it (no new workflow
     file). Done when a release of a commit without green formal jobs is impossible. Cost: about 2 h
@@ -280,6 +297,30 @@ annotated, so everything below is genuinely still open.
     `signalLock`). The README's field table is checked against reflection (kind of each field). Done
     when it holds for every execution, not for scenarios, and a deliberately unguarded access (a
     mutation of the class file in the test) turns it red.
+
+    Plan (branch `feat/a16-a17`, started 2026-11-13), with the reasons:
+    - [ ] `asm-tree` and `asm-analysis` as explicit test dependencies (9.9.1, the version Lincheck
+      already brings, so the convergence check stays quiet): the check needs the control flow and
+      the origin of the monitor operand, which the tree and analysis APIs give.
+    - [ ] The checker (test code, `net.ladenthin.streambuffer.drf`): for every method of
+      `StreamBuffer` and its inner classes, the locks held at each instruction (a forward data
+      flow over the control flow graph: `monitorenter` of a value loaded from the field
+      `bufferLock` or `signalLock` adds it, `monitorexit` removes it, a merge keeps what every path
+      holds). Every access to a field annotated `@GuardedBy(L)` or to a plain field (not final,
+      volatile or atomic) needs L held there; a plain field without `@GuardedBy` is an error
+      itself. A method annotated `@GuardedBy(L)` starts with L held, and every call of it needs L
+      held. Synthetic accessors (`access$NNN`, Java 8 bytecode has no nestmates) pass their needs
+      on to their callers. Constructors are exempt (before publication); lambda bodies are not
+      (their call sites cannot be seen, so they must take the lock themselves).
+    - [ ] The field table: reflection gives every instance field and its kind (final, volatile,
+      atomic, plain); the README's "Data-Race Freedom" table must list each one with the matching
+      kind, both ways. (`ownedPrefix`, a `@GuardedBy("bufferLock")` int, is missing there today.)
+    - [ ] Negative controls in the test, on class files mutated with ASM: an unguarded read of a
+      guarded field, an unguarded call of a `@GuardedBy` method, the annotation stripped from a
+      guarded method, a plain field without `@GuardedBy`, and a field table without one row: each
+      must fail with its own message.
+    - [ ] Runs in `mvn test` (fast, no agent); README "Data-Race Freedom" (point 2 is then checked
+      for every execution, not only by vmlens' scenarios), CHANGELOG, CLAUDE.md.
   - **A18 — Every interleaving of the code is a run of the model, for small scenarios (1–2
     weeks).** JPF enumerates all interleavings of the real bytecode for the scenarios of
     `src/test/jpf/`; a JPF listener writes each path as a trace in the format of A6, and
