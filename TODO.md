@@ -206,6 +206,62 @@ annotated, so everything below is genuinely still open.
     jMT, jmc or MemSAT work on litmus-size programs — A4 is the sound route); VerCors (rejected
     2026-09, see below).
 
+- **Verification roadmap 2026-11, second part — packages A15–A19 (planned 2026-11-13).** From an
+  external review that compared the verification with seL4's (abstract spec, executable spec, code,
+  binary, each step proved, and a published list of assumptions). Checked against this repo:
+  - **Done already:** the semaphore race the review found (F280, PR #228); DRF ⇒ sequential
+    consistency (A4, README "Data-Race Freedom", with the machine-checked theorem); a field table
+    of the lock discipline (README); the `safeWrite` array contract; the model invariants it
+    proposes (`Fifo`, `AvailLinearizable`, `RecordsWhole`, `NoWriteAfterEof`, proved for any number
+    of threads in the abstractions and carried to the detailed model by `RefineWaitProof.tla`).
+  - **Not taken:** an Isabelle/JMM proof of the wake-up protocol. It uses only synchronization
+    actions (volatile `availableBytes`/`streamClosed`, `AtomicInteger waitingReaders`, the locks,
+    `await`/`signalAll`), which the JMM puts in one total order consistent with program order (JLS
+    §17.4.4), exactly what the TLA+ model assumes. What is left is the plain accesses (A17) and
+    the code-to-model link (A18); an Isabelle project would mostly re-prove that reduction.
+    Source-to-bytecode correctness: javac and the JVM stay trusted (A16 lists them).
+  - **The gaps:** no formal job gates a release (they run scheduled only); the lock-discipline
+    table is hand-written and vmlens covers the scenarios it runs only; code and model are linked
+    by 990 recorded runs (A6), not by every interleaving; assumptions and limits are spread over
+    three READMEs and no result is tied to a revision; liveness of the detailed model and the
+    instance methods for any number of threads.
+  Order: A16, A15, A17, A18; A19 and A9 only if wanted afterwards. Run with `/loop` and the prompt
+  in "Run prompts" below.
+
+  - **A16 — Assumptions and a proof manifest (2–3 days).** A new `VERIFICATION-ASSUMPTIONS.md`:
+    the trusted base (JVM and JIT, javac, the JDK classes `ReentrantLock`/`Condition`/AQS,
+    `Semaphore`, `ArrayDeque`, `CopyOnWriteArrayList`, the atomics), the caller contracts (a
+    written array without `safeWrite`, the semaphore limits of F280, `release()` overrides, trim
+    signals), what no model covers (timeouts, interrupts, spurious wake-ups, trim in the TLA+
+    model). And a table: property → tool → scope (bounded or unbounded; abstraction, detailed
+    model or code) → assumptions → CI job. Every scheduled formal run writes a manifest (commit SHA,
+    tool versions and SHA-256, obligations, states) as an artifact. Done when every verification
+    claim in the READMEs points to a row of that table, and every row has a run with a SHA.
+  - **A15 — Proofs as a release gate (1–2 days).** `formal-verification.yml` gets a `workflow_call`
+    trigger; `publish.yml` calls it for a `v*` tag and its deploy job needs it (no new workflow
+    file). Done when a release of a commit without green formal jobs is impossible. Cost: about 2 h
+    more per release. Changes the release process: the owner confirms before it is merged.
+  - **A17 — Data-race freedom checked on the bytecode (3–5 days).** A test reads `StreamBuffer`'s
+    class files with ASM (already a test dependency) and checks every access to a field that is not
+    `final`, `volatile` or atomic: it lies between `monitorenter`/`monitorexit` of `bufferLock`, or
+    in a method annotated `@GuardedBy("bufferLock")` whose every call site does (the same for
+    `signalLock`). The README's field table is checked against reflection (kind of each field). Done
+    when it holds for every execution, not for scenarios, and a deliberately unguarded access (a
+    mutation of the class file in the test) turns it red.
+  - **A18 — Every interleaving of the code is a run of the model, for small scenarios (1–2
+    weeks).** JPF enumerates all interleavings of the real bytecode for the scenarios of
+    `src/test/jpf/`; a JPF listener writes each path as a trace in the format of A6, and
+    `trace.sh` checks all of them against `TraceStreamBuffer.tla`. Done when, for those scenarios,
+    every bytecode execution is accepted and the A6 negative controls still reject. Risk: JPF's
+    state counts (`TwoReaders.jpf` 2.3 million states) — start with the smallest scenarios,
+    time-box, and keep the bounded result if the larger ones do not fit.
+  - **A19 — Liveness of the detailed model for any number of readers (optional, weeks).** TLAPS,
+    on the pattern of `StreamBufferWaitForeverLiveProof.tla` (a measure per thread, fairness by
+    role), for `StreamBuffer.tla` directly, or a refinement that carries fairness. Done when the
+    liveness of the detailed model no longer rests on TLC's bounded models.
+  - A9 (below) stays the long-term package for the instance methods; first extract a sequential
+    core (trim, read, write as a pure function on the deque), then OpenJML or KeY.
+
 - **Formal verification — follow-ups.** The two-layer setup (OpenJML ESC proof of the static
   sequential core + OpenJML RAC under the full test suite) landed 2026-09 — see CLAUDE.md
   "Formal Verification" and `.github/workflows/formal-verification.yml`. Still open, in priority
@@ -308,4 +364,43 @@ Prompts for long `/loop` runs. The loop is started with a one-line reference to 
 so the prompt can be changed in this file without restarting the loop; the next iteration reads
 the current text.
 
-No run open.
+### Verification roadmap A15–A18
+
+Start: `/loop Work on the verification roadmap A15-A18 as described in TODO.md, section "Run prompts" / "Verification roadmap A15–A18", re-read on every iteration.`
+
+````text
+Work on the verification roadmap A15-A18 of streambuffer (TODO.md, "Verification roadmap 2026-11,
+second part") fully automatically and as independently as possible, in the order A16, A15, A17,
+A18. It may take longer than one session; there is no deadline. Work locally (TLC, Apalache and
+tlapm as in src/test/tla/README.md; JPF in Docker, eclipse-temurin:11-jdk + apt-get install git,
+MSYS_NO_PATHCONV=1; OpenJML RAC in WSL as the formal-verification.yml job does it; Maven with
+JAVA_HOME=/c/Users/berna/AppData/Local/Programs/jdk-25.0.4.1+1). A rented instance (see
+../workspacePrivate/remote.md) is allowed for up to about 10-15 EUR in total: enter it in
+remote.md while it runs, delete it and sweep when done. Web search and Chrome are allowed.
+
+Procedure:
+1. Every iteration: in the real clone, switch to the branch of the current package (create it from
+   main if it does not exist: feat/a16-assumptions, feat/a15-release-gate, feat/a17-drf-bytecode,
+   feat/a18-jpf-traces), write the package's plan as checkbox steps under it in TODO.md with the
+   reason for every decision, do the next open step, test it, tick it with its commit, add steps
+   found on the way. One package per branch and PR.
+2. A change of production code only if a package finds a defect (then a bug-hunt finding in
+   BUGHUNT-FOUND.md, a test that is red before and green after, and the fix). Negative controls are
+   mandatory for every check: a deliberately broken input must make it fail.
+3. Before every push: mvn verify, PIT (100 % threshold) if test or main code changed, and the
+   OpenJML RAC job locally if StreamBuffer.java changed. Results with numbers in the READMEs;
+   CHANGELOG.md, CLAUDE.md, TODO.md updated. CI: only the existing workflow files.
+4. A15 changes the release process: open its PR, but leave the merge to the owner and say so.
+5. At the end of each package: review of the branch by an agent. Only regressions against main,
+   moderate or high bugs in the branch's own changes, and wrong statements in the docs block the
+   push; the rest goes as one line under the package in TODO.md. At most one more round. Then one
+   push, open the PR (do not merge, no dispatch runs), watch CI; on a CI error of my own: cancel the
+   run, commit the fix, push. Check the CodeRabbit review and work off still-valid findings.
+6. Rules: no questions (ask only for something that is the owner's to decide, such as more budget
+   or a release-process change). No force-push, no pkill -f (kill by PID), delete only with
+   Remove-Item, no private data to external services. Remove the done steps of a package from
+   TODO.md when its PR is merged; only the result stays.
+7. When a package's PR is open and CI is green: a short summary in German, then go on with the next
+   package; after A18 (or when A18 is time-boxed out): a German summary of all packages, then end
+   the loop.
+````
