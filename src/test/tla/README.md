@@ -65,8 +65,9 @@ part of the Maven build and never touches the shipped jar.
 ## Models and results
 
 `check.sh` runs every model and compares it with its **expected** outcome: the 16 models below
-(last run 2026-11-13, TLC v1.7.4, about 90 s) and the 16 of "Liveness with threads that call
-forever", 32 in all, 594 s on 4 cores. Writes are single bytes unless the row says otherwise:
+(last run 2026-11-13, TLC v1.7.4, about 90 s), the 16 of "Liveness with threads that call
+forever" and the 2 of the external signals (F280), 34 in all, 594 s on 4 cores (with 32; the two
+signal models take a second). Writes are single bytes unless the row says otherwise:
 
 | Model | Code | Reads | Threads | Expected and found |
 |---|---|---|---|---|
@@ -300,7 +301,7 @@ above. With the ranges made non-empty, the torn record is found in 6 steps inste
   (2026-11-12, 4 cores, the other cores busy with `inductive.sh`): `proof.sh` 1098 s, all six
   modules proved; `inductive.sh` about 20 min, which is why `tla-model` has 60 min now. With the
   refinement proof: `proof.sh` 2114 s, all seven modules proved. With the forever liveness proof
-  (2026-11-13, 4 cores of a local machine): 2866 s, all nine modules, so `tlaps-proofs` has
+  (2026-11-13, 4 cores of a local machine): 2866 s, all nine modules (the F280 signal proof, added after, takes seconds), so `tlaps-proofs` has
   120 min. tlapm can
   leave backend provers running after it ends, which slowed the next module into timeouts, so
   `proof.sh` runs each tlapm in a process group of its own and kills it afterwards; the ENABLED
@@ -420,6 +421,28 @@ without the buffered bytes, and without the stale lock holders.
   and checked by TLC in bounded models.
 - A finite stream with a closer. With an endless writer, per-call liveness fails (above).
 - Spurious wake-ups of `await` are not modeled (see "Limits of A13").
+
+## The "max 1 permit" of the external signals (bug-hunt finding F280)
+
+`addSignal`, `addTrimStartSignal` and `addTrimEndSignal` register semaphores that the buffer
+releases only while they have no permit. `StreamBufferSignal.tla` models the release of one such
+semaphore (they are independent):
+- any number of signalers: every write, close or trim, on its own thread or nested in another one's
+  `release()`;
+- a `release()` may throw;
+- the observer acquires at any time.
+
+`Claim = FALSE` is the code before F280: the check for no permit, then the release. TLC
+(`SignalNoClaim2`) finds two signalers that both see no permit and both release, so two permits,
+the race an external review reported. `Claim = TRUE` is the code since: under the internal
+`signalLock` a signaler checks and claims the semaphore in one step, releases outside the lock and
+drops the claim afterwards, also when `release()` throws. TLC (`SignalClaim3`, 11 states) finds no
+error, and `StreamBufferSignalProof.tla` proves `Spec => []MaxOne` with TLAPS for any number of
+signalers (25 obligations). Its inductive invariant: at most one signaler between its claim and the
+end of its release, the claim set exactly then, and no permit while it releases. Negative control
+(2026-11-13): with `Claim = FALSE` assumed, exactly the steps Check and Release fail. Not modeled:
+a semaphore registered with two buffers, or released by its observer (outside the contract, see
+`addSignal`).
 
 ## Trace validation: recorded runs of the code (roadmap A6)
 

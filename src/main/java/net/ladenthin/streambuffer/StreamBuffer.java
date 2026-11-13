@@ -10,8 +10,11 @@ import java.io.InputStream;
 import java.io.InterruptedIOException;
 import java.io.OutputStream;
 import java.util.ArrayDeque;
+import java.util.Collections;
 import java.util.Deque;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
@@ -139,6 +142,27 @@ public class StreamBuffer implements Closeable {
      * Each registered semaphore is released when trim ends.
      */
     private final CopyOnWriteArrayList<Semaphore> trimEndSignals = new CopyOnWriteArrayList<>();
+
+    /**
+     * Guards {@link #releasingSignals}, so that the "max 1 permit" check of a signal and the
+     * decision to release it are one step for every thread that signals this buffer (several
+     * writers and a closer signal after they released {@link #bufferLock}). Held only for that
+     * check, never while a semaphore's {@code release()} runs, and never while waiting for
+     * {@link #bufferLock}: a thread may take it while holding {@code bufferLock} (a trim signal,
+     * a write from a trim signal), never the other way round.
+     */
+    private final Object signalLock = new Object();
+
+    /**
+     * The registered semaphores (all three kinds) whose release a thread of this buffer has
+     * decided and not finished yet. A thread that finds a semaphore here leaves it alone: its
+     * permit is on the way. Compared by identity, since {@link Semaphore} does not override
+     * {@code equals}. Bug-hunt finding F280: before, two threads could both see no permit and
+     * both release, leaving two.
+     */
+    @GuardedBy("signalLock")
+    private final Set<Semaphore> releasingSignals =
+            Collections.newSetFromMap(new IdentityHashMap<Semaphore, Boolean>());
 
     /**
      * A variable for the current position of the current element in the
@@ -365,9 +389,13 @@ public class StreamBuffer implements Closeable {
      * Register an external {@link Semaphore} to be released when the buffer is
      * modified (data written or stream closed). The semaphore uses the
      * "max 1 permit" pattern: a permit is released
-     * only if the semaphore currently has zero permits. This enables
+     * only if the semaphore currently has zero permits, so it holds at most one, also when
+     * several threads write or close at the same time. That holds while only this buffer
+     * releases the semaphore: a semaphore registered with two buffers, or released by its
+     * observer, can get more. This enables
      * thread-decoupled notification where the observer blocks on its own
-     * semaphore in its own thread.
+     * semaphore in its own thread. Its {@code availablePermits()} is called under a short
+     * internal lock and must return promptly; its {@code release()} is not.
      *
      * @param semaphore the semaphore to register
      * @throws NullPointerException if semaphore is null
@@ -537,8 +565,31 @@ public class StreamBuffer implements Closeable {
         }
         // release all registered external signals using the max 1 permit pattern
         for (Semaphore signal : signals) {
-            if (signal.availablePermits() == 0) {
-                signal.release();
+            releaseMaxOnePermit(signal);
+        }
+    }
+
+    /**
+     * Releases a registered semaphore if it has no permit and no other thread of this buffer is
+     * releasing it already (the "max 1 permit" pattern). The check and the claim are one step under
+     * {@link #signalLock}; the {@code release()} itself runs outside it, so an overridden
+     * {@code release()} that writes to, reads from or closes this buffer cannot deadlock with a
+     * thread that waits for that lock. If {@code release()} throws, the claim is dropped and the
+     * exception propagates, as before.
+     *
+     * @param semaphore the registered semaphore
+     */
+    private void releaseMaxOnePermit(final Semaphore semaphore) {
+        synchronized (signalLock) {
+            if (semaphore.availablePermits() != 0 || !releasingSignals.add(semaphore)) {
+                return;
+            }
+        }
+        try {
+            semaphore.release();
+        } finally {
+            synchronized (signalLock) {
+                releasingSignals.remove(semaphore);
             }
         }
     }
@@ -670,9 +721,7 @@ public class StreamBuffer implements Closeable {
      */
     private void releaseTrimStartSignals() {
         for (Semaphore semaphore : trimStartSignals) {
-            if (semaphore.availablePermits() == 0) {
-                semaphore.release();
-            }
+            releaseMaxOnePermit(semaphore);
         }
     }
 
@@ -682,9 +731,7 @@ public class StreamBuffer implements Closeable {
      */
     private void releaseTrimEndSignals() {
         for (Semaphore semaphore : trimEndSignals) {
-            if (semaphore.availablePermits() == 0) {
-                semaphore.release();
-            }
+            releaseMaxOnePermit(semaphore);
         }
     }
 

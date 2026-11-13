@@ -239,7 +239,7 @@ while (!done) {
 
 For trim lifecycle events specifically, see [Trim Observer Signals](#trim-observer-signals) below.
 
-Signals are stored in a `CopyOnWriteArrayList` for thread-safe iteration. The "max 1 permit" pattern means rapid writes collapse into a single wake-up — the observer should check buffer state (e.g., `isClosed()`, `available()`) after waking to determine what changed.
+Signals are stored in a `CopyOnWriteArrayList` for thread-safe iteration. The "max 1 permit" pattern means rapid writes collapse into a single wake-up — the observer should check buffer state (e.g., `isClosed()`, `available()`) after waking to determine what changed. A semaphore holds at most one permit also when several threads write or close at the same time (bug-hunt finding F280, with a TLAPS proof in [`src/test/tla/`](./src/test/tla/)), as long as only this buffer releases it: a semaphore registered with two buffers, or released by its observer, can get more. Its `availablePermits()` is called under a short internal lock and must return promptly.
 
 ### Statistics Tracking
 

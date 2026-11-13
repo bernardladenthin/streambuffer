@@ -23,6 +23,8 @@
 # closer, in every behaviour of StreamBufferWaitForever.tla with the fairness by role, every call
 # of every thread returns (or the thread stopped), for any number of threads, writers and closers;
 # it uses StreamBufferWaitForeverEnabled.tla (the role actions are enabled where needed).
+# The external signals, StreamBufferSignalProof.tla: with the claim of the code since F280 a
+# registered semaphore never holds more than one permit, for any number of signalers.
 # Fails unless every obligation of every proof is proved. In CI: the scheduled tlaps-proofs job of
 # formal-verification.yml, with tlapm built from a pinned commit (no tagged 1.6 release; README.md).
 #
@@ -38,12 +40,12 @@ cp StreamBufferCounters.tla StreamBufferCountersProof.tla \
    StreamBufferWaitLive.tla StreamBufferCountLemmas.tla StreamBufferWaitEnabled.tla \
    StreamBufferWaitLiveProof.tla StreamBuffer.tla RefineWait.tla RefineWaitProof.tla \
    StreamBufferWaitForever.tla StreamBufferWaitForeverRoles.tla StreamBufferWaitForeverLive.tla \
-   StreamBufferWaitForeverEnabled.tla StreamBufferWaitForeverLiveProof.tla "$work/"
+   StreamBufferWaitForeverEnabled.tla StreamBufferWaitForeverLiveProof.tla    StreamBufferSignal.tla StreamBufferSignalProof.tla "$work/"
 cd "$work"
 failed=0
 for proof in StreamBufferCountersProof StreamBufferRecordsProof StreamBufferWaitProof \
              StreamBufferCountLemmas StreamBufferWaitEnabled StreamBufferWaitLiveProof RefineWaitProof \
-             StreamBufferWaitForeverEnabled StreamBufferWaitForeverLiveProof; do
+             StreamBufferWaitForeverEnabled StreamBufferWaitForeverLiveProof StreamBufferSignalProof; do
   # the ENABLED steps need more time on a loaded machine (one timed out at --stretch 3 and 6
   # with the other cores busy, none in three runs at 12; 2026-11-12)
   stretch=3

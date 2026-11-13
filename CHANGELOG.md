@@ -365,6 +365,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `correctOffsetAndLengthToWrite(byte[], int, int)` → `validateOffsetAndLengthToWrite(byte[], int, int)`.
 
 ### Fixed
+- **External signals keep their "max 1 permit" (bug-hunt finding F280).** A semaphore registered
+  with `addSignal` could get two permits when two threads wrote (or wrote and closed) at the same
+  time: both saw no permit and both released. The check and a claim of the semaphore are now one
+  step under a short internal lock; the `release()` itself runs outside it. The same holds for the
+  trim start and end signals. Deterministic tests, a TLC model of the old and the new release, and
+  a TLAPS proof that a semaphore never holds more than one permit, for any number of signalers.
 - **`waitForAtLeast` could return fewer bytes than asked for on an open buffer.** Its waiting
   branch checked `availableBytes` against the request and then read it a second time for the
   result; a reader next to it could take bytes in between, and the call returned, say, 1 for

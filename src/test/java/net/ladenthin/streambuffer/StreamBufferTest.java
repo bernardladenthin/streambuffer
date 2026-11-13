@@ -2395,6 +2395,97 @@ public class StreamBufferTest {
         }
     }
 
+    /**
+     * A signal whose first {@code release()} waits until {@link #letGo} opens, so a test can
+     * signal the buffer again while that release is under way (F280).
+     */
+    private static final class HeldFirstRelease extends Semaphore {
+        private static final long serialVersionUID = 1L;
+        final CountDownLatch inFirstRelease = new CountDownLatch(1);
+        final CountDownLatch letGo = new CountDownLatch(1);
+        final AtomicInteger releaseCalls = new AtomicInteger();
+
+        HeldFirstRelease() {
+            super(0);
+        }
+
+        @Override
+        public void release() {
+            if (releaseCalls.incrementAndGet() == 1) {
+                inFirstRelease.countDown();
+                try {
+                    letGo.await(5, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            super.release();
+        }
+    }
+
+    /** A signal whose first {@code release()} throws before it releases (F280). */
+    private static final class ThrowingFirstRelease extends Semaphore {
+        private static final long serialVersionUID = 1L;
+        final AtomicInteger releaseCalls = new AtomicInteger();
+
+        ThrowingFirstRelease() {
+            super(0);
+        }
+
+        @Override
+        public void release() {
+            if (releaseCalls.incrementAndGet() == 1) {
+                throw new IllegalStateException("first release fails");
+            }
+            super.release();
+        }
+    }
+
+    /**
+     * A signal that, once armed, writes one byte to its buffer from inside its first
+     * {@code release()}, before it releases (F280): registered as a trim start signal and as a
+     * modification signal, that write signals it again while its trim start release is under way.
+     */
+    private static final class WritingRelease extends Semaphore {
+        private static final long serialVersionUID = 1L;
+        final AtomicBoolean armed = new AtomicBoolean();
+        final AtomicInteger releaseCalls = new AtomicInteger();
+        private final transient OutputStream target;
+
+        WritingRelease(final OutputStream target) {
+            super(0);
+            this.target = target;
+        }
+
+        @Override
+        public void release() {
+            releaseCalls.incrementAndGet();
+            if (armed.getAndSet(false)) {
+                try {
+                    target.write(7);
+                } catch (IOException e) {
+                    throw new IllegalStateException(e);
+                }
+            }
+            super.release();
+        }
+    }
+
+    /** A trim signal that only counts its {@code release()} calls and never holds a permit. */
+    private static final class CountingRelease extends Semaphore {
+        private static final long serialVersionUID = 1L;
+        final AtomicInteger releaseCalls = new AtomicInteger();
+
+        CountingRelease() {
+            super(0);
+        }
+
+        @Override
+        public void release() {
+            releaseCalls.incrementAndGet();
+        }
+    }
+
     @Nested
     @DisplayName("signal/slot")
     class SignalSlotTests {
@@ -2573,6 +2664,115 @@ public class StreamBufferTest {
 
             // assert
             assertThat(result, is(false));
+        }
+
+        @DisplayName("signal(): a second write while the first one's release is under way — at most one permit (F280)")
+        @Test
+        public void signal_secondWriteWhileAReleaseIsUnderWay_atMostOnePermit() throws Exception {
+            // arrange
+            final StreamBuffer sb = new StreamBuffer();
+            final HeldFirstRelease signal = new HeldFirstRelease();
+            sb.addSignal(signal);
+            final AtomicReference<Throwable> failure = new AtomicReference<>();
+            final Thread firstWriter = new Thread(() -> {
+                try {
+                    sb.getOutputStream().write(anyValue);
+                } catch (Throwable t) {
+                    failure.set(t);
+                }
+            });
+
+            // act: the first writer stops inside the release, after its check found no permit;
+            // the second write signals meanwhile
+            firstWriter.start();
+            assertThat(signal.inFirstRelease.await(5, TimeUnit.SECONDS), is(true));
+            sb.getOutputStream().write(anyValue);
+            signal.letGo.countDown();
+            firstWriter.join(5000);
+
+            // assert: the second write left the semaphore alone (before F280 it released too: 2)
+            assertAll(
+                    () -> assertThat(failure.get(), is(nullValue())),
+                    () -> assertThat(firstWriter.isAlive(), is(false)),
+                    () -> assertThat(signal.releaseCalls.get(), is(1)),
+                    () -> assertThat(signal.availablePermits(), is(1)),
+                    () -> assertThat(sb.getAvailableBytesExact(), is(2L)));
+        }
+
+        @DisplayName("signal(): a release that throws — the next write releases again (F280)")
+        @Test
+        public void signal_releaseThrows_nextWriteReleasesAgain() throws IOException {
+            // arrange
+            final StreamBuffer sb = new StreamBuffer();
+            final ThrowingFirstRelease signal = new ThrowingFirstRelease();
+            sb.addSignal(signal);
+            final OutputStream os = sb.getOutputStream();
+
+            // act
+            final IllegalStateException thrown = assertThrows(IllegalStateException.class, () -> os.write(anyValue));
+            os.write(anyValue);
+
+            // assert: the failed release did not leave the semaphore marked as being released
+            assertAll(
+                    () -> assertThat(thrown.getMessage(), is("first release fails")),
+                    () -> assertThat(signal.releaseCalls.get(), is(2)),
+                    () -> assertThat(signal.availablePermits(), is(1)),
+                    () -> assertThat(sb.getAvailableBytesExact(), is(2L)));
+        }
+
+        @DisplayName("trim(): a write from a trim start signal starts no nested trim")
+        @Test
+        public void trim_writeFromTrimStartSignal_startsNoNestedTrim() throws IOException {
+            // arrange: the first trim start signal writes from its release, the second counts how
+            // often a trim starts (it never holds a permit, so every start releases it)
+            final StreamBuffer sb = new StreamBuffer();
+            final OutputStream os = sb.getOutputStream();
+            final WritingRelease writer = new WritingRelease(os);
+            final CountingRelease starts = new CountingRelease();
+            sb.addTrimStartSignal(writer);
+            sb.addTrimStartSignal(starts);
+            sb.setMaxBufferElements(1);
+            os.write(anyValue);
+            writer.armed.set(true);
+
+            // act: the second entry starts a trim; the write from its start signal must not start
+            // another one inside it (isTrimRunning)
+            os.write(anyValue);
+
+            // assert
+            assertAll(
+                    () -> assertThat(writer.armed.get(), is(false)),
+                    () -> assertThat(starts.releaseCalls.get(), is(1)),
+                    () -> assertThat(sb.getAvailableBytesExact(), is(3L)));
+        }
+
+        @DisplayName(
+                "signal(): one semaphore as trim start and modification signal, written to from its release — at most one permit (F280)")
+        @Test
+        public void signal_trimStartAndModificationSignal_writeFromItsRelease_atMostOnePermit() throws IOException {
+            // arrange
+            final StreamBuffer sb = new StreamBuffer();
+            final OutputStream os = sb.getOutputStream();
+            final WritingRelease signal = new WritingRelease(os);
+            sb.addSignal(signal);
+            sb.addTrimStartSignal(signal);
+            sb.setMaxBufferElements(1);
+            os.write(anyValue);
+            signal.drainPermits();
+            final int callsBefore = signal.releaseCalls.get();
+            signal.armed.set(true);
+
+            // act: the second entry starts a trim; its start signal writes a byte from its release,
+            // whose modification signal finds the same semaphore being released
+            os.write(anyValue);
+
+            // assert: one release for the trim start, none for the two writes after it (before
+            // F280 the nested write released it too: 2 permits)
+            assertAll(
+                    () -> assertThat(signal.armed.get(), is(false)),
+                    () -> assertThat(signal.releaseCalls.get() - callsBefore, is(1)),
+                    () -> assertThat(signal.availablePermits(), is(1)),
+                    () -> assertThat(sb.getAvailableBytesExact(), is(3L)));
         }
     }
 

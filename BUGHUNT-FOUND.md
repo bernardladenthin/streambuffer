@@ -17,6 +17,7 @@ Repos plus eins. Geprüfte Klassen ohne Fund stehen in [`BUGHUNT-CHECKED.md`](BU
 - [F268](#f268) — mittel — *gefixt*
 - [F278](#f278) — hoch — *gefixt*
 - [F279](#f279) — niedrig — *gefixt*
+- [F280](#f280) — niedrig — *gefixt*
 
 ## Funde
 
@@ -142,6 +143,16 @@ Repos plus eins. Geprüfte Klassen ohne Fund stehen in [`BUGHUNT-CHECKED.md`](BU
 - **Tests:** `StreamBufferLincheckTest` (Lese-Operationen in einer `nonParallelGroup`, nur was gepuffert ist) – vor dem Fix in zwei Läufen rot mit der obigen Ausführung, danach grün; `StreamBufferTrimLincheckTest` ebenso grün. JPF `RecordReaders.jpf` mit Fix fehlerfrei (2.352.249 Zustände).
 - **Status:** gefixt
 - **Commit:** da2eccf
+
+### F280 – streambuffer: ein externes Signal bekommt bei gleichzeitigen Schreibern zwei Permits statt höchstens eines
+- **Zeit:** 2026-11-13 UTC (gemeldet von einer externen Qualitätsprüfung durch einen Agenten, am Code nachvollzogen)
+- **Datei:** `src/main/java/net/ladenthin/streambuffer/StreamBuffer.java` (`signalModification`, `releaseTrimStartSignals`, `releaseTrimEndSignals`)
+- **Schwere:** niedrig (ein Beobachter wird ein zweites Mal geweckt; die Daten im Puffer sind nicht betroffen, und das README rät ohnehin, nach dem Aufwachen den Zustand selbst zu prüfen; verletzt ist der dokumentierte Vertrag „max 1 permit“ von `addSignal`)
+- **Beschreibung:** Ein mit `addSignal` registrierter Semaphor wird nur freigegeben, wenn er kein Permit hat. Prüfen (`availablePermits() == 0`) und Freigeben (`release()`) waren zwei Schritte ohne gemeinsamen Lock, und `signalModification()` läuft nach dem Freigeben von `bufferLock`: zwei Schreiber, oder ein Schreiber und ein `close()`, konnten beide 0 sehen und beide freigeben – zwei Permits. Ebenso ein Schreiben aus dem `release()` eines Signals heraus (verschachtelt auf demselben Thread), wenn derselbe Semaphor auch Trim-Start-Signal ist. Die Trim-Signale allein waren nicht betroffen: `trim()` gibt sie unter `bufferLock` frei, zwei Trims desselben Puffers laufen nie gleichzeitig.
+- **Fix:** `releaseMaxOnePermit` für alle drei Signalarten: unter einem eigenen kurzen Lock `signalLock` prüft ein Thread, dass der Semaphor kein Permit hat und kein anderer Thread dieses Puffers ihn gerade freigibt, und trägt ihn in `releasingSignals` ein (nach Identität); `release()` läuft außerhalb dieses Locks, danach wird der Eintrag entfernt, auch wenn `release()` wirft. Wer den Eintrag sieht, lässt den Semaphor in Ruhe: sein Permit ist unterwegs. `signalLock` wird nie während eines `release()` gehalten und nie, während auf `bufferLock` gewartet wird (nur in der Reihenfolge `bufferLock` → `signalLock`), daher kein Deadlock auch mit einem überschriebenen `release()`, das den Puffer benutzt. Nicht abgedeckt (Javadoc): ein Semaphor, der bei zwei Puffern registriert ist oder den der Beobachter selbst freigibt.
+- **Tests:** `StreamBufferTest$SignalSlotTests`: `signal_secondWriteWhileAReleaseIsUnderWay_atMostOnePermit` (deterministisch: das `release()` des ersten Schreibers wartet, bis der zweite geschrieben hat) und `signal_trimStartAndModificationSignal_writeFromItsRelease_atMostOnePermit` (verschachtelt) – beide vor dem Fix rot mit 2 Permits statt 1, danach grün; `signal_releaseThrows_nextWriteReleasesAgain` (ein werfendes `release()` lässt keinen Eintrag zurück). `trim_writeFromTrimStartSignal_startsNoNestedTrim`: Seit der Fix die doppelte Freigabe beim verschachtelten Schreiben aus einem Trim-Start-Signal verhindert, sah PIT den Wächter `isTrimRunning` in `shouldTrim` nicht mehr (der Mutant `return true` überlebte); der Test zählt die Trim-Starts, mit entferntem Wächter 2 statt 1. jcstress `SignalMaxOnePermitRace`: zwei Schreiber und ein `close()` gleichzeitig, danach genau ein Permit. TLA+: `StreamBufferSignal.tla` (beliebig viele Signalgeber, werfende Freigaben, Beobachter jederzeit) – TLC `SignalNoClaim2` (der Code davor) verletzt `MaxOne` mit genau diesem Ablauf, `SignalClaim3` fehlerfrei; TLAPS `StreamBufferSignalProof.tla` beweist `Spec => []MaxOne` für beliebig viele Signalgeber (25 Obligations; mit `Claim = FALSE` scheitern genau die Schritte Prüfen und Freigeben).
+- **Status:** gefixt
+- **Commit:** (siehe Branch `feat/a13-liveness-forever`, PR #228)
 
 ## Offene Verdachte ohne Fund-ID
 
