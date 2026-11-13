@@ -66,7 +66,7 @@ part of the Maven build and never touches the shipped jar.
 
 `check.sh` runs every model and compares it with its **expected** outcome: the 16 models below
 (last run 2026-11-13, TLC v1.7.4, about 90 s), the 16 of "Liveness with threads that call
-forever" and the 2 of the external signals (F280), 34 in all, 594 s on 4 cores (with 32; the two
+forever" and the 3 of the external signals (F280), 35 in all, 594 s on 4 cores (with 32; the
 signal models take a second). Writes are single bytes unless the row says otherwise:
 
 | Model | Code | Reads | Threads | Expected and found |
@@ -428,21 +428,28 @@ without the buffered bytes, and without the stale lock holders.
 releases only while they have no permit. `StreamBufferSignal.tla` models the release of one such
 semaphore (they are independent):
 - any number of signalers: every write, close or trim, on its own thread or nested in another one's
-  `release()`;
+  `release()`, signals after its change;
 - a `release()` may throw;
-- the observer acquires at any time.
+- the observer acquires at any time and then looks at the buffer.
 
-`Claim = FALSE` is the code before F280: the check for no permit, then the release. TLC
-(`SignalNoClaim2`) finds two signalers that both see no permit and both release, so two permits,
-the race an external review reported. `Claim = TRUE` is the code since: under the internal
-`signalLock` a signaler checks and claims the semaphore in one step, releases outside the lock and
-drops the claim afterwards, also when `release()` throws. TLC (`SignalClaim3`, 11 states) finds no
-error, and `StreamBufferSignalProof.tla` proves `Spec => []MaxOne` with TLAPS for any number of
-signalers (25 obligations). Its inductive invariant: at most one signaler between its claim and the
-end of its release, the claim set exactly then, and no permit while it releases. Negative control
-(2026-11-13): with `Claim = FALSE` assumed, exactly the steps Check and Release fail. Not modeled:
-a semaphore registered with two buffers, or released by its observer (outside the contract, see
-`addSignal`).
+Two properties. `MaxOne`: never more than one permit, the documented contract. `NoLostSignal`: once
+no signaler is busy, a change the observer has not seen since its last acquire has a permit waiting
+for it (after a release that threw, a signal may be lost, as before F280). Three versions of the
+code, by the constant `Mode`:
+
+| Model | Mode | Code | Expected and found |
+|---|---|---|---|
+| `SignalNone2` | `none` | before F280: check for no permit, then release | `MaxOne` violated: two signalers both see no permit and both release (the race an external review reported) |
+| `SignalSkip2` | `skip` | the first fix: check and claim in one step under `signalLock`, release outside it; a signaler that finds the claim skips | `NoLostSignal` violated: the claimant released, the observer took the permit and waits again, a second change finds the claim and skips, the claim is dropped, no permit (CodeRabbit found it in review, before the merge) |
+| `SignalReplay3` | `replay` | since: a signaler that finds the claim notes its signal; the claimant releases again after its release if the note is there and the permit is gone | no error, 70 states, with the inductive invariant `Inv` |
+
+`StreamBufferSignalProof.tla` proves `Spec => [](MaxOne /\ NoLostSignal)` for Mode `replay` with
+TLAPS, for any number of signalers (28 obligations). Its inductive invariant: at most one signaler
+between its claim and dropping it, the claim set exactly then, no permit while it releases, a note
+only with a claim, and a change the observer has not seen has a permit, or during a release the
+note or the release still to come. Negative control (2026-11-13): with Mode `skip` assumed, exactly
+the steps Check and Clear fail. Not modeled: a semaphore registered with two buffers, or released
+by its observer (outside the contract, see `addSignal`).
 
 ## Trace validation: recorded runs of the code (roadmap A6)
 

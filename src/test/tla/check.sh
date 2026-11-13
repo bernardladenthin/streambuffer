@@ -44,9 +44,10 @@ models=(
   # AllStop fails because forever runs exist; that no run gets stuck is WaitForever2, same constants
   "WaitForeverRuns2@StreamBufferWaitForever|Error: Temporal properties were violated."
   "WaitForeverStarve2@StreamBufferWaitForever|Error: Temporal properties were violated."
-  # the "max 1 permit" release of an external signal (F280): since F280 and before
-  "SignalClaim3@StreamBufferSignal|Model checking completed. No error has been found."
-  "SignalNoClaim2@StreamBufferSignal|Error: Invariant MaxOne is violated."
+  # the "max 1 permit" release of an external signal (F280): before, the first fix, since
+  "SignalNone2@StreamBufferSignal|Error: Invariant MaxOne is violated."
+  "SignalSkip2@StreamBufferSignal|Error: Invariant NoLostSignal is violated."
+  "SignalReplay3@StreamBufferSignal|Model checking completed. No error has been found."
   # the argument of the TLAPS proof: the measure, and fairness per thread implies fairness by role
   "WaitForeverMeasure2@StreamBufferWaitForeverLive|Model checking completed. No error has been found."
   "WaitForeverRole2@StreamBufferWaitForeverLive|Model checking completed. No error has been found."

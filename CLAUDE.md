@@ -105,7 +105,7 @@ deliberately not part of the synchronous Publish pipeline and never a required c
 
 4. **TLA+ model** (`src/test/tla/`, scheduled/dispatch CI job `tla-model`): `StreamBuffer.tla` models
    the wait/wake-up/close protocol, the writes (one FIFO entry each) and the reads; TLC checks safety
-   and liveness (weak fairness per thread, no lock fairness). `check.sh` compares 34 models with
+   and liveness (weak fairness per thread, no lock fairness). `check.sh` compares 35 models with
    their expected outcomes: the current code checks
    clean (`read()` with 1, 2, 3 readers, `read(b, 0, 2)` records, records across entries, a `read()`
    reader next to a record reader, `waitForAtLeast` next to a reader, also next to a 2-byte write),
@@ -136,14 +136,17 @@ deliberately not part of the synchronous Publish pipeline and never a required c
    tlapm when it expands ENABLED; an ENABLED term with a lemma parameter goes behind an operator
    (`EnR`), since tlapm does not instantiate a lemma inside ENABLED. The external signals
    (`addSignal`, the trim signals; F280): `releaseMaxOnePermit` checks for no permit and claims the
-   semaphore in `releasingSignals` under `signalLock`, releases outside it and drops the claim in a
-   `finally`; `signalLock` is never held during a `release()` or while waiting for `bufferLock`
+   semaphore in `releasingSignals` under `signalLock`, releases outside it; a signaler that finds the
+   claim notes its signal in `signaledWhileReleasing`, and the claimant releases again if the note is
+   there and the permit is gone, else drops the claim (also when `release()` throws). A plain skip
+   lost a signal (the observer took the permit in between). `signalLock` is never held during a `release()` or while waiting for `bufferLock`
    (order `bufferLock` -> `signalLock` only). `releasingSignals` is an `ArrayDeque` searched by
    identity, not an `IdentityHashMap`-backed set: OpenJML RAC instruments `IdentityHashMap` into an
    access to its private fields, which the module system refuses (every RAC test failed with
    `IllegalAccessError`); before using another JDK collection in `StreamBuffer`, run the RAC job. `StreamBufferSignal.tla` (TLC: the old release
-   reaches two permits) and `StreamBufferSignalProof.tla` (TLAPS: at most one, any number of
-   signalers) model it; change them with that code. `tla2tools.jar` v1.7.4 and Apalache are pinned by SHA-256. When the wait/signal
+   reaches two permits, the plain skip loses a signal) and `StreamBufferSignalProof.tla` (TLAPS: at
+   most one permit and no lost signal, any number of signalers) model it; change them with that
+   code. `tla2tools.jar` v1.7.4 and Apalache are pinned by SHA-256. When the wait/signal
    code changes, change the model with it, and the abstractions, the mappings in the `Refine*.tla`
    modules and the proofs too (a new step of `StreamBufferWait.tla` also needs its rank in
    `StreamBufferWaitLive.tla` and a witness action in `StreamBufferWaitEnabled.tla`; a new step of

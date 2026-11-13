@@ -2423,6 +2423,34 @@ public class StreamBufferTest {
         }
     }
 
+    /**
+     * A signal whose first {@code release()} releases and then waits until {@link #letGo} opens:
+     * the permit is out while the buffer still counts the release as under way (F280).
+     */
+    private static final class HeldAfterRelease extends Semaphore {
+        private static final long serialVersionUID = 1L;
+        final CountDownLatch afterFirstRelease = new CountDownLatch(1);
+        final CountDownLatch letGo = new CountDownLatch(1);
+        final AtomicInteger releaseCalls = new AtomicInteger();
+
+        HeldAfterRelease() {
+            super(0);
+        }
+
+        @Override
+        public void release() {
+            super.release();
+            if (releaseCalls.incrementAndGet() == 1) {
+                afterFirstRelease.countDown();
+                try {
+                    letGo.await(5, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }
+    }
+
     /** A signal whose first {@code release()} throws before it releases (F280). */
     private static final class ThrowingFirstRelease extends Semaphore {
         private static final long serialVersionUID = 1L;
@@ -2697,6 +2725,80 @@ public class StreamBufferTest {
                     () -> assertThat(signal.releaseCalls.get(), is(1)),
                     () -> assertThat(signal.availablePermits(), is(1)),
                     () -> assertThat(sb.getAvailableBytesExact(), is(2L)));
+        }
+
+        @DisplayName(
+                "signal(): the observer takes the permit while the release is under way, then a write — the signal is not lost (F280)")
+        @Test
+        public void signal_observerTakesThePermitDuringTheRelease_nextWriteIsNotLost() throws Exception {
+            // arrange
+            final StreamBuffer sb = new StreamBuffer();
+            final HeldAfterRelease signal = new HeldAfterRelease();
+            sb.addSignal(signal);
+            final AtomicReference<Throwable> failure = new AtomicReference<>();
+            final Thread firstWriter = new Thread(() -> {
+                try {
+                    sb.getOutputStream().write(anyValue);
+                } catch (Throwable t) {
+                    failure.set(t);
+                }
+            });
+
+            // act: the first release is out, the observer takes it (and would wait again), and a
+            // second write signals while the first one still counts as under way
+            firstWriter.start();
+            assertThat(signal.afterFirstRelease.await(5, TimeUnit.SECONDS), is(true));
+            final boolean observerWoke = signal.tryAcquire();
+            sb.getOutputStream().write(anyValue);
+            signal.letGo.countDown();
+            firstWriter.join(5000);
+
+            // assert: the first writer released again for the second write (a plain skip left no
+            // permit, and the observer would sleep with a byte unread)
+            assertAll(
+                    () -> assertThat(failure.get(), is(nullValue())),
+                    () -> assertThat(firstWriter.isAlive(), is(false)),
+                    () -> assertThat(observerWoke, is(true)),
+                    () -> assertThat(signal.releaseCalls.get(), is(2)),
+                    () -> assertThat(signal.availablePermits(), is(1)),
+                    () -> assertThat(sb.getAvailableBytesExact(), is(2L)));
+        }
+
+        @DisplayName("signal(): two signals, one of them under way — each ends with one permit (F280)")
+        @Test
+        public void signal_twoSignalsOneUnderWay_eachEndsWithOnePermit() throws Exception {
+            // arrange
+            final StreamBuffer sb = new StreamBuffer();
+            final HeldAfterRelease held = new HeldAfterRelease();
+            final Semaphore plain = new Semaphore(0);
+            sb.addSignal(held);
+            sb.addSignal(plain);
+            final AtomicReference<Throwable> failure = new AtomicReference<>();
+            final Thread firstWriter = new Thread(() -> {
+                try {
+                    sb.getOutputStream().write(anyValue);
+                } catch (Throwable t) {
+                    failure.set(t);
+                }
+            });
+
+            // act: while the first writer holds the first signal's release, a second write leaves
+            // that one to it and releases the second signal itself
+            firstWriter.start();
+            assertThat(held.afterFirstRelease.await(5, TimeUnit.SECONDS), is(true));
+            sb.getOutputStream().write(anyValue);
+            final int plainAfterSecondWrite = plain.availablePermits();
+            held.letGo.countDown();
+            firstWriter.join(5000);
+
+            // assert
+            assertAll(
+                    () -> assertThat(failure.get(), is(nullValue())),
+                    () -> assertThat(firstWriter.isAlive(), is(false)),
+                    () -> assertThat(plainAfterSecondWrite, is(1)),
+                    () -> assertThat(held.releaseCalls.get(), is(1)),
+                    () -> assertThat(held.availablePermits(), is(1)),
+                    () -> assertThat(plain.availablePermits(), is(1)));
         }
 
         @DisplayName("signal(): a release that throws — the next write releases again (F280)")

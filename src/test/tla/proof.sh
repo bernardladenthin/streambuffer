@@ -23,8 +23,9 @@
 # closer, in every behaviour of StreamBufferWaitForever.tla with the fairness by role, every call
 # of every thread returns (or the thread stopped), for any number of threads, writers and closers;
 # it uses StreamBufferWaitForeverEnabled.tla (the role actions are enabled where needed).
-# The external signals, StreamBufferSignalProof.tla: with the claim of the code since F280 a
-# registered semaphore never holds more than one permit, for any number of signalers.
+# The external signals, StreamBufferSignalProof.tla: with the release of the code since F280 a
+# registered semaphore never holds more than one permit and no signal is lost, for any number of
+# signalers.
 # Fails unless every obligation of every proof is proved. In CI: the scheduled tlaps-proofs job of
 # formal-verification.yml, with tlapm built from a pinned commit (no tagged 1.6 release; README.md).
 #
