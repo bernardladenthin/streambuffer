@@ -2764,6 +2764,48 @@ public class StreamBufferTest {
                     () -> assertThat(sb.getAvailableBytesExact(), is(2L)));
         }
 
+        @DisplayName("signal(): two writes during one release — noted once, one permit, the next write releases (F280)")
+        @Test
+        public void signal_twoWritesDuringOneRelease_notedOnceOnePermit() throws Exception {
+            // arrange
+            final StreamBuffer sb = new StreamBuffer();
+            final HeldFirstRelease signal = new HeldFirstRelease();
+            sb.addSignal(signal);
+            final OutputStream os = sb.getOutputStream();
+            final AtomicReference<Throwable> failure = new AtomicReference<>();
+            final Thread firstWriter = new Thread(() -> {
+                try {
+                    os.write(anyValue);
+                } catch (Throwable t) {
+                    failure.set(t);
+                }
+            });
+
+            // act: two writes while the first release is held (the second finds the note there),
+            // then the observer takes the permit and a fourth write signals
+            firstWriter.start();
+            assertThat(signal.inFirstRelease.await(5, TimeUnit.SECONDS), is(true));
+            os.write(anyValue);
+            os.write(anyValue);
+            signal.letGo.countDown();
+            firstWriter.join(5000);
+            final int callsAfterTheHeldRelease = signal.releaseCalls.get();
+            final int permitsAfterTheHeldRelease = signal.availablePermits();
+            final boolean observerWoke = signal.tryAcquire();
+            os.write(anyValue);
+
+            // assert
+            assertAll(
+                    () -> assertThat(failure.get(), is(nullValue())),
+                    () -> assertThat(firstWriter.isAlive(), is(false)),
+                    () -> assertThat(callsAfterTheHeldRelease, is(1)),
+                    () -> assertThat(permitsAfterTheHeldRelease, is(1)),
+                    () -> assertThat(observerWoke, is(true)),
+                    () -> assertThat(signal.releaseCalls.get(), is(2)),
+                    () -> assertThat(signal.availablePermits(), is(1)),
+                    () -> assertThat(sb.getAvailableBytesExact(), is(4L)));
+        }
+
         @DisplayName("signal(): two signals, one of them under way — each ends with one permit (F280)")
         @Test
         public void signal_twoSignalsOneUnderWay_eachEndsWithOnePermit() throws Exception {
