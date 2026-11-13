@@ -33,7 +33,8 @@
 #
 #   tla-model     (scheduled/dispatch only) TLC model-checks the TLA+ model of the wait/wake-up/
 #                 close protocol and the reads (src/test/tla/StreamBuffer.tla): the current code
-#                 checks clean, the older code fails with the F278, #212 and F279 counterexamples.
+#                 checks clean, the older code fails with the F278, #212 and F279 counterexamples;
+#                 recorded runs of the instrumented code are runs of the model (A6).
 #
 #   tlaps-proofs  (scheduled/dispatch only) TLAPS proves the A13 inductive invariants, the
 #                 liveness of the calls abstraction for any number of threads, writers and
@@ -441,6 +442,9 @@ jobs:
   # models of the code before it must fail with exactly the error that shows the defect
   # (NoEmptyTake violated, deadlock after the close). tla2tools.jar is pinned by version and
   # SHA-256 (computed from the release asset, which GitHub lists without a digest for v1.7.4).
+  # Trace validation (A6): runs of the instrumented code (net.ladenthin.streambuffer.trace) must
+  # be runs of the model (trace.sh), and wrong models and corrupted traces must be rejected
+  # (trace-controls.sh); a few minutes.
   # ---------------------------------------------------------------------------------------------
   tla-model:
     name: TLA+ model of the protocol (TLC, Apalache)
@@ -473,6 +477,20 @@ jobs:
             echo "### TLA+ model (TLC $TLA_TOOLS_VERSION)"
             echo '```'
             cat tla-check.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Trace validation -- recorded runs of the code against the model (A6)
+        run: |
+          set -euo pipefail
+          # the instrumented StreamBuffer and the scenarios are test classes; 3 runs per scenario
+          mvn -B --no-transfer-progress -q test-compile dependency:build-classpath             -Dmdep.includeScope=test -Dmdep.outputFile=target/test-classpath.txt
+          java -cp "target/test-classes:target/classes:$(cat target/test-classpath.txt)"             net.ladenthin.streambuffer.trace.TraceGenerator target/traces 3 32
+          bash src/test/tla/trace.sh "$RUNNER_TEMP/tla2tools.jar" target/traces | tee tla-trace.log
+          bash src/test/tla/trace-controls.sh "$RUNNER_TEMP/tla2tools.jar" target/traces             | tee -a tla-trace.log
+          {
+            echo "### Trace validation (TLC $TLA_TOOLS_VERSION)"
+            echo '```'
+            cat tla-trace.log
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Download Apalache (pinned, checksum-verified)

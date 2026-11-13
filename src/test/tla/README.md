@@ -300,6 +300,103 @@ above. With the ranges made non-empty, the torn record is found in 6 steps inste
   steps run with `--stretch 12`. The 1.6.0-pre asset of that commit had SHA-256
   `99db29f119cb6f43ffed653b212ba2d005e5bf8e242c53468876cb0d08da6bcc`.
 
+## Trace validation: recorded runs of the code (roadmap A6)
+
+The model is written by hand from the code. Trace validation checks the other direction on real
+runs: every recorded run of the code must be a behaviour of `StreamBuffer.tla` (the approach of
+Cirstea, Kuppe, Merz et al., "Validating Traces of Distributed Programs Against TLA+
+Specifications", 2024). It checks only the runs it sees, so it is not a proof; it shows that the
+model does what the code does in those runs, including the waits, wake-ups and lock holds.
+
+**Recording, without touching the code.** `net.ladenthin.streambuffer.trace` (test code) loads
+`StreamBuffer` through `TracingClassLoader`, which rewrites its bytecode with ASM (the class file in
+`target/classes` and the shipped jar stay as they are). Every access to the state the model has
+calls `TraceRecorder`:
+
+- the reads and writes of `availableBytes` and `streamClosed`;
+- `waitingReaders.get`, `incrementAndGet` and `decrementAndGet`;
+- the monitor enter and exit of `bufferLock`;
+- `waitLock.lock` and `unlock`, `modified.await` (before and after) and `signalAll`.
+
+A non-blocking access runs and is logged under one global lock, so the log order is the order of
+the accesses. A blocking one is logged right after it returns, a release right before it, which
+keeps the order of everything that depends on the lock. `TraceScenario` runs the model's
+scenarios on real threads:
+
+- one writer of the bytes 1, 2, ... in writes of `ChunkLen` bytes, and one closer that closes at a
+  random point of the run;
+- readers of `read()` or `read(b, 0, ReadLen)` until -1, and `waitForAtLeast(ReadLen)` callers;
+- `maxBufferElements` above the number of writes, since trim is not modeled;
+- seeded random yields before the accesses, to vary the interleavings.
+
+It adds the results of the calls to the log (the bytes a read returned, -1, the count of the wait,
+a failed write). `TraceGenerator` writes each run as a TLA+ module, `Trace_<scenario>_<seed>.tla`,
+with its configuration. A module rather than ndjson, because `ndJsonDeserialize` needs the
+CommunityModules jar as a second pinned dependency.
+
+**Matching** (`TraceStreamBuffer.tla`, which extends the model unchanged). The model is coarser
+than the code in three places, so a thread's model steps are not tied to single lines:
+
+- the fast path of the wait reads `availableBytes` and `streamClosed` in one step, the code in two
+  reads;
+- `ReaderTest` lowers `waitingReaders` in the step that reads the count, the code a few accesses
+  later;
+- a waiter's closed branch reads the count again for its result.
+
+Before a line of thread `t`, `t` may take up to `K` = 6 model steps; then the line must agree with
+the model's state:
+
+- **Values:** every value read or written. Only `waitingReaders` may be lower in the model,
+  because of the later decrement; the writer then skips a signal that wakes nobody.
+- **Locks:** who holds `bufferLock` and `waitLock`.
+- **The thread's position:** after the fast path, after the closed check, parked, past the
+  decrement.
+- **Results:** what its calls returned.
+
+Other threads move only at their own lines. A trace is accepted if some placement consumes every
+line. TLC 1.7.4 has no `POSTCONDITION`, so the verdict is the inverted invariant `TraceNotDone`,
+which TLC violates exactly then. Deadlock checking is off, as the paper says. A rejected trace
+prints the first line no placement could consume.
+
+**Results** (2026-11-13, local, TLC 1.7.4, `trace.sh`, assertions on in the traced class):
+
+| | |
+|---|---|
+| traces | 990, all accepted: 11 scenarios x 30 seeds x 3 yield rates (0, 32, 128 per 256 accesses) |
+| scenarios | the seven of `check.sh` (2 and 3 `read()` readers, records of 2 bytes from writes of 1 and 3, `read()` next to a record reader, `waitForAtLeast` next to a reader, also next to a 2-byte write), plus 3 `read()` readers of 8 bytes, 3 record readers of writes of 3 bytes, two waiters next to a reader, a waiter next to a reader of 3-byte records |
+| size | 81,998 lines, 82 per trace on average, up to 284; TLC up to 50,683 distinct states per trace (2,254 on average) |
+| time | about 2.3 s per trace with one TLC worker; the 990 in 10 min, 9 in parallel on 16 cores |
+
+**Negative controls** (`trace-controls.sh`, also in CI; in CI the two scripts take about 5 min). A validation that accepts everything shows
+nothing, so these must reject:
+
+| control | rejected (one CI-sized run: 33 traces, 3 seeds, 2026-11-12; the counts vary with the interleavings) |
+|---|---|
+| older code with fewer behaviours: `AtomicRead = FALSE` (before #212, the `Records*` traces) | 3 of 6 |
+| the semaphore wait (before F278) | 17 of 33 |
+| no re-check under `bufferLock` (`ReCheck = FALSE`, before F278, the `Bytes*` traces) | 7 of 9 |
+| a mutated model whose writer never signals | 10 of 33 |
+| every trace with a completed read, its first returned byte changed by one | 33 of 33 |
+
+The traces a wrong model accepts are those that never reach the difference, e.g. no thread
+waited, so the semaphore and the missing signal never mattered. Two older versions accept every
+trace, and rightly so. Before F279 (`CountOnce = FALSE`) and without `CheckedReturn`, the model
+allows *more* behaviours than the current code: a count from the middle of a read, a second read of
+the count. Trace validation checks that the code's runs are runs of the model; that the model's
+runs have the properties is what model checking (`check.sh`) and the proofs show.
+
+**Limits.**
+
+- Only the runs it sees, of the scenarios above. The global trace lock serializes the traced
+  accesses, which changes the timing; the yields vary it again.
+- Not traced: the FIFO itself and `positionAtCurrentBufferEntry`, which only the holder of
+  `bufferLock` touches. The bytes every read returns are checked against the model's FIFO
+  instead.
+- A spurious wake-up of `await()` is not in the model and would reject a trace; none occurred.
+- The lines name a method and its n-th access of a kind (`waitForAtLeast.getAvail#0`). A change of
+  those methods needs the mapping in `TraceStreamBuffer.tla` changed with it (`TraceRecorderTest`
+  fails first, with the fixed list of a single-threaded run).
+
 ## Limits
 
 - **Not in the model:** several writers (each write is atomic under the lock, so they interleave
@@ -309,8 +406,8 @@ above. With the ranges made non-empty, the torn record is found in 6 steps inste
   matters to the count per entry before F279 alone). JPF, vmlens, jcstress and Lincheck cover them.
 - **Sequential consistency.** TLC explores interleavings of atomic steps. That this matches the Java
   memory model rests on the data-race-freedom argument in the README ("Data-Race Freedom").
-- **Model vs. code.** The model is written by hand from the code; nothing checks that they agree.
-  Trace validation (roadmap A6) closes that gap. The inductive invariants above (roadmap A13)
+- **Model vs. code.** The model is written by hand from the code. Trace validation (above, roadmap
+  A6) checks recorded runs against it, which is evidence, not a proof that they agree. The inductive invariants above (roadmap A13)
   remove the bounds on readers, bytes and record size for three slices of the protocol, for
   abstractions that TLC ties to this model in its bounded configurations.
 
@@ -320,6 +417,13 @@ above. With the ranges made non-empty, the torn record is found in 6 steps inste
 curl -fLo tla2tools.jar https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar
 sha256sum tla2tools.jar   # 936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88
 bash src/test/tla/check.sh "$PWD/tla2tools.jar"
+
+# A6: record traces of the instrumented code (3 runs per scenario, yields 32/256), check them
+mvn test-compile dependency:build-classpath -Dmdep.includeScope=test -Dmdep.outputFile=target/test-classpath.txt
+java -cp "target/test-classes:target/classes:$(cat target/test-classpath.txt)" \
+  net.ladenthin.streambuffer.trace.TraceGenerator target/traces 3 32   # ';' instead of ':' on Windows
+bash src/test/tla/trace.sh "$PWD/tla2tools.jar" target/traces
+bash src/test/tla/trace-controls.sh "$PWD/tla2tools.jar" target/traces
 
 # A13: Apalache (needs JDK 17+)
 curl -fLo apalache.tgz https://github.com/apalache-mc/apalache/releases/download/v0.63.0/apalache-0.63.0.tgz
