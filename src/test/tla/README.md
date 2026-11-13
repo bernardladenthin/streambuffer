@@ -64,8 +64,9 @@ part of the Maven build and never touches the shipped jar.
 
 ## Models and results
 
-`check.sh` runs every model and compares it with its **expected** outcome. Last run 2026-11-11, TLC
-v1.7.4, 16 models, about 90 s in total. Writes are single bytes unless the row says otherwise:
+`check.sh` runs every model and compares it with its **expected** outcome: the 16 models below
+(last run 2026-11-13, TLC v1.7.4, about 90 s) and the 16 of "Liveness with threads that call
+forever", 32 in all, 594 s on 4 cores. Writes are single bytes unless the row says otherwise:
 
 | Model | Code | Reads | Threads | Expected and found |
 |---|---|---|---|---|
@@ -298,7 +299,9 @@ above. With the ranges made non-empty, the torn record is found in 6 steps inste
   in five runs for the three safety proofs, all obligations proved. With the liveness proof
   (2026-11-12, 4 cores, the other cores busy with `inductive.sh`): `proof.sh` 1098 s, all six
   modules proved; `inductive.sh` about 20 min, which is why `tla-model` has 60 min now. With the
-  refinement proof: `proof.sh` 2114 s, all seven modules proved, so `tlaps-proofs` has 90 min. tlapm can
+  refinement proof: `proof.sh` 2114 s, all seven modules proved. With the forever liveness proof
+  (2026-11-13, 4 cores of a local machine): 2866 s, all nine modules, so `tlaps-proofs` has
+  120 min. tlapm can
   leave backend provers running after it ends, which slowed the next module into timeouts, so
   `proof.sh` runs each tlapm in a process group of its own and kills it afterwards; the ENABLED
   steps run with `--stretch 12`. The 1.6.0-pre asset of that commit had SHA-256
