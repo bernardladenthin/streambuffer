@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Liveness with threads that call forever (A13 follow-up).** With a finite stream and a closer,
+  every call of every thread returns although threads call forever, with fair scheduling only (weak
+  fairness per thread, writer and closer) and no lock fairness:
+  - **TLC:** `StreamBufferWaitForever.tla` (the calls abstraction with a ghost refill of the call
+    budget) and `StreamBufferForever.tla` (the detailed model, a thread calls again when done), with
+    negative controls: fairness for the system as a whole only, no closer, and a probe that forever
+    runs exist;
+  - **TLAPS** (`StreamBufferWaitForeverLiveProof.tla`, 1,322 obligations, and
+    `StreamBufferWaitForeverEnabled.tla`, 633): for any number of threads, writers and closers,
+    under weak fairness by role (r itself, the lock holders, a signaler, a closer), which follows
+    from the fairness per thread (TLC checks the implication in bounded models);
+  - **an endless writer and no close:** TLC finds a reader that starves even with every thread
+    step strongly fair, since the bytes go to whoever commits first; a fair lock would not help.
 - **Trace validation of the TLA+ model (roadmap A6).** Recorded runs of the code are checked
   against `StreamBuffer.tla` with TLC (the approach of Cirstea, Kuppe, Merz et al. 2024):
   - **Recording:** a test-side class loader (`net.ladenthin.streambuffer.trace`, ASM) rewrites the
@@ -124,6 +137,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so they hold under concurrency. A falsified copy of each failed the RAC run (negative controls).
 
 ### Changed
+- **TLA+ model: weak fairness for the readers.** `StreamBuffer.tla` assumed strong fairness for
+  the readers (fair locks, which the JDK does not promise); every model of the current code checks
+  with weak fairness, so `Fairness` is weak now.
 - **Trim merges geometrically instead of copying the whole buffer every time** (TODO roadmap A14).
   A trim now merges the newest entries: every array the caller may still hold, and an older chunk
   of its own only while it is not longer than what is collected, so each byte is copied O(log n)

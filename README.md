@@ -139,7 +139,7 @@ The `InputStream` and `OutputStream` can be used concurrently from different thr
 - Each `write` is atomic: its bytes enter the buffer together and in order.
 - Each `read(b, off, len)` is atomic too: it takes its `len` bytes in one step once all of them are buffered, so they are contiguous in the stream (see [Fixed-Size Records with Several Readers](#fixed-size-records-with-several-readers-work-queue)).
 - Each buffered byte is delivered to exactly one reader, in the order it was written. No reader blocks while bytes are buffered, and after `close()` every waiting reader returns. `read()` throws no unchecked exception when another reader took the bytes first (bug-hunt finding F278; before 2.0.0 the buffer was correct for one reader only).
-- There is no fairness between readers: which reader gets the next bytes is up to the scheduler.
+- There is no fairness between readers: which reader gets the next bytes is up to the scheduler. On a stream that is closed after finitely many bytes, every call still returns, even with threads that call forever and without fair locks; while a writer writes forever and nobody closes, a reader can lose every race for the bytes (both model-checked, the first also proved, see [`src/test/tla/`](./src/test/tla/)).
 - All `Deque` accesses are guarded by a `bufferLock` object.
 - State fields (`streamClosed`, `safeWrite`, `availableBytes`, `positionAtCurrentBufferEntry`, `maxBufferElements`, `maxAllocationSize`, `isTrimRunning`, `maxObservedBytes`) are `volatile`; the cumulative counters `totalBytesWritten` and `totalBytesRead` are `final AtomicLong` (atomic read-modify-write under concurrent I/O).
 - `close()` takes the same lock, so it waits for a write or trim in progress on another thread: a write racing the close is either fully buffered or fails with "Stream closed", never appended after a reader saw the end of the stream. A trim copies every buffered byte, so with a large buffer that wait can be noticeable.
@@ -545,6 +545,10 @@ verified in a separate CI pipeline
   - **Trace validation:** recorded runs of the code (an instrumented copy of the class in the tests,
     every access to shared state logged in order) are checked against the model with TLC; 990 runs
     were accepted, and models of older code, a mutated model and corrupted runs are rejected.
+  - **Threads that call forever:** with a finite stream and a closer every call returns, with fair
+    scheduling only and no lock fairness: TLC in bounded models, TLAPS for any number of threads.
+    With a writer that writes forever and no close, TLC finds a reader that starves even with fair
+    locks.
 
 Concurrency itself is outside the deductive scope by JML doctrine (JML specifies sequential
 behavior; OpenJML does not model `volatile` or monitors) and is covered empirically by the

@@ -105,7 +105,8 @@ deliberately not part of the synchronous Publish pipeline and never a required c
 
 4. **TLA+ model** (`src/test/tla/`, scheduled/dispatch CI job `tla-model`): `StreamBuffer.tla` models
    the wait/wake-up/close protocol, the writes (one FIFO entry each) and the reads; TLC checks safety
-   and liveness. `check.sh` compares 16 models with their expected outcomes: the current code checks
+   and liveness (weak fairness per thread, no lock fairness). `check.sh` compares 32 models with
+   their expected outcomes: the current code checks
    clean (`read()` with 1, 2, 3 readers, `read(b, 0, 2)` records, records across entries, a `read()`
    reader next to a record reader, `waitForAtLeast` next to a reader, also next to a 2-byte write),
    the older code fails with its counterexamples (F278: an empty take, a deadlock after the close or
@@ -124,7 +125,16 @@ deliberately not part of the synchronous Publish pipeline and never a required c
    `StreamBufferWaitLiveProof.tla` with `StreamBufferCountLemmas.tla` and
    `StreamBufferWaitEnabled.tla`), and that `StreamBuffer.tla` refines `StreamBufferWait.tla` for
    any number of readers (`RefineWaitProof.tla`); the scheduled/dispatch CI job `tlaps-proofs` builds tlapm from a
-   pinned commit. `tla2tools.jar` v1.7.4 and Apalache are pinned by SHA-256. When the wait/signal
+   pinned commit. Liveness with threads that call forever: `StreamBufferWaitForever.tla` (a ghost
+   `Refill` of the call budget) and `StreamBufferForever.tla` (the detailed model, `Restart` when
+   done), checked by TLC in `check.sh` (`WaitForever*`, `Forever*`); `StreamBufferWaitForeverLiveProof.tla`
+   proves every call returns for any number of threads under the fairness by role of
+   `StreamBufferWaitForeverLive.tla`, with a measure per thread (its parts and weights there; a new
+   step of `StreamBufferWait.tla` needs its stage and rank in `FV` and `FRank`, and a case in the
+   action lemmas). Its role actions live in `StreamBufferWaitForeverRoles.tla` and their ENABLED
+   proofs in `StreamBufferWaitForeverEnabled.tla`, apart from the temporal definitions, which crash
+   tlapm when it expands ENABLED; an ENABLED term with a lemma parameter goes behind an operator
+   (`EnR`), since tlapm does not instantiate a lemma inside ENABLED. `tla2tools.jar` v1.7.4 and Apalache are pinned by SHA-256. When the wait/signal
    code changes, change the model with it, and the abstractions, the mappings in the `Refine*.tla`
    modules and the proofs too (a new step of `StreamBufferWait.tla` also needs its rank in
    `StreamBufferWaitLive.tla` and a witness action in `StreamBufferWaitEnabled.tla`; a new step of
