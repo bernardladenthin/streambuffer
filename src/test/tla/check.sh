@@ -35,6 +35,13 @@ models=(
   "SemaphoreWaitAndRead2|Error: Deadlock reached."
   "WaitSnapshot2|Error: Invariant WaitEnoughOrClosed is violated."
   "WaitChecked2|Model checking completed. No error has been found."
+  # up to two spurious wake-ups of Condition.await(); the probe shows that one happens
+  "SpuriousCondition2|Model checking completed. No error has been found."
+  "SpuriousCondition3|Model checking completed. No error has been found."
+  "SpuriousMixed2|Model checking completed. No error has been found."
+  "SpuriousWaitAndRead2|Model checking completed. No error has been found."
+  "SpuriousWaitChecked2|Model checking completed. No error has been found."
+  "SpuriousReached2|Error: Invariant NoSpuriousWake is violated."
   # model@module: threads that call forever; fairness per process, no lock fairness
   "WaitForever2@StreamBufferWaitForever|Model checking completed. No error has been found."
   "WaitForever3@StreamBufferWaitForever|Model checking completed. No error has been found."

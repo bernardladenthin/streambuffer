@@ -61,6 +61,8 @@ cp "$here/StreamBuffer.tla" "$d/"
 before=$(grep -c 'IF waiters # 0 THEN "siglock" ELSE WriterDone' "$d/StreamBuffer.tla")
 sed -i 's/IF waiters # 0 THEN "siglock" ELSE WriterDone/WriterDone/' "$d/StreamBuffer.tla"
 [ "$before" = 1 ] || { echo "FAIL  the writer's signal not found in StreamBuffer.tla"; exit 1; }
+# no spurious wake-ups here: they could explain the wake-ups the missing signal leaves out
+sed -i 's/    Spurious = [0-9]*/    Spurious = 0/' "$d"/*.cfg
 control "mutant: the writer never signals" "$d" 1
 
 d=$(copy corrupted "")

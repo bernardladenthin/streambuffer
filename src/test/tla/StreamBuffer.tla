@@ -48,6 +48,7 @@ CONSTANTS
     ByteReaders, \* the readers calling read(); the others read(b, 0, ReadLen)
     WaitCallers, \* the threads calling waitForAtLeast(ReadLen) once, not reading
     Bytes,       \* how many bytes the writer attempts to write
+    Spurious,    \* how many spurious wake-ups of Condition.await() a run may have (any number)
     ChunkLen,    \* the bytes per write (one FIFO entry each)
     ReadLen,     \* the bytes one read(b, 0, len) asks for, and waitForAtLeast waits for
     Protocol,    \* "condition" (since F278) or "semaphore" (before F278)
@@ -62,7 +63,7 @@ LenOf(r) == IF r \in ByteReaders THEN 1 ELSE ReadLen
 ASSUME SBAssump ==
        /\ Protocol \in {"condition", "semaphore"}
        /\ ReCheck \in BOOLEAN /\ AtomicRead \in BOOLEAN /\ CountOnce \in BOOLEAN
-       /\ CheckedReturn \in BOOLEAN
+       /\ CheckedReturn \in BOOLEAN /\ Spurious \in Nat
        /\ Bytes \in Nat /\ ChunkLen \in Nat \ {0} /\ ReadLen \in Nat \ {0}
        /\ Readers # {} /\ ByteReaders \subseteq Readers /\ WaitCallers \subseteq Readers
        /\ ByteReaders \cap WaitCallers = {}
@@ -95,10 +96,11 @@ VARIABLES
     waiters,    \* "condition": waitingReaders
     parked,     \* "condition": the threads parked in Condition.await()
     wl,         \* the holder of waitLock, or None
-    bl          \* the holder of bufferLock, or None
+    bl,         \* the holder of bufferLock, or None
+    spurious    \* ghost: the spurious wake-ups this run may still have
 
 vars == <<buf, pos, avail, written, taken, toff, closed, nextByte, wpc, cpc, rpc, want, cur,
-          hold, left, reads, wres, wclosed, eofAt, permits, waiters, parked, wl, bl>>
+          hold, left, reads, wres, wclosed, eofAt, permits, waiters, parked, wl, bl, spurious>>
 
 Min(a, b) == IF a < b THEN a ELSE b
 
@@ -134,6 +136,7 @@ TypeOK ==
     /\ permits \in 0..1 /\ waiters \in 0..Cardinality(Readers)
     /\ parked \subseteq Readers
     /\ wl \in Readers \cup {None} /\ bl \in Readers \cup {None}
+    /\ spurious \in 0..Spurious
 
 Init ==
     /\ buf = <<>> /\ pos = 0 /\ avail = 0 /\ written = <<>> /\ taken = <<>> /\ toff = 0
@@ -145,6 +148,7 @@ Init ==
     /\ reads = [r \in Readers |-> <<>>]
     /\ wres = [r \in Readers |-> -1] /\ wclosed = [r \in Readers |-> FALSE]
     /\ eofAt = -1 /\ permits = 0 /\ waiters = 0 /\ parked = {} /\ wl = None /\ bl = None
+    /\ spurious = Spurious
 
 ReaderVars == <<rpc, want, cur, hold, left, reads, wres, wclosed>>
 Sync == <<permits, waiters, parked, wl, bl>>
@@ -198,7 +202,7 @@ WriterSigLock ==
     /\ UNCHANGED <<buf, pos, avail, written, taken, toff, closed, nextByte, cpc, want, cur, hold,
                    left, reads, wres, wclosed, eofAt, permits, waiters, wl, bl>>
 
-WriterStep == WriterWrite \/ WriterSigRead \/ WriterSigLock
+WriterStep == (WriterWrite \/ WriterSigRead \/ WriterSigLock) /\ UNCHANGED spurious
 
 (***************************************************************************)
 (* The closer: close() sets streamClosed under bufferLock, then signals.  *)
@@ -226,7 +230,7 @@ CloserSigLock ==
     /\ UNCHANGED <<buf, pos, avail, written, taken, toff, closed, nextByte, wpc, want, cur, hold,
                    left, reads, wres, wclosed, eofAt, permits, waiters, wl, bl>>
 
-CloserStep == CloserClose \/ CloserSigRead \/ CloserSigLock
+CloserStep == (CloserClose \/ CloserSigRead \/ CloserSigLock) /\ UNCHANGED spurious
 
 (***************************************************************************)
 (* A reader. A read call waits (waitForAtLeast) for want bytes, takes      *)
@@ -425,18 +429,39 @@ ReaderEof(r) ==
     /\ Goto(r, "done")
     /\ UNCHANGED <<Shared, want, cur, hold, left, reads, wres, wclosed, Sync>>
 
+\* a step of the protocol keeps the budget of spurious wake-ups
 ReaderStep(r) ==
-    \/ ReaderStart(r) \/ ReaderReread(r) \/ ReaderAcquire(r) \/ ReaderWaitLock(r)
-    \/ ReaderInc(r) \/ ReaderTest(r) \/ ReaderWaitReturn(r) \/ ReaderLock(r)
-    \/ ReaderDecide(r) \/ ReaderCopy(r) \/ ReaderFinish(r) \/ ReaderRet0(r) \/ ReaderEof(r)
+    /\ \/ ReaderStart(r) \/ ReaderReread(r) \/ ReaderAcquire(r) \/ ReaderWaitLock(r)
+       \/ ReaderInc(r) \/ ReaderTest(r) \/ ReaderWaitReturn(r) \/ ReaderLock(r)
+       \/ ReaderDecide(r) \/ ReaderCopy(r) \/ ReaderFinish(r) \/ ReaderRet0(r) \/ ReaderEof(r)
+    /\ UNCHANGED spurious
 
 Terminated ==
     /\ wpc \in {"done", "failed"} /\ cpc = "done"
     /\ \A r \in Readers : rpc[r] = "done"
 
-Next ==
+(* A spurious wake-up: Condition.await() may return without a signal      *)
+(* (JDK); the thread takes waitLock again and tests its condition, as      *)
+(* after a signal. A run has at most Spurious of them: safety for every     *)
+(* Spurious covers every run (a finite prefix has finitely many), liveness  *)
+(* assumes finitely many. Not part of ReaderStep, so fairness never forces  *)
+(* it (a forced wake-up would hide a lost one).                             *)
+SpuriousWake(r) ==
+    /\ Protocol = "condition" /\ r \in parked /\ spurious > 0
+    /\ spurious' = spurious - 1
+    /\ parked' = parked \ {r}
+    /\ Goto(r, "woken")
+    /\ UNCHANGED <<Shared, want, cur, hold, left, reads, wres, wclosed, eofAt, permits, waiters,
+                   wl, bl>>
+
+\* the steps of the protocol (each keeps the budget)
+ProtocolNext ==
     \/ WriterStep \/ CloserStep \/ \E r \in Readers : ReaderStep(r)
     \/ (Terminated /\ UNCHANGED vars)
+
+Next ==
+    \/ ProtocolNext
+    \/ \E r \in Readers : SpuriousWake(r)
 
 (* Weak fairness for every thread: a thread that can go on all the time    *)
 (* eventually does (the scheduler runs a runnable thread). No lock         *)
@@ -452,6 +477,10 @@ Spec == Init /\ [][Next]_vars /\ Fairness
 
 -----------------------------------------------------------------------------
 (* Safety *)
+
+(* Probe that must fail in a model with a budget: a spurious wake-up       *)
+(* happens there (the models with one are not vacuous).                    *)
+NoSpuriousWake == spurious = Spurious
 
 (* No NoSuchElementException out of read() (F278). *)
 NoEmptyTake == \A r \in Readers : rpc[r] # "nsee"

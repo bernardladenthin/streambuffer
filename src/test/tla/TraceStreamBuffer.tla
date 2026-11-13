@@ -39,11 +39,12 @@ tvars == <<vars, l, k>>
 
 Last(s) == s[Len(s)]
 
-(* A model step of thread t. *)
+(* A model step of thread t: a step of the protocol, or for a reader a    *)
+(* spurious wake-up (within the trace's budget Spurious).                  *)
 StepOf(t) ==
     IF t = "w" THEN WriterStep
     ELSE IF t = "c" THEN CloserStep
-    ELSE ReaderStep(t)
+    ELSE ReaderStep(t) \/ SpuriousWake(t)
 
 (***************************************************************************)
 (* What a line says about the model's state once the thread's steps up to  *)

@@ -96,9 +96,9 @@ LiveDomains == Domains /\ LiveInv /\ OffMod
 ConstInitLive == Threads = {1, 2} /\ None = 0 /\ NW = 2 /\ NC = 1 /\ Bytes \in Nat /\ Bytes >= 1
              /\ K \in [{1, 2} -> Nat] /\ (\A r \in {1, 2} : K[r] >= 1)
              /\ M \in [{1, 2} -> Nat] /\ (\A r \in {1, 2} : M[r] >= 1)
-             /\ RecLen \in Nat /\ RecLen >= 1 /\ Calls0 \in Nat /\ CheckedReturn = TRUE
+             /\ RecLen \in Nat /\ RecLen >= 1 /\ Calls0 \in Nat /\ CheckedReturn = TRUE /\ Spurious \in Nat
 ConstInitLive3 == Threads = {1, 2, 3} /\ None = 0 /\ NW = 2 /\ NC = 2 /\ Bytes \in Nat /\ Bytes >= 1
              /\ K \in [{1, 2, 3} -> Nat] /\ (\A r \in {1, 2, 3} : K[r] >= 1)
              /\ M \in [{1, 2, 3} -> Nat] /\ (\A r \in {1, 2, 3} : M[r] >= 1)
-             /\ RecLen \in Nat /\ RecLen >= 1 /\ Calls0 \in Nat /\ CheckedReturn = TRUE
+             /\ RecLen \in Nat /\ RecLen >= 1 /\ Calls0 \in Nat /\ CheckedReturn = TRUE /\ Spurious \in Nat
 =============================================================================

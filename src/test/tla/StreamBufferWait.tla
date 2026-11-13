@@ -38,7 +38,10 @@ CONSTANTS
     \* @type: Int;
     Calls0,
     \* @type: Bool;
-    CheckedReturn
+    CheckedReturn,
+    \* how many spurious wake-ups of Condition.await() a run may have (any number)
+    \* @type: Int;
+    Spurious
 
 VARIABLES
     \* @type: Int;
@@ -76,10 +79,13 @@ VARIABLES
     \* @type: Int;
     wl,
     \* @type: Int;
-    bl
+    bl,
+    \* ghost: the spurious wake-ups this run may still have
+    \* @type: Int;
+    spurious
 
 vars == <<w, t, avail, closed, wpc, cpc, rpc, op, calls, hold, left, off, wres, wclosed, eofAt,
-          parked, wl, bl>>
+          parked, wl, bl, spurious>>
 
 Writers == 1..NW
 Closers == 1..NC
@@ -92,25 +98,25 @@ Min(a, b) == IF a < b THEN a ELSE b
 ConstInit == Threads = {1, 2} /\ None = 0 /\ NW = 2 /\ NC = 2 /\ Bytes \in Nat /\ Bytes >= 1
              /\ K \in [{1, 2} -> Nat] /\ (\A r \in {1, 2} : K[r] >= 1)
              /\ M \in [{1, 2} -> Nat] /\ (\A r \in {1, 2} : M[r] >= 1)
-             /\ RecLen \in Nat /\ RecLen >= 1 /\ Calls0 \in Nat /\ CheckedReturn = TRUE
+             /\ RecLen \in Nat /\ RecLen >= 1 /\ Calls0 \in Nat /\ CheckedReturn = TRUE /\ Spurious \in Nat
 ConstInit3 == Threads = {1, 2, 3} /\ None = 0 /\ NW = 2 /\ NC = 2 /\ Bytes \in Nat /\ Bytes >= 1
              /\ K \in [{1, 2, 3} -> Nat] /\ (\A r \in {1, 2, 3} : K[r] >= 1)
              /\ M \in [{1, 2, 3} -> Nat] /\ (\A r \in {1, 2, 3} : M[r] >= 1)
-             /\ RecLen \in Nat /\ RecLen >= 1 /\ Calls0 \in Nat /\ CheckedReturn = TRUE
+             /\ RecLen \in Nat /\ RecLen >= 1 /\ Calls0 \in Nat /\ CheckedReturn = TRUE /\ Spurious \in Nat
 ConstInit4 == Threads = {1, 2, 3, 4} /\ None = 0 /\ NW = 2 /\ NC = 2 /\ Bytes \in Nat /\ Bytes >= 1
              /\ K \in [{1, 2, 3, 4} -> Nat] /\ (\A r \in {1, 2, 3, 4} : K[r] >= 1)
              /\ M \in [{1, 2, 3, 4} -> Nat] /\ (\A r \in {1, 2, 3, 4} : M[r] >= 1)
-             /\ RecLen \in Nat /\ RecLen >= 1 /\ Calls0 \in Nat /\ CheckedReturn = TRUE
+             /\ RecLen \in Nat /\ RecLen >= 1 /\ Calls0 \in Nat /\ CheckedReturn = TRUE /\ Spurious \in Nat
 ConstInitW3 == Threads = {1, 2} /\ None = 0 /\ NW = 3 /\ NC = 3 /\ Bytes \in Nat /\ Bytes >= 1
              /\ K \in [{1, 2} -> Nat] /\ (\A r \in {1, 2} : K[r] >= 1)
              /\ M \in [{1, 2} -> Nat] /\ (\A r \in {1, 2} : M[r] >= 1)
-             /\ RecLen \in Nat /\ RecLen >= 1 /\ Calls0 \in Nat /\ CheckedReturn = TRUE
+             /\ RecLen \in Nat /\ RecLen >= 1 /\ Calls0 \in Nat /\ CheckedReturn = TRUE /\ Spurious \in Nat
 \* the waiting branch before 2026-11-12: the invariant is not inductive
 \* (one writer, one call per thread, so the bounded search stays short)
 ConstInitUnchecked == Threads = {1, 2} /\ None = 0 /\ NW = 1 /\ NC = 1 /\ Bytes \in Nat /\ Bytes >= 1
              /\ K \in [{1, 2} -> Nat] /\ (\A r \in {1, 2} : K[r] >= 1)
              /\ M \in [{1, 2} -> Nat] /\ (\A r \in {1, 2} : M[r] >= 1)
-             /\ RecLen \in Nat /\ RecLen >= 1 /\ Calls0 = 0 /\ CheckedReturn = FALSE
+             /\ RecLen \in Nat /\ RecLen >= 1 /\ Calls0 = 0 /\ CheckedReturn = FALSE /\ Spurious \in Nat
 
 States == {"start", "reread", "lockwait", "inc", "test", "parked", "woken", "wret", "lock",
            "decide", "copy", "finish", "ret0", "done", "nsee"}
@@ -128,6 +134,7 @@ Init ==
     /\ hold = [r \in Threads |-> 0] /\ left = [r \in Threads |-> 0] /\ off = 0
     /\ wres = [r \in Threads |-> -1] /\ wclosed = [r \in Threads |-> FALSE]
     /\ eofAt = -1 /\ parked = {} /\ wl = None /\ bl = None
+    /\ spurious = Spurious
 
 \* with nobody parked the signal does nothing and needs no lock (the code skips it then)
 WriterNext == IF w >= Bytes THEN "done" ELSE "write"
@@ -154,22 +161,26 @@ WriterWrite(i) ==
                        /\ WGo(i, "siglock")
     /\ UNCHANGED <<off, t, closed, cpc, rpc, op, calls, hold, left, wres, wclosed, eofAt, parked,
                    wl, bl>>
+    /\ UNCHANGED spurious
 
 WriterSigLock(i) ==
     /\ wpc[i] = "siglock" /\ WakeAll /\ WGo(i, WriterNext)
     /\ UNCHANGED <<off, w, t, avail, closed, cpc, op, calls, hold, left, wres, wclosed, eofAt, wl,
                    bl>>
+    /\ UNCHANGED spurious
 
 \* closer c: close() sets streamClosed under bufferLock (again, if another closer was first)
 CloserClose(c) ==
     /\ cpc[c] = "close" /\ bl = None /\ closed' = TRUE /\ CGo(c, "siglock")
     /\ UNCHANGED <<off, w, t, avail, wpc, rpc, op, calls, hold, left, wres, wclosed, eofAt, parked,
                    wl, bl>>
+    /\ UNCHANGED spurious
 
 CloserSigLock(c) ==
     /\ cpc[c] = "siglock" /\ WakeAll /\ CGo(c, "done")
     /\ UNCHANGED <<off, w, t, avail, closed, wpc, op, calls, hold, left, wres, wclosed, eofAt, wl,
                    bl>>
+    /\ UNCHANGED spurious
 
 Go(r, s) == rpc' = [rpc EXCEPT ![r] = s]
 
@@ -278,15 +289,28 @@ ThreadRet0(r) ==
     /\ rpc[r] = "ret0" /\ eofAt' = (IF eofAt = -1 THEN w ELSE eofAt) /\ EndCall(r)
     /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, hold, wres, wclosed, parked, wl, bl>>
 
+\* a step of the protocol keeps the budget of spurious wake-ups
 ThreadStep(r) ==
-    \/ ThreadStart(r) \/ ThreadReread(r) \/ ThreadWaitLock(r) \/ ThreadInc(r)
-    \/ ThreadTest(r) \/ ThreadWaitReturn(r) \/ ThreadLock(r) \/ ThreadDecide(r)
-    \/ ThreadCopy(r) \/ ThreadFinish(r) \/ ThreadRet0(r)
+    /\ \/ ThreadStart(r) \/ ThreadReread(r) \/ ThreadWaitLock(r) \/ ThreadInc(r)
+       \/ ThreadTest(r) \/ ThreadWaitReturn(r) \/ ThreadLock(r) \/ ThreadDecide(r)
+       \/ ThreadCopy(r) \/ ThreadFinish(r) \/ ThreadRet0(r)
+    /\ UNCHANGED spurious
+
+\* a spurious wake-up: Condition.await() may return without a signal (JDK); the thread takes
+\* waitLock again and tests, as after a signal. At most Spurious in a run: safety for every
+\* Spurious covers every run, liveness assumes finitely many. Not part of ThreadStep, so no
+\* fairness forces it.
+SpuriousWake(r) ==
+    /\ rpc[r] = "parked" /\ spurious > 0
+    /\ spurious' = spurious - 1 /\ parked' = parked \ {r} /\ Go(r, "woken")
+    /\ UNCHANGED <<w, t, avail, closed, wpc, cpc, op, calls, hold, left, off, wres, wclosed, eofAt,
+                   wl, bl>>
 
 Next ==
     \/ \E i \in Writers : WriterWrite(i) \/ WriterSigLock(i)
     \/ \E c \in Closers : CloserClose(c) \/ CloserSigLock(c)
     \/ \E r \in Threads : ThreadStep(r)
+    \/ \E r \in Threads : SpuriousWake(r)
 
 CSpec == Init /\ [][Next]_vars
 
@@ -316,6 +340,7 @@ TypeOK ==
     /\ wres \in [Threads -> Int] /\ wclosed \in [Threads -> BOOLEAN]
     /\ eofAt \in Int /\ eofAt >= -1 /\ eofAt <= Bytes
     /\ parked \subseteq Threads /\ wl \in Threads \cup {None} /\ bl \in Threads \cup {None}
+    /\ spurious \in Nat
 
 BufLock == \A r \in Threads : (rpc[r] \in {"decide", "copy", "finish"}) <=> bl = r
 \* hold and left: zero outside a copy; in a copy hold + left is the read's size, at most K[r]
@@ -353,6 +378,7 @@ Domains ==
     /\ wres \in [Threads -> Int] /\ wclosed \in [Threads -> BOOLEAN]
     /\ eofAt \in Int /\ parked \in SUBSET Threads
     /\ wl \in Threads \cup {None} /\ bl \in Threads \cup {None}
+    /\ spurious \in Nat
 SafeInit == Domains /\ SafeInv
 \* Apalache: SafeInv and the ghost's meaning, inductive together
 SafeModInv == SafeInv /\ OffMod
