@@ -216,6 +216,17 @@ annotated, so everything below is genuinely still open.
     - [x] TLAPS: the refinement proof still proves with the new `Fairness`: all 2,656 obligations
       (WSL, tlapm `ff40755`, the 1.6.0-pre asset with the SHA-256 the README names).
     - [ ] TLAPS proof of every call returning for any number of threads (time-boxed, see above).
+    - [ ] tlapm 1.6.0-pre (`ff40755`) quirks met on the way, both worked around; at the end:
+      reproduce each in a minimal module, check tlapm's issues and main, then report upstream
+      (or fix, if small) and note the link here:
+      - a lemma cannot be instantiated at a term inside ENABLED (`ASSUME NEW x ... PROVE
+        ENABLED <<A(x)>>_v`, used at `r`: every backend fails, also from a `\A x` form);
+        workaround: an operator `EnR(x) == ENABLED <<ThreadStep(x)>>_vars`, expanded only where it
+        is used (`StreamBufferWaitForeverEnabled.tla`);
+      - expanding ENABLED crashes (`e_substitutive.ml`, line 143, assertion) in a context with the
+        temporal definitions of the liveness modules (already known from
+        `StreamBufferWaitEnabled.tla`); workaround: the role actions in a module of their own
+        (`StreamBufferWaitForeverRoles.tla`).
     - [ ] README (Fairness, Properties, Liveness, Limits), CHANGELOG, CLAUDE.md, CI
       (`check.sh` is in `tla-model`; `proof.sh` in `tlaps-proofs` if a proof is added).
     - [ ] Review, one push, PR, CI green.
