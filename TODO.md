@@ -63,21 +63,30 @@ annotated, so everything below is genuinely still open.
   branch from `main` once A18 is merged: both change `StreamBuffer.tla` and `TraceStreamBuffer.tla`.
 
   Plan, with the reasons:
-  - [ ] `StreamBuffer.tla`: constants `NW`, `NC` with `Writers == 1..NW`, `Closers == 1..NC` (the
+  - [x] (1e2588d) `StreamBuffer.tla`: constants `NW`, `NC` with `Writers == 1..NW`, `Closers == 1..NC` (the
     abstraction's form, so the refinement maps writer i to writer i and `RefineWaitProof.tla` needs
     no bijection between two sets); `wpc`, `cpc` functions; `WriterStep(i)`, `CloserStep(c)`, weak
     fairness for each. The writers share `nextByte`: together they write the bytes `1..Bytes`, a
     chunk per write, in commit order (as the abstraction's shared `w`), so `Fifo` and the
     invariants keep their meaning. A writer is done once all bytes are written by anyone.
-  - [ ] Every existing configuration with `NW = 1`, `NC = 1`: the state counts must stay as they
+  - [x] (1e2588d, f960d35) Every existing configuration with `NW = 1`, `NC = 1`: the state counts must stay as they
     are (a check that the change is a pure generalization); new models: two writers, two closers,
     both, for `read()`, records and `waitForAtLeast`; the older code's models with two writers
     where that shows something new (e.g. F149, a write racing a close, with two writers).
+    Result (2026-11-14): check.sh, all 45 earlier models with the same outcome, every clean one
+    with the same state count (a model that finds a violation stops at a count that depends on
+    TLC's worker order). New, clean with liveness: `Writers2Condition2`, `Closers2Condition2`,
+    `Writers2Records2`, `Writers2Mixed2` (two writers, two closers), `Writers2WaitChecked2`,
+    `Writers2WaitAndRead2`, `ForeverWriters2Mixed2`; probes `Writers2Reached2`,
+    `Closers2Reached2` (two writers, two closers signal at once) violated. No older code gets a new
+    defect with two writers that one writer does not show already: the defects of F149 and F278
+    are in the one-writer models.
   - [ ] `StreamBufferForever.tla`, `TraceStreamBuffer.tla` (`StepOf` and the observations per
     writer and closer; the trace's thread names `w1`.., `c1`.. map to the model's ids) and A6:
     `TraceScenario` and `TraceGenerator` with several writers and closers; `trace.sh` and its
     controls on the new traces.
-  - [ ] Refinements: `RefineWait.tla` and `RefineRecords.tla` map `wpc[i]` to the abstraction's
+  - [ ] (TLC part 4f37431: `RefineWaitWriters2Mixed2`, `RefineWaitWriters2WaitChecked2`,
+    `RefineRecordsWriters2Records2` hold) Refinements: `RefineWait.tla` and `RefineRecords.tla` map `wpc[i]` to the abstraction's
     writer i (no `1..1` any more); `RefineCounters.tla` stays for one writer (its abstraction has
     one; it assumes `NW = 1`). `RefineWaitProof.tla`: the writer and closer lemmas per i and c, the
     detailed invariant for several writers; tlapm on all modules (proof.sh) on a rented machine.
