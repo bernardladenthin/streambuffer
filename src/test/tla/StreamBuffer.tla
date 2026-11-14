@@ -188,18 +188,17 @@ WGo(i, s) == wpc' = [wpc EXCEPT ![i] = s]
 
 WriterWrite(i) ==
     /\ wpc[i] = "write" /\ bl = None
-    /\ CASE closed ->
-              /\ WGo(i, "failed")
-              /\ UNCHANGED <<buf, avail, written, nextByte>>
-         [] nextByte > Bytes ->
-              /\ WGo(i, "done")
-              /\ UNCHANGED <<buf, avail, written, nextByte>>
-         [] OTHER ->
-              /\ buf' = Append(buf, Chunk)
-              /\ written' = written \o Chunk
-              /\ avail' = avail + Len(Chunk)
-              /\ nextByte' = nextByte + Len(Chunk)
-              /\ WGo(i, "sigread")
+    /\ IF closed
+          THEN /\ WGo(i, "failed")
+               /\ UNCHANGED <<buf, avail, written, nextByte>>
+          ELSE IF nextByte > Bytes
+          THEN /\ WGo(i, "done")
+               /\ UNCHANGED <<buf, avail, written, nextByte>>
+          ELSE /\ buf' = Append(buf, Chunk)
+               /\ written' = written \o Chunk
+               /\ avail' = avail + Len(Chunk)
+               /\ nextByte' = nextByte + Len(Chunk)
+               /\ WGo(i, "sigread")
     /\ UNCHANGED <<pos, taken, toff, closed, cpc, ReaderVars, eofAt, Sync>>
 
 WriterSigRead(i) ==
