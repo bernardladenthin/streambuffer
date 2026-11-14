@@ -72,9 +72,26 @@ public final class TraceRecorder {
     }
 
     private static void add(String site, long value, List<Integer> bytes) {
-        if (recording) {
-            EVENTS.add(new Event(Thread.currentThread().getName(), site, value, bytes));
+        final String thread = Thread.currentThread().getName();
+        final StringBuilder line = new StringBuilder(thread).append('	').append(site).append('	').append(value)
+                .append('	');
+        for (int i = 0; i < bytes.size(); i++) {
+            line.append(i == 0 ? "" : ",").append(bytes.get(i));
         }
+        emit(line.toString());
+        if (recording) {
+            EVENTS.add(new Event(thread, site, value, bytes));
+        }
+    }
+
+    /**
+     * Reports one event to the graph export of JPF ({@code GraphExport}, a listener that labels the
+     * transition with it); empty, so it leaves no state behind and JPF can still match states.
+     *
+     * @param line the event: thread, site, value and bytes, separated by tabs
+     */
+    public static void emit(String line) {
+        // the listener reads the argument on entry
     }
 
     /** Before a non-blocking access: the scheduling point, then the atomic block. */
