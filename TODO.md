@@ -347,11 +347,13 @@ annotated, so everything below is genuinely still open.
       653 edges, product 82,944 states (TLC 30 s), 2,140 subsets: **every word is a run of the
       model** (`graphcheck.py`). The tracer emits only from the start on (the constructor's
       accesses in `main` are no part of a trace, as in A6).
-    - [ ] Negative controls: a mutated model (the writer never signals), a corrupted automaton (a
+    - [x] Negative controls: a mutated model (the writer never signals), a corrupted automaton (a
       returned byte changed), a mutated class: each must give a rejected sequence. Done for the
       first two (2026-11-14): the mutant rejected after 19 events (with `Spurious = 0`, which could
       stand in for the signal), the corrupted byte after 14; the current model with `Spurious = 0`
-      accepted. A mutated class is open.
+      accepted. A mutated class (`TracedClassDump ... no-decrement`: `readSingleByte` no longer
+      lowers `availableBytes`): rejected after 22 events (JPF itself also reports the
+      `NoSuchElementException` that follows).
     - [ ] Scenarios: the smallest in CI (minutes), the larger ones on a rented machine; README,
       CHANGELOG, CLAUDE.md, `VERIFICATION-ASSUMPTIONS.md` (a row for A18).
     - [ ] If the count fits: an importer writes each distinct trace as an A6 module
