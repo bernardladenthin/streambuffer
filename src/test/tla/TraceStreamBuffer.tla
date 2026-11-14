@@ -93,7 +93,10 @@ WaitPc(e) ==
 
 (* The results of the calls (the lines the test adds). *)
 Results(e) ==
-    /\ e.a = "wret" => Len(written) = e.v /\ wpc[WriterOf(e.t)] \in {"write", "done"}
+    \* a wret has the bytes of all writers up to its writer's last commit (TraceScenario numbers
+    \* them in commit order); with several writers another may commit before the line
+    /\ e.a = "wret" => (IF NW = 1 THEN Len(written) = e.v ELSE Len(written) >= e.v)
+                       /\ wpc[WriterOf(e.t)] \in {"write", "done"}
     /\ e.a = "wfail" => wpc[WriterOf(e.t)] = "failed"
     /\ e.a = "cret" => cpc[CloserOf(e.t)] = "done"
     /\ e.a = "ret" => rpc[e.t] = "start" /\ Len(reads[e.t]) = e.n /\ Last(reads[e.t]) = e.b
