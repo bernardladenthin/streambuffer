@@ -325,14 +325,27 @@ annotated, so everything below is genuinely still open.
          replay is deterministic, "every edge can be consumed in every reachable product state"
          is exactly "every interleaving of the code is a run of the model", with no false alarms.
       A6 gets faster on the way (no search over silent steps).
-    - [ ] Gate 2: the size of the minimized automaton for the smallest scenario (the graph export,
-      the minimization); if it is small, the design carries.
-    - [ ] The markers: one per action of `StreamBuffer.tla`, at its code site (a table code site ->
-      action, checked against the model's action list), and `ReplayStreamBuffer.tla` (consumes
-      one marker per step, checks the observations); A6's traces accepted by it as well.
-    - [ ] The product check (`StreamBufferGraph.tla` or a generated module per scenario), with
-      negative controls: a mutated class (its graph has an edge the model cannot take), a mutated
-      model.
+    - [x] Gate 2: the size of the minimized automaton for the smallest scenario (the graph export,
+      the minimization); if it is small, the design carries. Result (2026-11-14; `GraphExport`, a
+      JPF listener, and `graphmin.py` in `src/test/jpf/trace/`): close after the writes, 104,713
+      JPF states -> 1,839 deterministic -> **375 minimal**, 52 distinct events; close at any point,
+      617,545 -> 5,471 -> **1,402 minimal**, 57 events; seconds each.
+    - Decision (2026-11-14), with the reason: the automaton is small enough for an exact check that
+      keeps A6's trace model unchanged, so the markers (a table from every model action to its
+      code site, a new replay model) are not needed. Instead: TLC builds the product of the
+      automaton and `TraceStreamBuffer.tla`'s acceptance (`TraceGraph.tla` extends it and uses its
+      observation predicates as they are; "the next line" becomes "an edge of the automaton"), and a
+      subset construction over the dumped product follows, for every event sequence of the
+      automaton, the set of model states consistent with it; an empty set is a counterexample
+      (the sequence). Exact: no false alarms, no path left out; the acceptance relation is the one
+      A6 validated.
+    - [ ] The JPF tracer gives each event its full A6 line (the ordinal of a harness event, which
+      depends on the path, counted per thread); `graphmin.py` writes the minimal automaton as a TLA+
+      module.
+    - [ ] `TraceGraph.tla` (the product), TLC with a state dump, and the subset check; a positive
+      run on both small scenarios.
+    - [ ] Negative controls: a mutated model (the writer never signals), a corrupted automaton (a
+      returned byte changed), a mutated class: each must give a rejected sequence.
     - [ ] Scenarios: the smallest in CI (minutes), the larger ones on a rented machine; README,
       CHANGELOG, CLAUDE.md, `VERIFICATION-ASSUMPTIONS.md` (a row for A18).
     - [ ] If the count fits: an importer writes each distinct trace as an A6 module
