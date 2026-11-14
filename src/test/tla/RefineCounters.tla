@@ -16,10 +16,13 @@ Rd(i) == CHOOSE r \in Readers : Idx[r] = i
 MapPc(s) == IF s = "eof" THEN "ret0" ELSE s
 MapLock(x) == IF x = None THEN 0 ELSE Idx[x]
 
+(* The read() abstraction has one writer and one closer: this mapping is for NW = NC = 1. *)
+ASSUME OneWriterOneCloser == NW = 1 /\ NC = 1
+
 C == INSTANCE StreamBufferCounters WITH
         N <- N0, Bytes <- Bytes, ReCheck <- ReCheck,
         w <- Len(written), t <- Len(taken), avail <- avail, closed <- closed,
-        wpc <- wpc, cpc <- cpc,
+        wpc <- wpc[1], cpc <- cpc[1],
         rpc <- [i \in 1..N0 |-> MapPc(rpc[Rd(i)])],
         hold <- [i \in 1..N0 |-> Len(hold[Rd(i)])],
         eofAt <- eofAt, waiters <- waiters,

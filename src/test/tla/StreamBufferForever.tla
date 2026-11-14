@@ -25,7 +25,8 @@ NextF == Next \/ \E r \in Readers : Restart(r)
 
 SpecF ==
     /\ Init /\ [][NextF]_vars
-    /\ WF_vars(WriterStep) /\ WF_vars(CloserStep)
+    /\ \A i \in Writers : WF_vars(WriterStep(i))
+    /\ \A c \in Closers : WF_vars(CloserStep(c))
     /\ \A r \in Readers : WF_vars(ThreadStepF(r))
 
 \* a call of r returns: a read with its bytes or -1, a wait with its count (a failed re-check

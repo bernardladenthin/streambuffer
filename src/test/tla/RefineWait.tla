@@ -18,12 +18,12 @@ MapPc(s) == IF s = "eof" THEN "ret0" ELSE s
 MapSig(s) == IF s = "sigread" THEN "siglock" ELSE s
 
 W == INSTANCE StreamBufferWait WITH
-        Threads <- Readers, None <- None, NW <- 1, NC <- 1, Bytes <- Bytes,
+        Threads <- Readers, None <- None, NW <- NW, NC <- NC, Bytes <- Bytes,
         K <- [r \in Readers |-> LenOf(r)], M <- [r \in Readers |-> ReadLen], RecLen <- ReadLen,
         Calls0 <- Bytes + Cardinality(Readers),
         CheckedReturn <- CheckedReturn, Spurious <- Spurious,
         w <- Len(written), t <- Len(taken), avail <- avail, closed <- closed,
-        wpc <- [i \in 1..1 |-> MapSig(wpc)], cpc <- [c \in 1..1 |-> MapSig(cpc)],
+        wpc <- [i \in Writers |-> MapSig(wpc[i])], cpc <- [c \in Closers |-> MapSig(cpc[c])],
         rpc <- [r \in Readers |-> MapPc(rpc[r])],
         op <- [r \in Readers |-> IF r \in WaitCallers THEN "wait" ELSE "read"],
         calls <- (Bytes - Len(taken)) + Cardinality({r \in Readers : rpc[r] # "done"}),
