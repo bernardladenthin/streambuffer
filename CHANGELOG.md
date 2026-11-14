@@ -168,6 +168,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so they hold under concurrency. A falsified copy of each failed the RAC run (negative controls).
 
 ### Changed
+- **`actions/setup-java` 6.3.0 and `anthropics/claude-code-action` v1.0.276**, in step with the sibling
+  repositories.
 - **TLA+ model: weak fairness for the readers.** `StreamBuffer.tla` assumed strong fairness for
   the readers (fair locks, which the JDK does not promise); every model of the current code checks
   with weak fairness, so `Fairness` is weak now.
