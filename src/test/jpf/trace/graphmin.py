@@ -213,6 +213,7 @@ if len(sys.argv) > 2:
              "TByteReaders == " + tla_set(byte_readers),
              "TWaitCallers == " + tla_set(wait_callers),
              "TBytes == " + nbytes, "TChunkLen == " + chunk, "TReadLen == " + readlen,
+             'TWriterName == <<"w">>', 'TCloserName == <<"c">>',
              "TEmpty == <<>>",
              "TInit == %d" % block[0]]
     ordered = sorted(edges.items())
@@ -240,6 +241,10 @@ if len(sys.argv) > 2:
     Bytes <- TBytes
     ChunkLen <- TChunkLen
     ReadLen <- TReadLen
+    NW = 1
+    NC = 1
+    WriterName <- TWriterName
+    CloserName <- TCloserName
     TraceLog <- TEmpty
     GInit <- TInit
     GEdge <- TEdge
