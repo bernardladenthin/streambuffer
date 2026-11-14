@@ -11,32 +11,48 @@ annotated, so everything below is genuinely still open.
 
 ## Open
 
-- **Open verification items — effort, odds and timeline (estimated 2026-11-13).** Estimates, not
-  measurements; "success" means the result is there as described, machine-checked. Details under
-  the items named. In this order; A15 comes last (see its row).
+- **Open items — effort, odds and timeline (estimated 2026-11-13, updated 2026-11-14).** Estimates,
+  not measurements; "success" means the result is there as described, machine-checked. Details
+  under the items named. In this order; A15 comes last (see its row).
 
-  | Item | Work | Odds of success | Timeline | Why / risk |
-  |---|---|---|---|---|
-  | **A18** Every interleaving of the code is a run of the model (JPF paths as A6 traces) | 1–2 weeks | medium, ~55 % | 2–3 weeks | JPF's state counts (`TwoReaders` 2.3 million): start with the smallest scenarios, time-box. **In progress, branch `feat/a18-jpf-traces`** |
-  | A6: several writers and closers in the detailed model | 1–2 weeks | ~70 % | 2–3 weeks | `StreamBuffer.tla` has one of each; `RefineWaitProof.tla` (2,729 obligations) must follow; the trace scenarios are easy afterwards |
-  | A6: trim in the model | 1–2 weeks | ~60 % | 2–4 weeks | the merge of the entries touches the FIFO invariant and the refinement; the geometric merge is hard to state compactly |
-  | Prove that fairness per thread gives the fairness by role (`FairRole`, A13 follow-up; today argued and checked by TLC in bounded models) | 1–2 weeks | low, ~30 % | 2–3 weeks | tlapm cannot swap a quantifier over threads with a temporal operator (`\A q : P(q) ~> Q` to `(\E q : P(q)) ~> Q`), which is where it failed; another prover (e.g. Isabelle with a TLA embedding) would be the way out |
-  | **A19** Liveness of the detailed model for any number of readers | 2–4 weeks | medium, ~50 % | 3–6 weeks | the pattern of `StreamBufferWaitForeverLiveProof.tla` carries over, but the detailed model is much larger (the FIFO as a sequence, more stages, the copy per entry), and the assumption of the row above stays |
-  | A8: `ReentrantLock` instead of `synchronized` | 3–5 days, if taken up | technically high, ~90 %; the gain unclear | 1–2 weeks | the measurements show a trade-off (faster for platform threads, slower for virtual threads); it needs a workload that decides which kind matters |
-  | A9: functional proof of the instance methods | months | low, ~20–30 % | 3–6 months | OpenJML ESC returns "unknown" on instance methods, and the deque as a ghost sequence is large; extract a sequential core first |
-  | Checker Framework Lock Checker | 1–2 days for a spike | ~40 % | ~1 week | blocked by inconsistent JDK stubs of `close()`; a way out via `-AskipDefs` or own stubs; A17 makes it mostly unnecessary |
-  | `@VisibleForTesting` decision | ½ day | ~95 % | a few days | only the decision (an own marker annotation, or the convention does not apply here), then act |
-  | Naming review | ~1 day | ~90 % | ~1 week | mechanical; renaming private methods is cheap, a public API rename is a breaking change for the CHANGELOG |
-  | **A15** Proofs as a release gate (`workflow_call`, publish waits for the formal jobs on `v*` tags) | 1–2 days | high, ~90 % | ~1 week | **only after every other item of this table is done** (owner, 2026-11-13): each package adds checks to the formal jobs, so the gate's run time is known only at the end, and until then the formal jobs stay scheduled and keep the CI of each release short. It changes the release process (about 2 h more per release): the owner confirms before it is merged |
+  | # | Item | Work | Odds of success | Timeline | Why / risk |
+  |---|---|---|---|---|---|
+  | 1 | **First scheduled formal run after #233** (Monday 04:17 UTC): the eight manifest steps run, rows V1-V18 get a run with a SHA, `check.sh`'s 4-core time is measured | ~½ h to check | ~85 % | Monday | the steps never ran in CI (the TLA+, TLAPS and JPF jobs run on the schedule only); a failure there is a CI error of mine (cancel, fix, push) |
+  | 2 | **A18** Every interleaving of the code is a run of the model. **In progress, branch `feat/a18-jpf-traces`**: the exact graph check works (JPF's state graph -> minimal automaton -> TLC product -> subset check, with three controls); open: the controls for every scenario, docs, a `V19` row, CI with the smallest scenario, PR | 2–4 days left | ~80 % for the small scenarios; larger ones bounded by JPF and TLC's dump | 1 week | two `read()` readers did not finish JPF in 4 h; automata above ~2,500 states did not finish TLC's dump in 4 h (one thread writes it). Speeding up the product (fewer controls per scenario, a dump written in parallel, or the subset check without a dump) decides how far it reaches |
+  | 3 | `@VisibleForTesting` decision (15 package-private methods; below) | ½ day | ~95 % | a few days | only the decision (an own marker annotation, or the convention does not apply here), then act |
+  | 4 | Naming review (below, `code-quality-todos.md`) | ~1 day | ~90 % | ~1 week | mechanical; renaming private methods is cheap, a public API rename is a breaking change for the CHANGELOG |
+  | 5 | A14 follow-up: a trim threshold that grows with the backlog | 1–2 days | ~70 % | ~1 week | with a backlog of 179 MiB the default threshold costs 10-20x against no trim (A14, below); it changes how many entries the buffer keeps |
+  | 6 | A6: several writers and closers in the detailed model | 1–2 weeks | ~70 % | 2–3 weeks | `StreamBuffer.tla` has one of each; `RefineWaitProof.tla` (2,729 obligations) must follow; the trace scenarios are easy afterwards |
+  | 7 | A6: trim in the model | 1–2 weeks | ~60 % | 2–4 weeks | the merge of the entries touches the FIFO invariant and the refinement; the geometric merge is hard to state compactly |
+  | 8 | **A19** Liveness of the detailed model for any number of readers | 2–4 weeks | medium, ~50 % | 3–6 weeks | the pattern of `StreamBufferWaitForeverLiveProof.tla` carries over, but the detailed model is much larger (the FIFO as a sequence, more stages, the copy per entry), and the assumption of the row below stays |
+  | 9 | Prove that fairness per thread gives the fairness by role (`FairRole`, A13 follow-up; today argued and checked by TLC in bounded models) | 1–2 weeks | low, ~30 % | 2–3 weeks | tlapm cannot swap a quantifier over threads with a temporal operator (`\A q : P(q) ~> Q` to `(\E q : P(q)) ~> Q`), which is where it failed; another prover (e.g. Isabelle with a TLA embedding) would be the way out |
+  | 10 | A8: `ReentrantLock` instead of `synchronized` (parked) | 3–5 days, if taken up | technically ~90 %; the gain unclear | 1–2 weeks | the measurements show a trade-off (faster for platform threads, slower for virtual threads); only worth it with a workload that decides which kind matters, e.g. more virtual threads than carriers on JDK 21-23 |
+  | 11 | A9: functional proof of the instance methods (long-term) | months | low, ~20–30 % (a partial goal ~35 %) | 3–6 months | OpenJML ESC returns "unknown" on instance methods, and the deque as a ghost sequence is large; extract a sequential core first |
+  | 12 | Checker Framework Lock Checker (deferred) | 1–2 days for a spike | ~40 % | ~1 week | blocked by inconsistent JDK stubs of `close()`; A17 checks the lock discipline on the bytecode already, so it is a candidate to drop |
+  | 13 | **A15** Proofs as a release gate (`workflow_call`, publish waits for the formal jobs on `v*` tags) | 1–2 days | high, ~90 % | ~1 week | **only after every other item of this table is done** (owner, 2026-11-13): each package adds checks to the formal jobs, so the gate's run time is known only at the end, and until then the formal jobs stay scheduled and keep the CI of each release short. It changes the release process (about 2 h more per release): the owner confirms before it is merged |
 
-  Best value for the risk: A18; the `@VisibleForTesting` decision and the naming review on the
-  side. The `FairRole` proof, A19 and A9 are research with an open outcome.
+  Best value for the risk: 1 and 2; 3 and 4 on the side. 8, 9 and 11 are research with an open
+  outcome.
 
-  For the owner: the `ANTHROPIC_API_KEY` secret (`claude-review` fails in every pull request
-  without it), the two tlapm quirks as an issue at tlaplus/tlapm (own account), the comment on
-  OpenJML#1012. Waiting on others: an Apalache release with #3505, OpenJML#1050 (then the RAC
-  scaling of the tests can go), and the first scheduled formal run with the spurious wake-ups
-  (measures the 4-core time of `check.sh`).
+  **For the owner (decisions and actions on your accounts):**
+  - the `ANTHROPIC_API_KEY` secret: `claude-review` fails in every pull request without it;
+  - the two tlapm quirks as an issue at tlaplus/tlapm (your account);
+  - OpenJML: a new issue for the inner-class invariant case left from #1012 (draft in the
+    owner's private notes; the report-back on the closed #1012 is
+    unanswered since 2026-10-21);
+  - a composite action in bernardladenthin/actions for the pinned tool setups (OpenJML,
+    jpf-core, tla2tools, Apalache, tlapm): shared by several repositories, so your decision.
+
+  **Waiting on others:**
+  - an Apalache release with apalache#3505 (merged 2026-11-12): then bump `APALACHE_VERSION` (A13,
+    below);
+  - an OpenJML release with #1050 (fixed on `dev-21`): then drop the RAC scaling of the tests;
+  - jpf-core#664 (the `AtomicLong` model) and #665 (lambda type name vs. anonymous classes), opened
+    2026-11-11: their CI waits for the maintainers' approval; once merged and pinned, the
+    `AtomicLong` patch of the `jpf-interleavings` job can go.
+
+  **Standing rules:** jqwik stays at 1.9.3 (below); the null-safety refinement (below) as new API
+  surfaces appear.
 
 - **Spurious wake-ups — open limits** (model and proofs since #231, `src/test/tla/README.md`,
   "Spurious wake-ups"): `FairRole` is TLC-checked only without spurious wake-ups
