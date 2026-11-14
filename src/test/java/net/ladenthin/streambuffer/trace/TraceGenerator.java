@@ -86,6 +86,9 @@ public final class TraceGenerator {
         b.append("TBytes == ").append(s.bytes).append('\n');
         b.append("TChunkLen == ").append(s.chunkLen).append('\n');
         b.append("TReadLen == ").append(s.readLen).append('\n');
+        // the writer's and the closer's thread names in the trace, by their ids in the model
+        b.append("TWriterName == <<\"w\">>\n");
+        b.append("TCloserName == <<\"c\">>\n");
         b.append("TTrace == <<\n");
         final Map<String, Integer> calls = new HashMap<>();
         for (int i = 0; i < events.size(); i++) {
@@ -100,6 +103,10 @@ public final class TraceGenerator {
                 + "    Bytes <- TBytes\n"
                 + "    ChunkLen <- TChunkLen\n"
                 + "    ReadLen <- TReadLen\n"
+                + "    NW = 1\n"
+                + "    NC = 1\n"
+                + "    WriterName <- TWriterName\n"
+                + "    CloserName <- TCloserName\n"
                 + "    TraceLog <- TTrace\n"
                 + "    K = 6\n"
                 // spurious wake-ups of Condition.await() a trace may have (the JDK allows them)
