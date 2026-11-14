@@ -357,7 +357,19 @@ annotated, so everything below is genuinely still open.
       lowers `availableBytes`): rejected after 22 events (JPF itself also reports the
       `NoSuchElementException` that follows).
     - [ ] Scenarios: the smallest in CI (minutes), the larger ones on a rented machine; README,
-      CHANGELOG, CLAUDE.md, `VERIFICATION-ASSUMPTIONS.md` (a row for A18).
+      CHANGELOG, CLAUDE.md, `VERIFICATION-ASSUMPTIONS.md` (a row for A18). CI: the step in the
+      `jpf-interleavings` job runs S1A with its controls (about 2 minutes locally). The rented run
+      (2026-11-14, Vultr `voc-c-32c-64gb`, `check-graph.sh` with controls, 4 h per scenario), so far:
+      every word accepted for S1A (1 byte, a `read()` reader, close after the writes: 104,712 JPF
+      states, automaton 373), S1N (close at any point: 617,544, 1,451), S4N (one 2-byte write, a
+      record reader: 601,656, 1,451), S7N (`waitForAtLeast(2)` alone, two 1-byte writes:
+      1,036,384, 1,555); the controls rejected where they hit. Out of the time-box: S2N, S5N (in
+      the TLC product: automata of 3,790 and 2,674 states, TLC's dump is written by one thread),
+      S3A, S3N (two `read()` readers: still in JPF after 4 h). S6A (a waiter next to a reader)
+      reached 15,081,689 JPF states, automaton 5,102.
+      The class control first missed S4N: it changed `readSingleByte` only, which a record reader
+      does not run; now it changes both read paths, and it rejects on a record scenario (S4A, a
+      2-byte write, close after: all three controls rejected, 147 s locally).
     - [ ] If the count fits: an importer writes each distinct trace as an A6 module
       (`TraceGenerator.write`), `trace.sh` checks all of them, `trace-controls.sh` still rejects;
       then the next larger scenarios, as far as the time-box allows.
