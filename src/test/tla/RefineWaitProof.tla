@@ -6,23 +6,25 @@
 (***************************************************************************)
 (* TLAPS proof (TODO roadmap A13): StreamBuffer.tla with the current code   *)
 (* refines StreamBufferWait.tla under the mapping of RefineWait.tla, for   *)
-(* ANY set of readers (TLC checks it for 2 and 3). Every step of the       *)
-(* detailed model is a step of the abstraction or a stuttering step. The   *)
-(* detailed invariant DInv needs no sum over the FIFO: the writer writes   *)
-(* the bytes 1, 2, ... in order, so each entry is described by its first   *)
-(* byte and its length, and the next entry starts where it ends. The       *)
+(* ANY set of readers and ANY numbers of writers and closers (TLC checks   *)
+(* it for 2 and 3 readers, 2 writers, 2 closers). Every step of the        *)
+(* detailed model is a step of the abstraction or a stuttering step;       *)
+(* writer i is the abstraction's writer i, closer c its closer c. The      *)
+(* detailed invariant DInv needs no sum over the FIFO: the writers write   *)
+(* the bytes 1, 2, ... in commit order, so each entry is described by its  *)
+(* first byte and its length, and the next entry starts where it ends. The *)
 (* abstraction's invariant, proved in StreamBufferWaitProof.tla, holds in  *)
 (* the mapped state (WP!StepSafe) and gives the rest.                       *)
 (***************************************************************************)
 EXTENDS RefineWait, SequenceTheorems, StreamBufferCountLemmas, TLAPS
 
 WP == INSTANCE StreamBufferWaitProof WITH
-        Threads <- Readers, None <- None, NW <- 1, NC <- 1, Bytes <- Bytes,
+        Threads <- Readers, None <- None, NW <- NW, NC <- NC, Bytes <- Bytes,
         K <- [r \in Readers |-> LenOf(r)], M <- [r \in Readers |-> ReadLen], RecLen <- ReadLen,
         Calls0 <- Bytes + Cardinality(Readers),
         CheckedReturn <- CheckedReturn, Spurious <- Spurious,
         w <- Len(written), t <- Len(taken), avail <- avail, closed <- closed,
-        wpc <- [i \in 1..1 |-> MapSig(wpc)], cpc <- [c \in 1..1 |-> MapSig(cpc)],
+        wpc <- [i \in Writers |-> MapSig(wpc[i])], cpc <- [c \in Closers |-> MapSig(cpc[c])],
         rpc <- [r \in Readers |-> MapPc(rpc[r])],
         op <- [r \in Readers |-> IF r \in WaitCallers THEN "wait" ELSE "read"],
         calls <- (Bytes - Len(taken)) + Cardinality({r \in Readers : rpc[r] # "done"}),
@@ -50,22 +52,21 @@ WSet == {r \in Readers : rpc[r] \in {"test", "parked", "woken", "wret"}}
 NotDone == {r \in Readers : rpc[r] # "done"}
 
 \* the types, in parts that the actions change one by one
+WStates == {"write", "sigread", "siglock", "done", "failed"}
+CStates == {"close", "sigread", "siglock", "done"}
 DTBuf == /\ buf \in Seq(Seq(Int)) /\ \A j \in 1..Len(buf) : buf[j] # <<>>
          /\ pos \in Nat /\ (buf # <<>> => pos < Len(Head(buf))) /\ (buf = <<>> => pos = 0)
 DTSeq == written \in Seq(Int) /\ taken \in Seq(Int) /\ toff \in Nat
 DTSca == /\ avail \in Nat /\ closed \in BOOLEAN /\ nextByte \in Nat /\ eofAt \in Int /\ waiters \in Nat
-         /\ wpc \in {"write", "sigread", "siglock", "done", "failed"}
-         /\ cpc \in {"close", "sigread", "siglock", "done"}
+         /\ wpc \in [Writers -> WStates] /\ cpc \in [Closers -> CStates]
 DTThr == /\ rpc \in [Readers -> ReaderStates \ {"acquire"}]
          /\ want \in [Readers -> Int] /\ left \in [Readers -> Nat]
          /\ hold \in [Readers -> Seq(Int)] /\ cur = [r \in Readers |-> <<>>]
          /\ wres \in [Readers -> Int] /\ wclosed \in [Readers -> BOOLEAN]
          /\ parked \subseteq Readers /\ wl \in Readers \cup {None} /\ bl \in Readers \cup {None}
 DType == DTBuf /\ DTSeq /\ DTSca /\ DTThr
-\* the writer has written the bytes 1 .. nextByte - 1
-DWriter ==
-    /\ Len(written) = nextByte - 1 /\ nextByte >= 1 /\ nextByte <= Bytes + 1
-    /\ (wpc = "write" => nextByte <= Bytes)
+\* the writers have written the bytes 1 .. nextByte - 1 (a writer at "write" may find none left)
+DWriter == Len(written) = nextByte - 1 /\ nextByte >= 1 /\ nextByte <= Bytes + 1
 \* the FIFO: each entry continues the one before, the last ends at nextByte, and the head starts,
 \* past pos, with the byte after those committed and in flight
 DBuf ==
@@ -99,7 +100,7 @@ LEMMA InitD == Init => DInv
   <1>2 DWait
     BY <1>1, FS_EmptySet DEF Init, DWait
   <1> QED
-    BY <1>2, SBAssump, Extra DEF Init, DInv, DType, DTBuf, DTSeq, DTSca, DTThr, DWriter, DBuf, DHold, DWant, InLen, ReaderStates, None
+    BY <1>2, SBAssump, Extra DEF Init, DInv, DType, DTBuf, DTSeq, DTSca, DTThr, DWriter, DBuf, DHold, DWant, InLen, ReaderStates, None, WStates, CStates
 
 LEMMA InitW == Init => WP!Init
   <1> SUFFICES ASSUME Init PROVE WP!Init
@@ -110,8 +111,11 @@ LEMMA InitW == Init => WP!Init
     BY DEF Init
   <1>3 [r \in Readers |-> IF r \in WaitCallers THEN "wait" ELSE "read"] \in [Readers -> WP!Ops]
     BY DEF WP!Ops
+  <1>4 /\ [i \in Writers |-> MapSig(wpc[i])] = [i \in WP!Writers |-> "write"]
+       /\ [c \in Closers |-> MapSig(cpc[c])] = [c \in WP!Closers |-> "close"]
+    BY DEF Init, MapSig, WP!Writers, WP!Closers, Writers, Closers
   <1> QED
-    BY <1>1, <1>2, <1>3, SBAssump, Extra DEF Init, WP!Init, WP!Writers, WP!Closers, MapPc, MapSig, NotDone
+    BY <1>1, <1>2, <1>3, <1>4, SBAssump, Extra DEF Init, WP!Init, MapPc, NotDone
 
 -----------------------------------------------------------------------------
 (* Helpers *)
@@ -120,8 +124,8 @@ LEMMA InitW == Init => WP!Init
 MRpc == [x \in Readers |-> MapPc(rpc[x])]
 MHold == [x \in Readers |-> Len(hold[x])]
 MOp == [x \in Readers |-> IF x \in WaitCallers THEN "wait" ELSE "read"]
-MWpc == [i \in 1..1 |-> MapSig(wpc)]
-MCpc == [i \in 1..1 |-> MapSig(cpc)]
+MWpc == [i \in Writers |-> MapSig(wpc[i])]
+MCpc == [c \in Closers |-> MapSig(cpc[c])]
 MCalls == (Bytes - Len(taken)) + Cardinality(NotDone)
 MBuffered == Len(written) - Len(taken) - (IF bl = None THEN 0 ELSE MHold[bl])
 
@@ -137,7 +141,7 @@ LEMMA FrDTSca == ASSUME DTSca, avail' = avail, closed' = closed, nextByte' = nex
 LEMMA FrDTThr == ASSUME DTThr, rpc' = rpc, want' = want, left' = left, hold' = hold, cur' = cur, wres' = wres, wclosed' = wclosed, parked' = parked, wl' = wl, bl' = bl PROVE DTThr'
   BY DEF DTThr
 
-LEMMA FrDWriter == ASSUME DWriter, written' = written, nextByte' = nextByte, wpc' = wpc PROVE DWriter'
+LEMMA FrDWriter == ASSUME DWriter, written' = written, nextByte' = nextByte PROVE DWriter'
   BY DEF DWriter
 
 LEMMA FrDBuf == ASSUME DBuf, buf' = buf, pos' = pos, taken' = taken, nextByte' = nextByte, hold' = hold, bl' = bl PROVE DBuf'
@@ -158,8 +162,22 @@ LEMMA MOpConst == MOp' = MOp
 LEMMA EmptyLen == ASSUME NEW s \in Seq(Int) PROVE (s = <<>>) <=> (Len(s) = 0)
   BY EmptySeq, LenProperties
 
-LEMMA OneExcept == ASSUME NEW f, NEW x PROVE [[i \in 1..1 |-> f] EXCEPT ![1] = x] = [i \in 1..1 |-> x]
-  OBVIOUS
+\* the mapped states after one writer or closer changes its state
+LEMMA WExcept == ASSUME wpc \in [Writers -> WStates], NEW i \in Writers, NEW s, wpc' = [wpc EXCEPT ![i] = s]
+                 PROVE MWpc' = [MWpc EXCEPT ![i] = MapSig(s)] /\ MWpc[i] = MapSig(wpc[i])
+  BY DEF MWpc
+LEMMA CExcept == ASSUME cpc \in [Closers -> CStates], NEW k \in Closers, NEW s, cpc' = [cpc EXCEPT ![k] = s]
+                 PROVE MCpc' = [MCpc EXCEPT ![k] = MapSig(s)] /\ MCpc[k] = MapSig(cpc[k])
+  BY DEF MCpc
+\* a state the map does not tell from the one before: the mapped states stay
+LEMMA WSame == ASSUME wpc \in [Writers -> WStates], NEW i \in Writers, NEW s, wpc' = [wpc EXCEPT ![i] = s],
+                      MapSig(s) = MapSig(wpc[i])
+               PROVE MWpc' = MWpc
+  BY DEF MWpc
+LEMMA CSame == ASSUME cpc \in [Closers -> CStates], NEW k \in Closers, NEW s, cpc' = [cpc EXCEPT ![k] = s],
+                      MapSig(s) = MapSig(cpc[k])
+               PROVE MCpc' = MCpc
+  BY DEF MCpc
 
 \* the size a thread waits for, in both models
 LEMMA WantSame == ASSUME NEW r \in Readers PROVE WP!Want(r) = LenOf(r) /\ WantNow(r) = LenOf(r) /\ LenOf(r) \in Nat
@@ -288,24 +306,24 @@ LEMMA EndNext ==
   <1> QED
     BY <1>4, <1>5, <1>6 DEF WP!EndCall, WP!Go, MCalls, MOp, MRpc, NotDone
 
-LEMMA SWriterWrite == ASSUME Inv, WriterWrite, UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
+LEMMA SWriterWrite == ASSUME Inv, NEW i \in Writers, WriterWrite(i), UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
   <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
     BY DEF Inv, DInv, DType
-  <1>g wpc = "write" /\ bl = None
+  <1>g wpc[i] = "write" /\ bl = None
     BY DEF WriterWrite
   <1>a CASE closed
-    <2>1 wpc' = "failed" /\ buf' = buf /\ pos' = pos /\ avail' = avail /\ written' = written /\ taken' = taken /\ toff' = toff /\ closed' = closed /\ nextByte' = nextByte /\ cpc' = cpc /\ rpc' = rpc /\ want' = want /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ wres' = wres /\ wclosed' = wclosed /\ eofAt' = eofAt /\ permits' = permits /\ waiters' = waiters /\ parked' = parked /\ wl' = wl /\ bl' = bl
-      BY <1>a DEF WriterWrite, ReaderVars, Sync
+    <2>1 wpc' = [wpc EXCEPT ![i] = "failed"] /\ buf' = buf /\ pos' = pos /\ avail' = avail /\ written' = written /\ taken' = taken /\ toff' = toff /\ closed' = closed /\ nextByte' = nextByte /\ cpc' = cpc /\ rpc' = rpc /\ want' = want /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ wres' = wres /\ wclosed' = wclosed /\ eofAt' = eofAt /\ permits' = permits /\ waiters' = waiters /\ parked' = parked /\ wl' = wl /\ bl' = bl
+      BY <1>a DEF WriterWrite, WGo, ReaderVars, Sync
     <2>DTBuf DTBuf'
       BY <1>0, <2>1, FrDTBuf
     <2>DTSeq DTSeq'
       BY <1>0, <2>1, FrDTSeq
     <2>DTSca DTSca'
-      BY <1>0, <2>1 DEF DTSca
+      BY <1>0, <2>1 DEF DTSca, WStates
     <2>DTThr DTThr'
       BY <1>0, <2>1, FrDTThr
     <2>DWriter DWriter'
-      BY <1>0, <2>1 DEF DWriter
+      BY <1>0, <2>1, FrDWriter
     <2>DBuf DBuf'
       BY <1>0, <2>1, FrDBuf
     <2>DWait DWait'
@@ -316,26 +334,63 @@ LEMMA SWriterWrite == ASSUME Inv, WriterWrite, UNCHANGED spurious PROVE DInv' /\
       BY <1>0, <2>1, FrDWant
     <2>D DInv'
       BY <2>DTBuf, <2>DTSeq, <2>DTSca, <2>DTThr, <2>DWriter, <2>DBuf, <2>DWait, <2>DHold, <2>DWant DEF DInv, DType
-    <2>3 WP!WriterWrite(1)
-      <3>1 MWpc' = [MWpc EXCEPT ![1] = "failed"] /\ MWpc[1] = "write"
-        BY <2>1, <1>g, OneExcept DEF MWpc, MapSig
+    <2>3 WP!WriterWrite(i)
+      <3>1 MWpc' = [MWpc EXCEPT ![i] = "failed"] /\ MWpc[i] = "write"
+        BY <2>1, <1>g, <1>0, WExcept DEF MapSig, DTSca
       <3>2 MRpc' = MRpc /\ MHold' = MHold /\ MCalls' = MCalls /\ MCpc' = MCpc
         BY <2>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
       <3> QED
         BY <1>a, <1>g, <2>1, <3>1, <3>2, MOpConst DEF WP!WriterWrite, WP!WGo, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
     <2> QED
-      BY <2>D, <2>3 DEF WP!Next, WP!Writers
-  <1>b CASE ~closed
+      BY <2>D, <2>3 DEF WP!Next, WP!Writers, Writers
+  <1>n CASE ~closed /\ nextByte > Bytes
+    <2>1 wpc' = [wpc EXCEPT ![i] = "done"] /\ buf' = buf /\ pos' = pos /\ avail' = avail /\ written' = written /\ taken' = taken /\ toff' = toff /\ closed' = closed /\ nextByte' = nextByte /\ cpc' = cpc /\ rpc' = rpc /\ want' = want /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ wres' = wres /\ wclosed' = wclosed /\ eofAt' = eofAt /\ permits' = permits /\ waiters' = waiters /\ parked' = parked /\ wl' = wl /\ bl' = bl
+      BY <1>n DEF WriterWrite, WGo, ReaderVars, Sync
+    <2>DTBuf DTBuf'
+      BY <1>0, <2>1, FrDTBuf
+    <2>DTSeq DTSeq'
+      BY <1>0, <2>1, FrDTSeq
+    <2>DTSca DTSca'
+      BY <1>0, <2>1 DEF DTSca, WStates
+    <2>DTThr DTThr'
+      BY <1>0, <2>1, FrDTThr
+    <2>DWriter DWriter'
+      BY <1>0, <2>1, FrDWriter
+    <2>DBuf DBuf'
+      BY <1>0, <2>1, FrDBuf
+    <2>DWait DWait'
+      BY <1>0, <2>1, FrDWait
+    <2>DHold DHold'
+      BY <1>0, <2>1, FrDHold
+    <2>DWant DWant'
+      BY <1>0, <2>1, FrDWant
+    <2>D DInv'
+      BY <2>DTBuf, <2>DTSeq, <2>DTSca, <2>DTThr, <2>DWriter, <2>DBuf, <2>DWait, <2>DHold, <2>DWant DEF DInv, DType
+    <2>3 WP!WriterWrite(i)
+      <3>0 Len(written) >= Bytes
+        BY <1>0, <1>n, SBAssump DEF DWriter, DTSca
+      <3>1 MWpc' = [MWpc EXCEPT ![i] = "done"] /\ MWpc[i] = "write"
+        BY <2>1, <1>g, <1>0, WExcept DEF MapSig, DTSca
+      <3>2 MRpc' = MRpc /\ MHold' = MHold /\ MCalls' = MCalls /\ MCpc' = MCpc
+        BY <2>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+      <3> QED
+        BY <1>n, <1>g, <2>1, <3>0, <3>1, <3>2, MOpConst DEF WP!WriterWrite, WP!WGo, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+    <2> QED
+      BY <2>D, <2>3 DEF WP!Next, WP!Writers, Writers
+  <1>b CASE ~closed /\ nextByte <= Bytes
     <2> DEFINE m == Min(ChunkLen, Bytes - nextByte + 1)
     <2>0 nextByte \in Nat /\ nextByte >= 1 /\ nextByte <= Bytes
-      BY <1>0, <1>g DEF DTSca, DWriter
+      BY <1>0, <1>b DEF DTSca, DWriter
     <2>c /\ m \in 1..Bytes /\ m <= Bytes - nextByte + 1
          /\ Chunk \in Seq(Int) /\ Len(Chunk) = m /\ Chunk # <<>> /\ Chunk[1] = nextByte
       BY <2>0, ChunkFacts
     <2>1 /\ buf' = Append(buf, Chunk) /\ written' = written \o Chunk /\ avail' = avail + m
-         /\ nextByte' = nextByte + m /\ wpc' = "sigread"
+         /\ nextByte' = nextByte + m /\ wpc' = [wpc EXCEPT ![i] = "sigread"]
          /\ pos' = pos /\ taken' = taken /\ toff' = toff /\ closed' = closed /\ cpc' = cpc /\ rpc' = rpc /\ want' = want /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ wres' = wres /\ wclosed' = wclosed /\ eofAt' = eofAt /\ permits' = permits /\ waiters' = waiters /\ parked' = parked /\ wl' = wl /\ bl' = bl
-      BY <1>b, <2>c DEF WriterWrite, ReaderVars, Sync
+      <3>1 ~closed /\ ~(nextByte > Bytes)
+        BY <1>b, <2>0, SBAssump
+      <3> QED
+        BY <3>1, <2>c DEF WriterWrite, WGo, ReaderVars, Sync
     <2>3 /\ buf' \in Seq(Seq(Int)) /\ Len(buf') = Len(buf) + 1 /\ Len(buf) \in Nat
          /\ \A j \in 1..Len(buf) : buf'[j] = buf[j]
          /\ buf'[Len(buf) + 1] = Chunk
@@ -376,7 +431,7 @@ LEMMA SWriterWrite == ASSUME Inv, WriterWrite, UNCHANGED spurious PROVE DInv' /\
     <2>DTSeq DTSeq'
       BY <2>1, <2>4, <1>0 DEF DTSeq
     <2>DTSca DTSca'
-      BY <2>1, <2>c, <1>0 DEF DTSca
+      BY <2>1, <2>c, <1>0 DEF DTSca, WStates
     <2>DTThr DTThr'
       BY <1>0, <2>1, FrDTThr
     <2>DWriter DWriter'
@@ -412,7 +467,7 @@ LEMMA SWriterWrite == ASSUME Inv, WriterWrite, UNCHANGED spurious PROVE DInv' /\
       BY <1>0, <2>1, FrDWant
     <2>D DInv'
       BY <2>DTBuf, <2>DTSeq, <2>DTSca, <2>DTThr, <2>DWriter, <2>DBuf, <2>DWait, <2>DHold, <2>DWant DEF DInv, DType
-    <2>9 WP!WriterWrite(1)
+    <2>9 WP!WriterWrite(i)
       <3>1 Len(written) = nextByte - 1 /\ Len(written) \in Nat
         BY <1>0, <2>0 DEF DWriter
       <3>2 \E c \in 1..Bytes : c <= Bytes - Len(written) /\ Len(written') = Len(written) + c
@@ -424,266 +479,32 @@ LEMMA SWriterWrite == ASSUME Inv, WriterWrite, UNCHANGED spurious PROVE DInv' /\
           BY <4>1
       <3>3 ~(Len(written) >= Bytes)
         BY <3>1, <2>0, SBAssump
-      <3>4 MWpc' = [MWpc EXCEPT ![1] = "siglock"] /\ MWpc[1] = "write"
-        BY <2>1, <1>g, OneExcept DEF MWpc, MapSig
+      <3>4 MWpc' = [MWpc EXCEPT ![i] = "siglock"] /\ MWpc[i] = "write"
+        BY <2>1, <1>g, <1>0, WExcept DEF MapSig, DTSca
       <3>5 MRpc' = MRpc /\ MHold' = MHold /\ MCalls' = MCalls /\ MCpc' = MCpc
         BY <2>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
       <3> QED
         BY <1>b, <1>g, <2>1, <3>2, <3>3, <3>4, <3>5, MOpConst DEF WP!WriterWrite, WP!WGo, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
     <2> QED
-      BY <2>D, <2>9 DEF WP!Next, WP!Writers
+      BY <2>D, <2>9 DEF WP!Next, WP!Writers, Writers
+  <1>z nextByte \in Nat /\ Bytes \in Nat
+    BY <1>0, SBAssump DEF DTSca
   <1> QED
-    BY <1>a, <1>b
+    BY <1>a, <1>n, <1>b, <1>z
 
-LEMMA SWriterSigRead == ASSUME Inv, WriterSigRead, UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
+LEMMA SWriterSigRead == ASSUME Inv, NEW i \in Writers, WriterSigRead(i), UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
   <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
     BY DEF Inv, DInv, DType
-  <1>g wpc = "sigread"
+  <1>g wpc[i] = "sigread"
     BY DEF WriterSigRead
-  <1>1 wpc' = (IF waiters # 0 THEN "siglock" ELSE WriterDone) /\ buf' = buf /\ pos' = pos /\ avail' = avail /\ written' = written /\ taken' = taken /\ toff' = toff /\ closed' = closed /\ nextByte' = nextByte /\ cpc' = cpc /\ rpc' = rpc /\ want' = want /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ wres' = wres /\ wclosed' = wclosed /\ eofAt' = eofAt /\ permits' = permits /\ waiters' = waiters /\ parked' = parked /\ wl' = wl /\ bl' = bl
-    BY Current DEF WriterSigRead, ReaderVars, Sync
+  <1>1 wpc' = [wpc EXCEPT ![i] = IF waiters # 0 THEN "siglock" ELSE WriterDone] /\ buf' = buf /\ pos' = pos /\ avail' = avail /\ written' = written /\ taken' = taken /\ toff' = toff /\ closed' = closed /\ nextByte' = nextByte /\ cpc' = cpc /\ rpc' = rpc /\ want' = want /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ wres' = wres /\ wclosed' = wclosed /\ eofAt' = eofAt /\ permits' = permits /\ waiters' = waiters /\ parked' = parked /\ wl' = wl /\ bl' = bl
+    BY Current DEF WriterSigRead, WGo, ReaderVars, Sync
   <1>DTBuf DTBuf'
     BY <1>0, <1>1, FrDTBuf
   <1>DTSeq DTSeq'
     BY <1>0, <1>1, FrDTSeq
   <1>DTSca DTSca'
-    BY <1>0, <1>1 DEF DTSca, WriterDone
-  <1>DTThr DTThr'
-    BY <1>0, <1>1, FrDTThr
-  <1>DWriter DWriter'
-    BY <1>0, <1>1, SBAssump DEF DWriter, WriterDone, DTSca
-  <1>DBuf DBuf'
-    BY <1>0, <1>1, FrDBuf
-  <1>DWait DWait'
-    BY <1>0, <1>1, FrDWait
-  <1>DHold DHold'
-    BY <1>0, <1>1, FrDHold
-  <1>DWant DWant'
-    BY <1>0, <1>1, FrDWant
-  <1>D DInv'
-    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType
-  <1>3 CASE waiters # 0
-    <2>1 MWpc' = MWpc /\ MRpc' = MRpc /\ MHold' = MHold /\ MCalls' = MCalls /\ MCpc' = MCpc
-      BY <1>1, <1>3, <1>g DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapSig
-    <2>2 WP!vars' = WP!vars
-      BY <1>1, <2>1, MOpConst DEF WP!vars, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
-    <2> QED
-      BY <1>D, <2>2
-  <1>4 CASE waiters = 0
-    <2>0 wpc' = WriterDone
-      BY <1>1, <1>4
-    <2>1 parked = {}
-      BY <1>4, NoWaiterNoParked
-    <2>w UNCHANGED <<MRpc, parked>>
-      BY <1>1 DEF MRpc
-    <2>a MWpc[1] = "siglock"
-      BY <1>g DEF MWpc, MapSig
-    <2>b MWpc' = [MWpc EXCEPT ![1] = WP!WriterNext]
-      <3>1 MapSig(wpc') = WP!WriterNext
-        BY <2>0, NextSame, <1>0 DEF MapSig, DTSca
-      <3> QED
-        BY <3>1, OneExcept DEF MWpc
-    <2>c MHold' = MHold /\ MCalls' = MCalls /\ MCpc' = MCpc
-      BY <1>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
-    <2>d WP!WriterSigLock(1)
-      BY <1>1, <2>1, <2>a, <2>b, <2>c, <2>w, MOpConst DEF WP!WriterSigLock, WP!WGo, WP!WakeAll, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
-    <2> QED
-      BY <1>D, <2>d DEF WP!Next, WP!Writers, WP!Closers
-  <1> QED
-    BY <1>3, <1>4
-
-LEMMA SCloserSigRead == ASSUME Inv, CloserSigRead, UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
-  <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
-    BY DEF Inv, DInv, DType
-  <1>g cpc = "sigread"
-    BY DEF CloserSigRead
-  <1>1 cpc' = (IF waiters # 0 THEN "siglock" ELSE "done") /\ buf' = buf /\ pos' = pos /\ avail' = avail /\ written' = written /\ taken' = taken /\ toff' = toff /\ closed' = closed /\ nextByte' = nextByte /\ wpc' = wpc /\ rpc' = rpc /\ want' = want /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ wres' = wres /\ wclosed' = wclosed /\ eofAt' = eofAt /\ permits' = permits /\ waiters' = waiters /\ parked' = parked /\ wl' = wl /\ bl' = bl
-    BY Current DEF CloserSigRead, ReaderVars, Sync
-  <1>DTBuf DTBuf'
-    BY <1>0, <1>1, FrDTBuf
-  <1>DTSeq DTSeq'
-    BY <1>0, <1>1, FrDTSeq
-  <1>DTSca DTSca'
-    BY <1>0, <1>1 DEF DTSca
-  <1>DTThr DTThr'
-    BY <1>0, <1>1, FrDTThr
-  <1>DWriter DWriter'
-    BY <1>0, <1>1, SBAssump DEF DWriter, WriterDone, DTSca
-  <1>DBuf DBuf'
-    BY <1>0, <1>1, FrDBuf
-  <1>DWait DWait'
-    BY <1>0, <1>1, FrDWait
-  <1>DHold DHold'
-    BY <1>0, <1>1, FrDHold
-  <1>DWant DWant'
-    BY <1>0, <1>1, FrDWant
-  <1>D DInv'
-    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType
-  <1>3 CASE waiters # 0
-    <2>1 MCpc' = MCpc /\ MRpc' = MRpc /\ MHold' = MHold /\ MCalls' = MCalls /\ MWpc' = MWpc
-      BY <1>1, <1>3, <1>g DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapSig
-    <2>2 WP!vars' = WP!vars
-      BY <1>1, <2>1, MOpConst DEF WP!vars, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
-    <2> QED
-      BY <1>D, <2>2
-  <1>4 CASE waiters = 0
-    <2>0 cpc' = "done"
-      BY <1>1, <1>4
-    <2>1 parked = {}
-      BY <1>4, NoWaiterNoParked
-    <2>w UNCHANGED <<MRpc, parked>>
-      BY <1>1 DEF MRpc
-    <2>a MCpc[1] = "siglock"
-      BY <1>g DEF MCpc, MapSig
-    <2>b MCpc' = [MCpc EXCEPT ![1] = "done"]
-      <3>1 MapSig(cpc') = "done"
-        BY <2>0, <1>0 DEF MapSig, DTSca
-      <3> QED
-        BY <3>1, OneExcept DEF MCpc
-    <2>c MHold' = MHold /\ MCalls' = MCalls /\ MWpc' = MWpc
-      BY <1>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
-    <2>d WP!CloserSigLock(1)
-      BY <1>1, <2>1, <2>a, <2>b, <2>c, <2>w, MOpConst DEF WP!CloserSigLock, WP!CGo, WP!WakeAll, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
-    <2> QED
-      BY <1>D, <2>d DEF WP!Next, WP!Writers, WP!Closers
-  <1> QED
-    BY <1>3, <1>4
-
-LEMMA SWriterSigLock == ASSUME Inv, WriterSigLock, UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
-  <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
-    BY DEF Inv, DInv, DType
-  <1>g wpc = "siglock" /\ wl = None
-    BY DEF WriterSigLock, WakeAll
-  <1>1 /\ rpc' = [x \in Readers |-> IF x \in parked THEN "woken" ELSE rpc[x]] /\ parked' = {}
-       /\ wpc' = WriterDone /\ buf' = buf /\ pos' = pos /\ avail' = avail /\ written' = written /\ taken' = taken /\ toff' = toff /\ closed' = closed /\ nextByte' = nextByte /\ cpc' = cpc /\ want' = want /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ wres' = wres /\ wclosed' = wclosed /\ eofAt' = eofAt /\ permits' = permits /\ waiters' = waiters /\ wl' = wl /\ bl' = bl
-    BY DEF WriterSigLock, WakeAll
-  <1>p \A x \in parked : rpc[x] = "parked"
-    BY DEF Inv, WP!SafeInv, WP!ParkedInv, MapPc
-  <1>w WSet' = WSet
-    BY <1>1, <1>p DEF WSet
-  <1>q NotDone' = NotDone
-    BY <1>1, <1>p DEF NotDone
-  <1>DTBuf DTBuf'
-    BY <1>0, <1>1, FrDTBuf
-  <1>DTSeq DTSeq'
-    BY <1>0, <1>1, FrDTSeq
-  <1>DTSca DTSca'
-    BY <1>0, <1>1 DEF DTSca, WriterDone
-  <1>DTThr DTThr'
-    BY <1>0, <1>1 DEF DTThr, ReaderStates
-  <1>DWriter DWriter'
-    BY <1>0, <1>1, SBAssump DEF DWriter, WriterDone, DTSca
-  <1>DBuf DBuf'
-    BY <1>0, <1>1, FrDBuf
-  <1>DWait DWait'
-    BY <1>0, <1>1, <1>w DEF DWait
-  <1>DHold DHold'
-    BY <1>0, <1>1, FrDHold
-  <1>DWant DWant'
-    BY <1>0, <1>1, <1>p DEF DWant
-  <1>D DInv'
-    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType
-  <1>2 WP!WakeAll
-    <2>1 CASE parked = {}
-      <3>1 rpc' = rpc
-        BY <1>1, <2>1, <1>0 DEF DTThr
-      <3> QED
-        BY <2>1, <3>1, <1>1 DEF WP!WakeAll, MRpc
-    <2>2 CASE parked # {}
-      <3>1 MRpc' = [x \in Readers |-> IF x \in parked THEN "woken" ELSE MRpc[x]]
-        BY <1>1 DEF MRpc, MapPc
-      <3> QED
-        BY <2>2, <3>1, <1>g, <1>1 DEF WP!WakeAll, MRpc
-    <2> QED
-      BY <2>1, <2>2
-  <1>a MWpc[1] = "siglock"
-    BY <1>g DEF MWpc, MapSig
-  <1>b MWpc' = [MWpc EXCEPT ![1] = WP!WriterNext]
-    <2>1 MapSig(wpc') = WP!WriterNext
-      BY <1>1, NextSame, <1>0 DEF MapSig, DTSca
-    <2> QED
-      BY <2>1, OneExcept DEF MWpc
-  <1>c MHold' = MHold /\ MCalls' = MCalls /\ MCpc' = MCpc
-    BY <1>1, <1>q DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
-  <1>d WP!WriterSigLock(1)
-    BY <1>1, <1>2, <1>a, <1>b, <1>c, MOpConst DEF WP!WriterSigLock, WP!WGo, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
-  <1> QED
-    BY <1>D, <1>d DEF WP!Next, WP!Writers, WP!Closers
-
-LEMMA SCloserSigLock == ASSUME Inv, CloserSigLock, UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
-  <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
-    BY DEF Inv, DInv, DType
-  <1>g cpc = "siglock" /\ wl = None
-    BY DEF CloserSigLock, WakeAll
-  <1>1 /\ rpc' = [x \in Readers |-> IF x \in parked THEN "woken" ELSE rpc[x]] /\ parked' = {}
-       /\ cpc' = "done" /\ buf' = buf /\ pos' = pos /\ avail' = avail /\ written' = written /\ taken' = taken /\ toff' = toff /\ closed' = closed /\ nextByte' = nextByte /\ wpc' = wpc /\ want' = want /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ wres' = wres /\ wclosed' = wclosed /\ eofAt' = eofAt /\ permits' = permits /\ waiters' = waiters /\ wl' = wl /\ bl' = bl
-    BY DEF CloserSigLock, WakeAll
-  <1>p \A x \in parked : rpc[x] = "parked"
-    BY DEF Inv, WP!SafeInv, WP!ParkedInv, MapPc
-  <1>w WSet' = WSet
-    BY <1>1, <1>p DEF WSet
-  <1>q NotDone' = NotDone
-    BY <1>1, <1>p DEF NotDone
-  <1>DTBuf DTBuf'
-    BY <1>0, <1>1, FrDTBuf
-  <1>DTSeq DTSeq'
-    BY <1>0, <1>1, FrDTSeq
-  <1>DTSca DTSca'
-    BY <1>0, <1>1 DEF DTSca
-  <1>DTThr DTThr'
-    BY <1>0, <1>1 DEF DTThr, ReaderStates
-  <1>DWriter DWriter'
-    BY <1>0, <1>1, SBAssump DEF DWriter, WriterDone, DTSca
-  <1>DBuf DBuf'
-    BY <1>0, <1>1, FrDBuf
-  <1>DWait DWait'
-    BY <1>0, <1>1, <1>w DEF DWait
-  <1>DHold DHold'
-    BY <1>0, <1>1, FrDHold
-  <1>DWant DWant'
-    BY <1>0, <1>1, <1>p DEF DWant
-  <1>D DInv'
-    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType
-  <1>2 WP!WakeAll
-    <2>1 CASE parked = {}
-      <3>1 rpc' = rpc
-        BY <1>1, <2>1, <1>0 DEF DTThr
-      <3> QED
-        BY <2>1, <3>1, <1>1 DEF WP!WakeAll, MRpc
-    <2>2 CASE parked # {}
-      <3>1 MRpc' = [x \in Readers |-> IF x \in parked THEN "woken" ELSE MRpc[x]]
-        BY <1>1 DEF MRpc, MapPc
-      <3> QED
-        BY <2>2, <3>1, <1>g, <1>1 DEF WP!WakeAll, MRpc
-    <2> QED
-      BY <2>1, <2>2
-  <1>a MCpc[1] = "siglock"
-    BY <1>g DEF MCpc, MapSig
-  <1>b MCpc' = [MCpc EXCEPT ![1] = "done"]
-    <2>1 MapSig(cpc') = "done"
-      BY <1>1, <1>0 DEF MapSig, DTSca
-    <2> QED
-      BY <2>1, OneExcept DEF MCpc
-  <1>c MHold' = MHold /\ MCalls' = MCalls /\ MWpc' = MWpc
-    BY <1>1, <1>q DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
-  <1>d WP!CloserSigLock(1)
-    BY <1>1, <1>2, <1>a, <1>b, <1>c, MOpConst DEF WP!CloserSigLock, WP!CGo, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
-  <1> QED
-    BY <1>D, <1>d DEF WP!Next, WP!Writers, WP!Closers
-
-LEMMA SCloserClose == ASSUME Inv, CloserClose, UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
-  <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
-    BY DEF Inv, DInv, DType
-  <1>g cpc = "close" /\ bl = None
-    BY DEF CloserClose
-  <1>1 closed' = TRUE /\ cpc' = "sigread" /\ buf' = buf /\ pos' = pos /\ avail' = avail /\ written' = written /\ taken' = taken /\ toff' = toff /\ nextByte' = nextByte /\ wpc' = wpc /\ rpc' = rpc /\ want' = want /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ wres' = wres /\ wclosed' = wclosed /\ eofAt' = eofAt /\ permits' = permits /\ waiters' = waiters /\ parked' = parked /\ wl' = wl /\ bl' = bl
-    BY DEF CloserClose, ReaderVars, Sync
-  <1>DTBuf DTBuf'
-    BY <1>0, <1>1, FrDTBuf
-  <1>DTSeq DTSeq'
-    BY <1>0, <1>1, FrDTSeq
-  <1>DTSca DTSca'
-    BY <1>0, <1>1 DEF DTSca
+    BY <1>0, <1>1 DEF DTSca, WriterDone, WStates
   <1>DTThr DTThr'
     BY <1>0, <1>1, FrDTThr
   <1>DWriter DWriter'
@@ -698,14 +519,248 @@ LEMMA SCloserClose == ASSUME Inv, CloserClose, UNCHANGED spurious PROVE DInv' /\
     BY <1>0, <1>1, FrDWant
   <1>D DInv'
     BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType
-  <1>2 MCpc' = [MCpc EXCEPT ![1] = "siglock"] /\ MCpc[1] = "close"
-    BY <1>1, <1>g, OneExcept DEF MCpc, MapSig
+  <1>3 CASE waiters # 0
+    <2>0 MWpc' = MWpc
+      BY <1>1, <1>3, <1>g, <1>0, WSame DEF MapSig, DTSca
+    <2>1 MWpc' = MWpc /\ MRpc' = MRpc /\ MHold' = MHold /\ MCalls' = MCalls /\ MCpc' = MCpc
+      BY <1>1, <2>0 DEF MRpc, MHold, MOp, MCpc, MCalls, NotDone
+    <2>2 WP!vars' = WP!vars
+      BY <1>1, <2>1, MOpConst DEF WP!vars, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+    <2> QED
+      BY <1>D, <2>2
+  <1>4 CASE waiters = 0
+    <2>0 wpc' = [wpc EXCEPT ![i] = WriterDone]
+      BY <1>1, <1>4
+    <2>1 parked = {}
+      BY <1>4, NoWaiterNoParked
+    <2>w UNCHANGED <<MRpc, parked>>
+      BY <1>1 DEF MRpc
+    <2>a MWpc[i] = "siglock"
+      BY <1>g DEF MWpc, MapSig
+    <2>b MWpc' = [MWpc EXCEPT ![i] = WP!WriterNext]
+      <3>1 MapSig(WriterDone) = WP!WriterNext
+        BY NextSame, <1>0 DEF DTSca
+      <3> QED
+        BY <2>0, <3>1, <1>0, WExcept DEF DTSca
+    <2>c MHold' = MHold /\ MCalls' = MCalls /\ MCpc' = MCpc
+      BY <1>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+    <2>d WP!WriterSigLock(i)
+      BY <1>1, <2>1, <2>a, <2>b, <2>c, <2>w, MOpConst DEF WP!WriterSigLock, WP!WGo, WP!WakeAll, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+    <2> QED
+      BY <1>D, <2>d DEF WP!Next, WP!Writers, WP!Closers, Writers
+  <1> QED
+    BY <1>3, <1>4
+
+LEMMA SCloserSigRead == ASSUME Inv, NEW k \in Closers, CloserSigRead(k), UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
+  <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
+    BY DEF Inv, DInv, DType
+  <1>g cpc[k] = "sigread"
+    BY DEF CloserSigRead
+  <1>1 cpc' = [cpc EXCEPT ![k] = IF waiters # 0 THEN "siglock" ELSE "done"] /\ buf' = buf /\ pos' = pos /\ avail' = avail /\ written' = written /\ taken' = taken /\ toff' = toff /\ closed' = closed /\ nextByte' = nextByte /\ wpc' = wpc /\ rpc' = rpc /\ want' = want /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ wres' = wres /\ wclosed' = wclosed /\ eofAt' = eofAt /\ permits' = permits /\ waiters' = waiters /\ parked' = parked /\ wl' = wl /\ bl' = bl
+    BY Current DEF CloserSigRead, CGo, ReaderVars, Sync
+  <1>DTBuf DTBuf'
+    BY <1>0, <1>1, FrDTBuf
+  <1>DTSeq DTSeq'
+    BY <1>0, <1>1, FrDTSeq
+  <1>DTSca DTSca'
+    BY <1>0, <1>1 DEF DTSca, CStates
+  <1>DTThr DTThr'
+    BY <1>0, <1>1, FrDTThr
+  <1>DWriter DWriter'
+    BY <1>0, <1>1, FrDWriter
+  <1>DBuf DBuf'
+    BY <1>0, <1>1, FrDBuf
+  <1>DWait DWait'
+    BY <1>0, <1>1, FrDWait
+  <1>DHold DHold'
+    BY <1>0, <1>1, FrDHold
+  <1>DWant DWant'
+    BY <1>0, <1>1, FrDWant
+  <1>D DInv'
+    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType
+  <1>3 CASE waiters # 0
+    <2>0 MCpc' = MCpc
+      BY <1>1, <1>3, <1>g, <1>0, CSame DEF MapSig, DTSca
+    <2>1 MCpc' = MCpc /\ MRpc' = MRpc /\ MHold' = MHold /\ MCalls' = MCalls /\ MWpc' = MWpc
+      BY <1>1, <2>0 DEF MRpc, MHold, MOp, MWpc, MCalls, NotDone
+    <2>2 WP!vars' = WP!vars
+      BY <1>1, <2>1, MOpConst DEF WP!vars, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+    <2> QED
+      BY <1>D, <2>2
+  <1>4 CASE waiters = 0
+    <2>0 cpc' = [cpc EXCEPT ![k] = "done"]
+      BY <1>1, <1>4
+    <2>1 parked = {}
+      BY <1>4, NoWaiterNoParked
+    <2>w UNCHANGED <<MRpc, parked>>
+      BY <1>1 DEF MRpc
+    <2>a MCpc[k] = "siglock"
+      BY <1>g DEF MCpc, MapSig
+    <2>b MCpc' = [MCpc EXCEPT ![k] = "done"]
+      BY <2>0, <1>0, CExcept DEF MapSig, DTSca
+    <2>c MHold' = MHold /\ MCalls' = MCalls /\ MWpc' = MWpc
+      BY <1>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+    <2>d WP!CloserSigLock(k)
+      BY <1>1, <2>1, <2>a, <2>b, <2>c, <2>w, MOpConst DEF WP!CloserSigLock, WP!CGo, WP!WakeAll, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+    <2> QED
+      BY <1>D, <2>d DEF WP!Next, WP!Writers, WP!Closers, Closers
+  <1> QED
+    BY <1>3, <1>4
+
+LEMMA SWriterSigLock == ASSUME Inv, NEW i \in Writers, WriterSigLock(i), UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
+  <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
+    BY DEF Inv, DInv, DType
+  <1>g wpc[i] = "siglock" /\ wl = None
+    BY DEF WriterSigLock, WakeAll
+  <1>1 /\ rpc' = [x \in Readers |-> IF x \in parked THEN "woken" ELSE rpc[x]] /\ parked' = {}
+       /\ wpc' = [wpc EXCEPT ![i] = WriterDone] /\ buf' = buf /\ pos' = pos /\ avail' = avail /\ written' = written /\ taken' = taken /\ toff' = toff /\ closed' = closed /\ nextByte' = nextByte /\ cpc' = cpc /\ want' = want /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ wres' = wres /\ wclosed' = wclosed /\ eofAt' = eofAt /\ permits' = permits /\ waiters' = waiters /\ wl' = wl /\ bl' = bl
+    BY DEF WriterSigLock, WGo, WakeAll
+  <1>p \A x \in parked : rpc[x] = "parked"
+    BY DEF Inv, WP!SafeInv, WP!ParkedInv, MapPc
+  <1>w WSet' = WSet
+    BY <1>1, <1>p DEF WSet
+  <1>q NotDone' = NotDone
+    BY <1>1, <1>p DEF NotDone
+  <1>DTBuf DTBuf'
+    BY <1>0, <1>1, FrDTBuf
+  <1>DTSeq DTSeq'
+    BY <1>0, <1>1, FrDTSeq
+  <1>DTSca DTSca'
+    BY <1>0, <1>1 DEF DTSca, WriterDone, WStates
+  <1>DTThr DTThr'
+    BY <1>0, <1>1 DEF DTThr, ReaderStates
+  <1>DWriter DWriter'
+    BY <1>0, <1>1, FrDWriter
+  <1>DBuf DBuf'
+    BY <1>0, <1>1, FrDBuf
+  <1>DWait DWait'
+    BY <1>0, <1>1, <1>w DEF DWait
+  <1>DHold DHold'
+    BY <1>0, <1>1, FrDHold
+  <1>DWant DWant'
+    BY <1>0, <1>1, <1>p DEF DWant
+  <1>D DInv'
+    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType
+  <1>2 WP!WakeAll
+    <2>1 CASE parked = {}
+      <3>1 rpc' = rpc
+        BY <1>1, <2>1, <1>0 DEF DTThr
+      <3> QED
+        BY <2>1, <3>1, <1>1 DEF WP!WakeAll, MRpc
+    <2>2 CASE parked # {}
+      <3>1 MRpc' = [x \in Readers |-> IF x \in parked THEN "woken" ELSE MRpc[x]]
+        BY <1>1 DEF MRpc, MapPc
+      <3> QED
+        BY <2>2, <3>1, <1>g, <1>1 DEF WP!WakeAll, MRpc
+    <2> QED
+      BY <2>1, <2>2
+  <1>a MWpc[i] = "siglock"
+    BY <1>g DEF MWpc, MapSig
+  <1>b MWpc' = [MWpc EXCEPT ![i] = WP!WriterNext]
+    <2>1 MapSig(WriterDone) = WP!WriterNext
+      BY NextSame, <1>0 DEF DTSca
+    <2> QED
+      BY <1>1, <2>1, <1>0, WExcept DEF DTSca
+  <1>c MHold' = MHold /\ MCalls' = MCalls /\ MCpc' = MCpc
+    BY <1>1, <1>q DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+  <1>d WP!WriterSigLock(i)
+    BY <1>1, <1>2, <1>a, <1>b, <1>c, MOpConst DEF WP!WriterSigLock, WP!WGo, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+  <1> QED
+    BY <1>D, <1>d DEF WP!Next, WP!Writers, WP!Closers, Writers
+
+LEMMA SCloserSigLock == ASSUME Inv, NEW k \in Closers, CloserSigLock(k), UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
+  <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
+    BY DEF Inv, DInv, DType
+  <1>g cpc[k] = "siglock" /\ wl = None
+    BY DEF CloserSigLock, WakeAll
+  <1>1 /\ rpc' = [x \in Readers |-> IF x \in parked THEN "woken" ELSE rpc[x]] /\ parked' = {}
+       /\ cpc' = [cpc EXCEPT ![k] = "done"] /\ buf' = buf /\ pos' = pos /\ avail' = avail /\ written' = written /\ taken' = taken /\ toff' = toff /\ closed' = closed /\ nextByte' = nextByte /\ wpc' = wpc /\ want' = want /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ wres' = wres /\ wclosed' = wclosed /\ eofAt' = eofAt /\ permits' = permits /\ waiters' = waiters /\ wl' = wl /\ bl' = bl
+    BY DEF CloserSigLock, CGo, WakeAll
+  <1>p \A x \in parked : rpc[x] = "parked"
+    BY DEF Inv, WP!SafeInv, WP!ParkedInv, MapPc
+  <1>w WSet' = WSet
+    BY <1>1, <1>p DEF WSet
+  <1>q NotDone' = NotDone
+    BY <1>1, <1>p DEF NotDone
+  <1>DTBuf DTBuf'
+    BY <1>0, <1>1, FrDTBuf
+  <1>DTSeq DTSeq'
+    BY <1>0, <1>1, FrDTSeq
+  <1>DTSca DTSca'
+    BY <1>0, <1>1 DEF DTSca, CStates
+  <1>DTThr DTThr'
+    BY <1>0, <1>1 DEF DTThr, ReaderStates
+  <1>DWriter DWriter'
+    BY <1>0, <1>1, FrDWriter
+  <1>DBuf DBuf'
+    BY <1>0, <1>1, FrDBuf
+  <1>DWait DWait'
+    BY <1>0, <1>1, <1>w DEF DWait
+  <1>DHold DHold'
+    BY <1>0, <1>1, FrDHold
+  <1>DWant DWant'
+    BY <1>0, <1>1, <1>p DEF DWant
+  <1>D DInv'
+    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType
+  <1>2 WP!WakeAll
+    <2>1 CASE parked = {}
+      <3>1 rpc' = rpc
+        BY <1>1, <2>1, <1>0 DEF DTThr
+      <3> QED
+        BY <2>1, <3>1, <1>1 DEF WP!WakeAll, MRpc
+    <2>2 CASE parked # {}
+      <3>1 MRpc' = [x \in Readers |-> IF x \in parked THEN "woken" ELSE MRpc[x]]
+        BY <1>1 DEF MRpc, MapPc
+      <3> QED
+        BY <2>2, <3>1, <1>g, <1>1 DEF WP!WakeAll, MRpc
+    <2> QED
+      BY <2>1, <2>2
+  <1>a MCpc[k] = "siglock"
+    BY <1>g DEF MCpc, MapSig
+  <1>b MCpc' = [MCpc EXCEPT ![k] = "done"]
+    BY <1>1, <1>0, CExcept DEF MapSig, DTSca
+  <1>c MHold' = MHold /\ MCalls' = MCalls /\ MWpc' = MWpc
+    BY <1>1, <1>q DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+  <1>d WP!CloserSigLock(k)
+    BY <1>1, <1>2, <1>a, <1>b, <1>c, MOpConst DEF WP!CloserSigLock, WP!CGo, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+  <1> QED
+    BY <1>D, <1>d DEF WP!Next, WP!Writers, WP!Closers, Closers
+
+LEMMA SCloserClose == ASSUME Inv, NEW k \in Closers, CloserClose(k), UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
+  <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
+    BY DEF Inv, DInv, DType
+  <1>g cpc[k] = "close" /\ bl = None
+    BY DEF CloserClose
+  <1>1 closed' = TRUE /\ cpc' = [cpc EXCEPT ![k] = "sigread"] /\ buf' = buf /\ pos' = pos /\ avail' = avail /\ written' = written /\ taken' = taken /\ toff' = toff /\ nextByte' = nextByte /\ wpc' = wpc /\ rpc' = rpc /\ want' = want /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ wres' = wres /\ wclosed' = wclosed /\ eofAt' = eofAt /\ permits' = permits /\ waiters' = waiters /\ parked' = parked /\ wl' = wl /\ bl' = bl
+    BY DEF CloserClose, CGo, ReaderVars, Sync
+  <1>DTBuf DTBuf'
+    BY <1>0, <1>1, FrDTBuf
+  <1>DTSeq DTSeq'
+    BY <1>0, <1>1, FrDTSeq
+  <1>DTSca DTSca'
+    BY <1>0, <1>1 DEF DTSca, CStates
+  <1>DTThr DTThr'
+    BY <1>0, <1>1, FrDTThr
+  <1>DWriter DWriter'
+    BY <1>0, <1>1, FrDWriter
+  <1>DBuf DBuf'
+    BY <1>0, <1>1, FrDBuf
+  <1>DWait DWait'
+    BY <1>0, <1>1, FrDWait
+  <1>DHold DHold'
+    BY <1>0, <1>1, FrDHold
+  <1>DWant DWant'
+    BY <1>0, <1>1, FrDWant
+  <1>D DInv'
+    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType
+  <1>2 MCpc' = [MCpc EXCEPT ![k] = "siglock"] /\ MCpc[k] = "close"
+    BY <1>1, <1>g, <1>0, CExcept DEF MapSig, DTSca
   <1>3 MRpc' = MRpc /\ MHold' = MHold /\ MCalls' = MCalls /\ MWpc' = MWpc
     BY <1>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
-  <1>4 WP!CloserClose(1)
+  <1>4 WP!CloserClose(k)
     BY <1>g, <1>1, <1>2, <1>3, MOpConst DEF WP!CloserClose, WP!CGo, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
   <1> QED
-    BY <1>D, <1>4 DEF WP!Next, WP!Closers
+    BY <1>D, <1>4 DEF WP!Next, WP!Closers, Closers
 
 LEMMA SReaderLock == ASSUME Inv, NEW r \in Readers, ReaderLock(r), UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
   <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
@@ -1767,10 +1822,16 @@ LEMMA SSpuriousWake == ASSUME Inv, NEW r \in Readers, SpuriousWake(r) PROVE DInv
 LEMMA Step == Inv /\ [Next]_vars => DInv' /\ [WP!Next]_WP!vars
   <1> SUFFICES ASSUME Inv, [Next]_vars PROVE DInv' /\ [WP!Next]_WP!vars
     OBVIOUS
-  <1>1 CASE WriterStep
-    BY <1>1, SWriterWrite, SWriterSigRead, SWriterSigLock DEF WriterStep
-  <1>2 CASE CloserStep
-    BY <1>2, SCloserClose, SCloserSigRead, SCloserSigLock DEF CloserStep
+  <1>1 CASE \E i \in Writers : WriterStep(i)
+    <2> PICK i \in Writers : WriterStep(i)
+      BY <1>1
+    <2> QED
+      BY SWriterWrite, SWriterSigRead, SWriterSigLock DEF WriterStep
+  <1>2 CASE \E k \in Closers : CloserStep(k)
+    <2> PICK k \in Closers : CloserStep(k)
+      BY <1>2
+    <2> QED
+      BY SCloserClose, SCloserSigRead, SCloserSigLock DEF CloserStep
   <1>3 CASE \E r \in Readers : ReaderStep(r)
     <2> PICK r \in Readers : ReaderStep(r)
       BY <1>3
@@ -1794,7 +1855,7 @@ LEMMA InvInit == Init => Inv
 LEMMA InvStep == Inv /\ [Next]_vars => Inv'
   BY Step, CA, WP!StepSafe DEF Inv
 
-\* the refinement, for any set of readers
+\* the refinement, for any set of readers and any numbers of writers and closers
 THEOREM Refinement == Spec => WP!CSpec
   <1>1 Spec => []Inv
     BY InvInit, InvStep, PTL DEF Spec
