@@ -108,12 +108,18 @@ if [ "$controls" = controls ]; then
   "$py" -I - "$WORK/$name.graph" "$corrupt" <<'EOF'
 import re, sys
 s = open(sys.argv[1], encoding="utf-8").read()
-m = re.search(r"\tret\t\d+\t\d+\t(\d+)", s)
+# the first byte a read returned; in a scenario without reads, the count a waitForAtLeast returned
+m = re.search(r"\tret\t\d+\t\d+\t(\d+)", s) or re.search(r"\twfa\t\d+\t(-?\d+)\t", s)
 s = s[:m.start(1)] + str(int(m.group(1)) + 1) + s[m.end(1):]
 open(sys.argv[2], "w", encoding="utf-8", newline="\n").write(s)
 EOF
-  expect "control: a returned byte + 1 in the graph" 1 product "$name-byte" "$corrupt" "$tla"
-  jpf_graph "$name-mutant" "$TRACED_MUTANT"
-  expect "control: the reads do not lower the count" 1 product "$name-mutant" "$WORK/$name-mutant.graph" "$tla"
+  expect "control: a returned byte (or count) + 1 in the graph" 1 product "$name-byte" "$corrupt" "$tla"
+  if [ $((nbyte + nrecord)) -gt 0 ]; then
+    jpf_graph "$name-mutant" "$TRACED_MUTANT"
+    expect "control: the reads do not lower the count" 1 product "$name-mutant" "$WORK/$name-mutant.graph" "$tla"
+  else
+    # the mutation is on the read paths, which a scenario of waitForAtLeast callers only never runs
+    echo "SKIP  control: the reads do not lower the count (no reader in this scenario)"
+  fi
 fi
 exit "$failed"
