@@ -347,6 +347,8 @@ annotated, so everything below is genuinely still open.
       653 edges, product 82,944 states (TLC 30 s), 2,140 subsets: **every word is a run of the
       model** (`graphcheck.py`). The tracer emits only from the start on (the constructor's
       accesses in `main` are no part of a trace, as in A6).
+      Close at any point: automaton 1,451 states and 3,318 edges, product 542,666 states (TLC 34
+      min, dump 409 MB), 10,581 subsets: **every word is a run of the model** as well.
     - [x] Negative controls: a mutated model (the writer never signals), a corrupted automaton (a
       returned byte changed), a mutated class: each must give a rejected sequence. Done for the
       first two (2026-11-14): the mutant rejected after 19 events (with `Spurious = 0`, which could
