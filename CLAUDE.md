@@ -111,7 +111,7 @@ deliberately not part of the synchronous Publish pipeline and never a required c
 
 4. **TLA+ model** (`src/test/tla/`, scheduled/dispatch CI job `tla-model`): `StreamBuffer.tla` models
    the wait/wake-up/close protocol, the writes (one FIFO entry each) and the reads; TLC checks safety
-   and liveness (weak fairness per thread, no lock fairness). `check.sh` compares 45 models (and a mutant) with
+   and liveness (weak fairness per thread, no lock fairness). `check.sh` compares 54 models (and a mutant) with
    their expected outcomes: the current code checks
    clean (`read()` with 1, 2, 3 readers, `read(b, 0, 2)` records, records across entries, a `read()`
    reader next to a record reader, `waitForAtLeast` next to a reader, also next to a 2-byte write),
@@ -119,7 +119,8 @@ deliberately not part of the synchronous Publish pipeline and never a required c
    next to a waiter; #212: a torn record; F279: a count from the middle of a read; before
    `CheckedReturn`: `waitForAtLeast(2)` returning 1 on an open buffer). Constants `Protocol`,
    `ReCheck`, `AtomicRead`, `CountOnce`, `CheckedReturn` select the code version; `ChunkLen`,
-   `ByteReaders`, `WaitCallers` the scenario; `Spurious` is the budget of spurious wake-ups of
+   `ByteReaders`, `WaitCallers`, `NW` writers and `NC` closers (sharing the bytes in commit order)
+   the scenario; `Spurious` is the budget of spurious wake-ups of
    `Condition.await()` (`SpuriousWake(r)`, not under fairness; 0 in the existing configurations,
    2 in the `*Spurious*` models, 3 in the traces; also in `StreamBufferWait.tla` and its proofs). Every other
    step keeps the ghost `spurious` (`StreamBuffer.tla`: in `WriterStep`/`CloserStep`/`ReaderStep`;
@@ -135,7 +136,7 @@ deliberately not part of the synchronous Publish pipeline and never a required c
    (`StreamBufferWaitLive.tla`: with a closer, weak fairness of `Next` ends with all done;
    `StreamBufferWaitLiveProof.tla` with `StreamBufferCountLemmas.tla` and
    `StreamBufferWaitEnabled.tla`), and that `StreamBuffer.tla` refines `StreamBufferWait.tla` for
-   any number of readers (`RefineWaitProof.tla`); the scheduled/dispatch CI job `tlaps-proofs` builds tlapm from a
+   any number of readers, writers and closers (`RefineWaitProof.tla`); the scheduled/dispatch CI job `tlaps-proofs` builds tlapm from a
    pinned commit. Liveness with threads that call forever: `StreamBufferWaitForever.tla` (a ghost
    `Refill` of the call budget) and `StreamBufferForever.tla` (the detailed model, `Restart` when
    done), checked by TLC in `check.sh` (`WaitForever*`, `Forever*`); `StreamBufferWaitForeverLiveProof.tla`
@@ -174,6 +175,9 @@ deliberately not part of the synchronous Publish pipeline and never a required c
    calls of `TraceRecorder`, with assertions enabled; `TraceGenerator` runs the scenarios and writes each trace as a
    TLA+ module, `trace.sh` checks them against `TraceStreamBuffer.tla` (every trace must be
    accepted) and `trace-controls.sh` checks that wrong models and corrupted traces are rejected.
+   Several writers choose their bytes before writing, the model numbers them in commit order, so
+   `TraceScenario.renumber` renumbers a trace by the commits (`COMMIT`, a write's
+   `writeFromArray.putAvail#0`): if `writeFromArray` changes, `COMMIT` changes with it.
    The lines name a method and its n-th access of a kind (`waitForAtLeast.getAvail#0`), so when
    one of those methods changes, `TraceStreamBuffer.tla` (`WaitPc`) and the expected list of
    `TraceRecorderTest` change with it; a new access to shared state needs its rewrite in

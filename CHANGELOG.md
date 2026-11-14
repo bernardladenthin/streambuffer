@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Several writers and closers in the detailed TLA+ model (roadmap A6 follow-up).**
+  `StreamBuffer.tla` has `NW` writers and `NC` closers, each with its own steps and weak fairness;
+  the writers share the bytes in commit order, a writer that finds none left stops. Every earlier
+  model has one of each and checks as before (the same outcome, and the same state count where it
+  checks clean). New models of the current code with two writers, two closers or both, for
+  `read()`, records, `waitForAtLeast` and threads that call forever, all clean, and two probes
+  that show the writers and the closers interleave; TLC checks the refinements with two of each.
+  `RefineWaitProof.tla` proves the refinement of `StreamBufferWait.tla` for any numbers of
+  readers, writers and closers (2,826 obligations). Trace validation records runs with two or three
+  writers and two closers: `TraceScenario` renumbers the bytes of a run by the order the writes
+  commit, as the model numbers them (51 traces in CI, all accepted, the controls reject as before).
 - **Every interleaving of the code is a run of the model, for small scenarios (roadmap A18).**
   Java PathFinder explores the A6-instrumented class with state matching (a tracer for JPF that
   logs each access in an atomic block behind one scheduling point, and keeps only state the path
