@@ -648,12 +648,12 @@ after" means the closer closes once the writer is done, "any" means at any point
 | `S1N`: the same, close any | 617,544 | 1,451 | 542,666 | yes | 3 of 3 rejected |
 | `S4A`: one 2-byte write, a record reader of 2, close after | 102,132 | 373 | 82,944 | yes | 3 of 3 rejected |
 | `S4N`: the same, close any | 601,656 | 1,451 | 542,666 | yes | 2 of 2 rejected |
+| `S7A`: one 2-byte write, a `waitForAtLeast(2)` caller, close after | 41,211 | 188 | 10,813 | yes | 2 of 2 rejected (no class control: nothing reads) |
 | `S7N`: two 1-byte writes, a `waitForAtLeast(2)` caller, close any | 1,036,384 | 1,555 | 251,529 | yes | 1 of 1 rejected |
 
 `S4N` ran before the class control mutated both read paths, so its class control missed the
 record reader's path; on `S4A` the fixed control is rejected. `S7N` ran before the byte control
-could corrupt a count, a scenario without reads; that variant has not run on a `waitForAtLeast`
-scenario yet.
+could corrupt a count (it has no reads); on `S7A` that variant is rejected.
 
 **Out of reach so far:**
 - Two `read()` readers: JPF did not finish in 4 h.
