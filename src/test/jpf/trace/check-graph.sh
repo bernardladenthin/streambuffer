@@ -21,7 +21,7 @@
 #   for TLC), TLA2TOOLS (the jar), TRACED (the instrumented class files), TRACED_MUTANT (the same
 #   with TracedClassDump's no-decrement, for the controls), LIB (the annotation jars:
 #   checker-qual.jar, jspecify.jar, error-prone-annotations.jar), WORK (a scratch directory),
-#   JPF_HEAP (default 6g).
+#   JPF_HEAP (default 6g), TLC_WORKERS (default auto).
 set -euo pipefail
 name="$1" bytes="$2" chunk="$3" readlen="$4" nbyte="$5" nrecord="$6" nwait="$7" close="$8"
 controls="${9:-}"
@@ -72,7 +72,7 @@ product() {  # product <label> <graph> <model dir> [sed for the cfg]: TLC's dump
   if [ -n "${4:-}" ]; then sed -i "$4" "$d/Graph_$name.cfg"; fi
   local s
   s=$(date +%s)
-  (cd "$d" && "$JAVA_TLC" -XX:+UseParallelGC -cp "$TLA2TOOLS" tlc2.TLC -workers auto \
+  (cd "$d" && "$JAVA_TLC" -XX:+UseParallelGC -cp "$TLA2TOOLS" tlc2.TLC -workers "${TLC_WORKERS:-auto}" \
      -dump dot,actionlabels product.dot -config "Graph_$name.cfg" "Graph_$name.tla" > tlc.log 2>&1) || true
   echo "  TLC $1: $(grep -oE '[0-9]+ distinct states found' "$d/tlc.log" | tail -1), $(( $(date +%s) - s )) s"
   local e=0
