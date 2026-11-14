@@ -78,9 +78,9 @@ annotated, so everything below is genuinely still open.
     TLC's worker order). New, clean with liveness: `Writers2Condition2`, `Closers2Condition2`,
     `Writers2Records2`, `Writers2Mixed2` (two writers, two closers), `Writers2WaitChecked2`,
     `Writers2WaitAndRead2`, `ForeverWriters2Mixed2`; probes `Writers2Reached2`,
-    `Closers2Reached2` (two writers, two closers signal at once) violated. No older code gets a new
-    defect with two writers that one writer does not show already: the defects of F149 and F278
-    are in the one-writer models.
+    `Closers2Reached2` (two writers, two closers signal at once) violated. The older code's models
+    keep one writer and one closer (not run with two: more writers only add behaviours, so their
+    defects stay reachable).
   - [ ] `StreamBufferForever.tla`, `TraceStreamBuffer.tla` (`StepOf` and the observations per
     writer and closer; the trace's thread names `w1`.., `c1`.. map to the model's ids) and A6:
     `TraceScenario` and `TraceGenerator` with several writers and closers; `trace.sh` and its
