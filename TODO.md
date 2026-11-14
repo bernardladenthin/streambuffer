@@ -339,13 +339,19 @@ annotated, so everything below is genuinely still open.
       automaton, the set of model states consistent with it; an empty set is a counterexample
       (the sequence). Exact: no false alarms, no path left out; the acceptance relation is the one
       A6 validated.
-    - [ ] The JPF tracer gives each event its full A6 line (the ordinal of a harness event, which
+    - [x] The JPF tracer gives each event its full A6 line (the ordinal of a harness event, which
       depends on the path, counted per thread); `graphmin.py` writes the minimal automaton as a TLA+
       module.
-    - [ ] `TraceGraph.tla` (the product), TLC with a state dump, and the subset check; a positive
-      run on both small scenarios.
+    - [x] `TraceGraph.tla` (the product), TLC with a state dump, and the subset check; a positive
+      run on both small scenarios. Close after the writes (2026-11-14): automaton 373 states and
+      653 edges, product 82,944 states (TLC 30 s), 2,140 subsets: **every word is a run of the
+      model** (`graphcheck.py`). The tracer emits only from the start on (the constructor's
+      accesses in `main` are no part of a trace, as in A6).
     - [ ] Negative controls: a mutated model (the writer never signals), a corrupted automaton (a
-      returned byte changed), a mutated class: each must give a rejected sequence.
+      returned byte changed), a mutated class: each must give a rejected sequence. Done for the
+      first two (2026-11-14): the mutant rejected after 19 events (with `Spurious = 0`, which could
+      stand in for the signal), the corrupted byte after 14; the current model with `Spurious = 0`
+      accepted. A mutated class is open.
     - [ ] Scenarios: the smallest in CI (minutes), the larger ones on a rented machine; README,
       CHANGELOG, CLAUDE.md, `VERIFICATION-ASSUMPTIONS.md` (a row for A18).
     - [ ] If the count fits: an importer writes each distinct trace as an A6 module

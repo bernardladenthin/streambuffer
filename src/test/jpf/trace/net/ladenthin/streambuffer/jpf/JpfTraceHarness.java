@@ -111,6 +111,8 @@ public final class JpfTraceHarness {
 
         if (record) {
             TraceRecorder.start(0, 0);
+        } else {
+            TraceRecorder.startGraph();
         }
         for (Thread t : threads) {
             t.start();
