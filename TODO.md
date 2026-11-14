@@ -297,6 +297,14 @@ annotated, so everything below is genuinely still open.
       `WriteClose.jpf`, take 196,000 states and 1.5 minutes). So "every interleaving" is out of
       reach in this design, even for the smallest A6 scenario; the owner decides how to go on
       (options in the next steps).
+    - [x] The owner's choice: a tracer for JPF without a lock of its own (an atomic block per
+      access, one `Thread.yield()` before it as the access's scheduling point,
+      `src/test/jpf/trace/.../TraceRecorder.java`). Result (2026-11-14): the state graph is small
+      now and JPF finishes it, no errors: with the close after the writes 104,712 states in 41 s,
+      with the close at any point 617,544 states in 4:21 min. Enumerating the traces still does not
+      finish: 61,220 printed in 15 minutes, 10,718 distinct (the paths of a small graph are still
+      exponentially many). So per-trace checking stays bounded; a complete check has to work on
+      the graph.
     - [ ] If the count fits: an importer writes each distinct trace as an A6 module
       (`TraceGenerator.write`), `trace.sh` checks all of them, `trace-controls.sh` still rejects;
       then the next larger scenarios, as far as the time-box allows.

@@ -21,7 +21,8 @@ import net.ladenthin.streambuffer.trace.TraceRecorder;
  *
  * <p>Arguments: bytes, chunk length, read length, the numbers of {@code read()} readers, of record
  * readers and of {@code waitForAtLeast} callers, and optionally {@code false} to run without a
- * recording (then JPF can match states, which gives the size of the state graph).
+ * recording (then JPF can match states, which gives the size of the state graph), and {@code after}
+ * to close only once the writer is done.
  */
 public final class JpfTraceHarness {
 
@@ -36,6 +37,8 @@ public final class JpfTraceHarness {
         final int waitCallers = Integer.parseInt(args[5]);
         // without a recording the events are not kept, so JPF can match states (the graph's size)
         final boolean record = args.length < 7 || Boolean.parseBoolean(args[6]);
+        // "after": the closer closes once the writer is done (as in StreamBuffer.jpf), else at any point
+        final boolean closeAfterWrites = args.length >= 8 && args[7].equals("after");
 
         final StreamBuffer sb = new StreamBuffer();
         sb.setMaxBufferElements(bytes + 10);
@@ -61,10 +64,14 @@ public final class JpfTraceHarness {
                 next += n;
             }
         }, "w"));
+        final Thread writer = threads.get(0);
         threads.add(new Thread(() -> {
             try {
+                if (closeAfterWrites) {
+                    writer.join();
+                }
                 sb.close();
-            } catch (IOException e) {
+            } catch (IOException | InterruptedException e) {
                 throw new AssertionError("close must not fail", e);
             }
             TraceRecorder.harness("cret", 0, Collections.<Integer>emptyList());
