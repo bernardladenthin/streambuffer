@@ -81,10 +81,14 @@ annotated, so everything below is genuinely still open.
     `Closers2Reached2` (two writers, two closers signal at once) violated. The older code's models
     keep one writer and one closer (not run with two: more writers only add behaviours, so their
     defects stay reachable).
-  - [ ] `StreamBufferForever.tla`, `TraceStreamBuffer.tla` (`StepOf` and the observations per
+  - [x] (4cbb3ad, 537f680) `StreamBufferForever.tla`, `TraceStreamBuffer.tla` (`StepOf` and the observations per
     writer and closer; the trace's thread names `w1`.., `c1`.. map to the model's ids) and A6:
     `TraceScenario` and `TraceGenerator` with several writers and closers; `trace.sh` and its
     controls on the new traces.
+    Result: six scenarios with two or three writers and two closers; the code's writers choose
+    their bytes before writing, the model numbers them in commit order, so `TraceScenario`
+    renumbers a trace's bytes by the commits (`TraceScenarioTest`); a `wret` of several writers is
+    a lower bound of `Len(written)`. trace.sh 51/51 accepted, all controls pass.
   - [ ] (TLC part 4f37431: `RefineWaitWriters2Mixed2`, `RefineWaitWriters2WaitChecked2`,
     `RefineRecordsWriters2Records2` hold) Refinements: `RefineWait.tla` and `RefineRecords.tla` map `wpc[i]` to the abstraction's
     writer i (no `1..1` any more); `RefineCounters.tla` stays for one writer (its abstraction has
