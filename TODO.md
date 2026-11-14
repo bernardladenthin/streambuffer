@@ -278,7 +278,7 @@ annotated, so everything below is genuinely still open.
     time-box, and keep the bounded result if the larger ones do not fit.
 
     Plan (branch `feat/a18-jpf-traces`, started 2026-11-14), with the reasons:
-    - [ ] Spike first (the gate of the package): JPF explores the instrumented class of A6 (the
+    - [x] Spike first (the gate of the package): JPF explores the instrumented class of A6 (the
       class files `TracingClassLoader` writes, dumped to a directory, with `TraceRecorder`
       compiled at `--release 8`) in a harness of the A6 format (threads `w`, `c`, `r1`...), and
       every path that ends prints its events. Measure the number of paths and traces for the
@@ -287,6 +287,16 @@ annotated, so everything below is genuinely still open.
       of the logged accesses; for three threads of about ten accesses each that can be up to
       ~10^10 orders, fewer through the locks. If that is too many, the per-trace check of
       `trace.sh` does not scale, and the package needs another design (below).
+      **Result (2026-11-14, local, Docker, jpf-core `e61e396`):** the pipeline works
+      (`TracedClassDump`, `JpfTraceHarness` in `src/test/jpf/trace/`, `JpfTraceImport`). For the
+      smallest scenario (one 1-byte write, a closer of its own, one `read()` reader) JPF printed
+      18,630 traces in the 20-minute time-box without finishing, 2,870 of them distinct; a sample of
+      300 distinct ones: all accepted by `trace.sh` (1.7 s each). Without a recording (so JPF can
+      match states) it did not finish in 30 minutes either: the tracer's global lock adds a
+      scheduling point before every logged access (the same three threads on the plain class,
+      `WriteClose.jpf`, take 196,000 states and 1.5 minutes). So "every interleaving" is out of
+      reach in this design, even for the smallest A6 scenario; the owner decides how to go on
+      (options in the next steps).
     - [ ] If the count fits: an importer writes each distinct trace as an A6 module
       (`TraceGenerator.write`), `trace.sh` checks all of them, `trace-controls.sh` still rejects;
       then the next larger scenarios, as far as the time-box allows.
