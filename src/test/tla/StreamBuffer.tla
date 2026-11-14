@@ -47,7 +47,9 @@ CONSTANTS
     Readers,     \* the reading and waiting threads (model values)
     ByteReaders, \* the readers calling read(); the others read(b, 0, ReadLen)
     WaitCallers, \* the threads calling waitForAtLeast(ReadLen) once, not reading
-    Bytes,       \* how many bytes the writer attempts to write
+    NW,          \* the writers: Writers == 1..NW
+    NC,          \* the closers: Closers == 1..NC
+    Bytes,       \* how many bytes the writers attempt to write, together
     Spurious,    \* how many spurious wake-ups of Condition.await() a run may have (any number)
     ChunkLen,    \* the bytes per write (one FIFO entry each)
     ReadLen,     \* the bytes one read(b, 0, len) asks for, and waitForAtLeast waits for
@@ -65,12 +67,18 @@ ASSUME SBAssump ==
        /\ ReCheck \in BOOLEAN /\ AtomicRead \in BOOLEAN /\ CountOnce \in BOOLEAN
        /\ CheckedReturn \in BOOLEAN /\ Spurious \in Nat
        /\ Bytes \in Nat /\ ChunkLen \in Nat \ {0} /\ ReadLen \in Nat \ {0}
+       /\ NW \in Nat \ {0} /\ NC \in Nat \ {0}
        /\ Readers # {} /\ ByteReaders \subseteq Readers /\ WaitCallers \subseteq Readers
        /\ ByteReaders \cap WaitCallers = {}
        \* the code without the re-check is modeled for read() only
        /\ ReCheck \/ \A r \in Readers \ WaitCallers : LenOf(r) = 1
 
 None == "none"
+
+(* The writers and the closers, numbered as in the abstractions (StreamBufferWait.tla), so a  *)
+(* refinement maps writer i to writer i.                                                     *)
+Writers == 1..NW
+Closers == 1..NC
 
 VARIABLES
     buf,        \* the FIFO entries (each a nonempty sequence of bytes), in order
@@ -81,8 +89,8 @@ VARIABLES
     toff,       \* ghost: Len(taken) % ReadLen, kept linear (the A13 refinement proof)
     closed,     \* streamClosed
     nextByte,   \* the value of the writer's next byte (1, 2, ...)
-    wpc,        \* the writer's program counter
-    cpc,        \* the closer's program counter
+    wpc,        \* each writer's program counter
+    cpc,        \* each closer's program counter
     rpc,        \* rpc[r]: thread r's program counter
     want,       \* want[r]: the bytes r's current wait waits for
     cur,        \* cur[r]: the bytes of r's current read call committed so far
@@ -125,8 +133,8 @@ TypeOK ==
     /\ written \in Seq(1..Bytes) /\ taken \in Seq(1..Bytes)
     /\ toff = Len(taken) % ReadLen
     /\ avail \in 0..Bytes /\ closed \in BOOLEAN /\ nextByte \in 1..(Bytes + 1)
-    /\ wpc \in {"write", "sigread", "siglock", "done", "failed"}
-    /\ cpc \in {"close", "sigread", "siglock", "done"}
+    /\ wpc \in [Writers -> {"write", "sigread", "siglock", "done", "failed"}]
+    /\ cpc \in [Closers -> {"close", "sigread", "siglock", "done"}]
     /\ rpc \in [Readers -> ReaderStates]
     /\ want \in [Readers -> 0..ReadLen] /\ left \in [Readers -> 0..ReadLen]
     /\ cur \in [Readers -> Seq(1..Bytes)] /\ hold \in [Readers -> Seq(1..Bytes)]
@@ -141,7 +149,7 @@ TypeOK ==
 Init ==
     /\ buf = <<>> /\ pos = 0 /\ avail = 0 /\ written = <<>> /\ taken = <<>> /\ toff = 0
     /\ closed = FALSE /\ nextByte = 1
-    /\ wpc = "write" /\ cpc = "close"
+    /\ wpc = [i \in Writers |-> "write"] /\ cpc = [c \in Closers |-> "close"]
     /\ rpc = [r \in Readers |-> "start"]
     /\ want = [r \in Readers |-> 0] /\ left = [r \in Readers |-> 0]
     /\ cur = [r \in Readers |-> <<>>] /\ hold = [r \in Readers |-> <<>>]
@@ -166,71 +174,82 @@ WakeAll ==
     /\ parked' = {}
 
 (***************************************************************************)
-(* The writer: write(b, 0, n) of the next ChunkLen bytes as one entry      *)
-(* under bufferLock, failing once closed (F149), then the signal.          *)
+(* The writers: each write(b, 0, n) of the next ChunkLen bytes as one      *)
+(* entry under bufferLock, failing once closed (F149), then the signal.    *)
+(* The writers share the bytes 1..Bytes: each write takes the next ones,   *)
+(* so written is the order of the commits; a writer that finds none left   *)
+(* stops (as in the abstractions).                                         *)
 (***************************************************************************)
 WriterDone == IF nextByte > Bytes THEN "done" ELSE "write"
 
 Chunk == [i \in 1..Min(ChunkLen, Bytes - nextByte + 1) |-> nextByte + i - 1]
 
-WriterWrite ==
-    /\ wpc = "write" /\ bl = None
-    /\ IF closed
-          THEN /\ wpc' = "failed"
-               /\ UNCHANGED <<buf, avail, written, nextByte>>
-          ELSE /\ buf' = Append(buf, Chunk)
-               /\ written' = written \o Chunk
-               /\ avail' = avail + Len(Chunk)
-               /\ nextByte' = nextByte + Len(Chunk)
-               /\ wpc' = "sigread"
+WGo(i, s) == wpc' = [wpc EXCEPT ![i] = s]
+
+WriterWrite(i) ==
+    /\ wpc[i] = "write" /\ bl = None
+    /\ CASE closed ->
+              /\ WGo(i, "failed")
+              /\ UNCHANGED <<buf, avail, written, nextByte>>
+         [] nextByte > Bytes ->
+              /\ WGo(i, "done")
+              /\ UNCHANGED <<buf, avail, written, nextByte>>
+         [] OTHER ->
+              /\ buf' = Append(buf, Chunk)
+              /\ written' = written \o Chunk
+              /\ avail' = avail + Len(Chunk)
+              /\ nextByte' = nextByte + Len(Chunk)
+              /\ WGo(i, "sigread")
     /\ UNCHANGED <<pos, taken, toff, closed, cpc, ReaderVars, eofAt, Sync>>
 
-WriterSigRead ==
-    /\ wpc = "sigread"
+WriterSigRead(i) ==
+    /\ wpc[i] = "sigread"
     /\ IF Protocol = "semaphore"
           THEN /\ permits' = 1
-               /\ wpc' = WriterDone
-          ELSE /\ wpc' = IF waiters # 0 THEN "siglock" ELSE WriterDone
+               /\ WGo(i, WriterDone)
+          ELSE /\ WGo(i, IF waiters # 0 THEN "siglock" ELSE WriterDone)
                /\ UNCHANGED permits
     /\ UNCHANGED <<buf, pos, avail, written, taken, toff, closed, nextByte, cpc, ReaderVars, eofAt,
                    waiters, parked, wl, bl>>
 
-WriterSigLock ==
-    /\ wpc = "siglock"
+WriterSigLock(i) ==
+    /\ wpc[i] = "siglock"
     /\ WakeAll
-    /\ wpc' = WriterDone
+    /\ WGo(i, WriterDone)
     /\ UNCHANGED <<buf, pos, avail, written, taken, toff, closed, nextByte, cpc, want, cur, hold,
                    left, reads, wres, wclosed, eofAt, permits, waiters, wl, bl>>
 
-WriterStep == (WriterWrite \/ WriterSigRead \/ WriterSigLock) /\ UNCHANGED spurious
+WriterStep(i) == (WriterWrite(i) \/ WriterSigRead(i) \/ WriterSigLock(i)) /\ UNCHANGED spurious
 
 (***************************************************************************)
-(* The closer: close() sets streamClosed under bufferLock, then signals.  *)
+(* The closers: close() sets streamClosed under bufferLock, then signals.  *)
 (***************************************************************************)
-CloserClose ==
-    /\ cpc = "close" /\ bl = None
+CGo(c, s) == cpc' = [cpc EXCEPT ![c] = s]
+
+CloserClose(c) ==
+    /\ cpc[c] = "close" /\ bl = None
     /\ closed' = TRUE
-    /\ cpc' = "sigread"
+    /\ CGo(c, "sigread")
     /\ UNCHANGED <<buf, pos, avail, written, taken, toff, nextByte, wpc, ReaderVars, eofAt, Sync>>
 
-CloserSigRead ==
-    /\ cpc = "sigread"
+CloserSigRead(c) ==
+    /\ cpc[c] = "sigread"
     /\ IF Protocol = "semaphore"
           THEN /\ permits' = 1
-               /\ cpc' = "done"
-          ELSE /\ cpc' = IF waiters # 0 THEN "siglock" ELSE "done"
+               /\ CGo(c, "done")
+          ELSE /\ CGo(c, IF waiters # 0 THEN "siglock" ELSE "done")
                /\ UNCHANGED permits
     /\ UNCHANGED <<buf, pos, avail, written, taken, toff, closed, nextByte, wpc, ReaderVars, eofAt,
                    waiters, parked, wl, bl>>
 
-CloserSigLock ==
-    /\ cpc = "siglock"
+CloserSigLock(c) ==
+    /\ cpc[c] = "siglock"
     /\ WakeAll
-    /\ cpc' = "done"
+    /\ CGo(c, "done")
     /\ UNCHANGED <<buf, pos, avail, written, taken, toff, closed, nextByte, wpc, want, cur, hold,
                    left, reads, wres, wclosed, eofAt, permits, waiters, wl, bl>>
 
-CloserStep == (CloserClose \/ CloserSigRead \/ CloserSigLock) /\ UNCHANGED spurious
+CloserStep(c) == (CloserClose(c) \/ CloserSigRead(c) \/ CloserSigLock(c)) /\ UNCHANGED spurious
 
 (***************************************************************************)
 (* A reader. A read call waits (waitForAtLeast) for want bytes, takes      *)
@@ -437,7 +456,8 @@ ReaderStep(r) ==
     /\ UNCHANGED spurious
 
 Terminated ==
-    /\ wpc \in {"done", "failed"} /\ cpc = "done"
+    /\ \A i \in Writers : wpc[i] \in {"done", "failed"}
+    /\ \A c \in Closers : cpc[c] = "done"
     /\ \A r \in Readers : rpc[r] = "done"
 
 (* A spurious wake-up: Condition.await() may return without a signal      *)
@@ -456,7 +476,9 @@ SpuriousWake(r) ==
 
 \* the steps of the protocol (each keeps the budget)
 ProtocolNext ==
-    \/ WriterStep \/ CloserStep \/ \E r \in Readers : ReaderStep(r)
+    \/ \E i \in Writers : WriterStep(i)
+    \/ \E c \in Closers : CloserStep(c)
+    \/ \E r \in Readers : ReaderStep(r)
     \/ (Terminated /\ UNCHANGED vars)
 
 Next ==
@@ -470,7 +492,8 @@ Next ==
 (* readers had strong fairness (fair locks); every model of the current    *)
 (* code checks with weak fairness too.                                     *)
 Fairness ==
-    /\ WF_vars(WriterStep) /\ WF_vars(CloserStep)
+    /\ \A i \in Writers : WF_vars(WriterStep(i))
+    /\ \A c \in Closers : WF_vars(CloserStep(c))
     /\ \A r \in Readers : WF_vars(ReaderStep(r))
 
 Spec == Init /\ [][Next]_vars /\ Fairness
