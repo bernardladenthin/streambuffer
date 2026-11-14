@@ -276,6 +276,27 @@ annotated, so everything below is genuinely still open.
     every bytecode execution is accepted and the A6 negative controls still reject. Risk: JPF's
     state counts (`TwoReaders.jpf` 2.3 million states) — start with the smallest scenarios,
     time-box, and keep the bounded result if the larger ones do not fit.
+
+    Plan (branch `feat/a18-jpf-traces`, started 2026-11-14), with the reasons:
+    - [ ] Spike first (the gate of the package): JPF explores the instrumented class of A6 (the
+      class files `TracingClassLoader` writes, dumped to a directory, with `TraceRecorder`
+      compiled at `--release 8`) in a harness of the A6 format (threads `w`, `c`, `r1`...), and
+      every path that ends prints its events. Measure the number of paths and traces for the
+      smallest scenario (one 1-byte write, a close, one `read()` reader), time-boxed. Why a gate:
+      with the trace in the program's state JPF can match no states, so it enumerates every order
+      of the logged accesses; for three threads of about ten accesses each that can be up to
+      ~10^10 orders, fewer through the locks. If that is too many, the per-trace check of
+      `trace.sh` does not scale, and the package needs another design (below).
+    - [ ] If the count fits: an importer writes each distinct trace as an A6 module
+      (`TraceGenerator.write`), `trace.sh` checks all of them, `trace-controls.sh` still rejects;
+      then the next larger scenarios, as far as the time-box allows.
+    - [ ] If it does not fit: the alternative is to check JPF's state graph (with state matching,
+      each edge labelled with its logged access) against the model as a whole, a simulation
+      (every edge of the graph, some placement of the model's steps), not trace by trace; that
+      needs a subset construction over the model's states and is a larger package. Then the owner
+      decides whether it is worth it; the spike's numbers go into the table.
+    - [ ] CI (if it fits): in the `jpf-interleavings` job (JDK 11, jpf-core already built), plus
+      TLC; README, CHANGELOG, CLAUDE.md, `VERIFICATION-ASSUMPTIONS.md` (a row for A18).
   - **A19 — Liveness of the detailed model for any number of readers (optional, weeks).** TLAPS,
     on the pattern of `StreamBufferWaitForeverLiveProof.tla` (a measure per thread, fairness by
     role), for `StreamBuffer.tla` directly, or a refinement that carries fairness. Done when the
