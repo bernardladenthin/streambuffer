@@ -22,7 +22,7 @@ annotated, so everything below is genuinely still open.
   | 3 | `@VisibleForTesting` decision (15 package-private methods; below) | ½ day | ~95 % | a few days | only the decision (an own marker annotation, or the convention does not apply here), then act |
   | 4 | Naming review (below, `code-quality-todos.md`) | ~1 day | ~90 % | ~1 week | mechanical; renaming private methods is cheap, a public API rename is a breaking change for the CHANGELOG |
   | 5 | A14 follow-up: a trim threshold that grows with the backlog | 1–2 days | ~70 % | ~1 week | with a backlog of 179 MiB the default threshold costs 10-20x against no trim (A14, below); it changes how many entries the buffer keeps |
-  | 6 | A6: several writers and closers in the detailed model | 1–2 weeks | ~70 % | 2–3 weeks | `StreamBuffer.tla` has one of each; `RefineWaitProof.tla` (2,729 obligations) must follow; the trace scenarios are easy afterwards |
+  | 6 | A6: several writers and closers in the detailed model (planned, below; after A18) | 1–2 weeks | ~70 % | 2–3 weeks | `StreamBuffer.tla` has one of each; `RefineWaitProof.tla` (2,729 obligations) must follow; the trace scenarios are easy afterwards |
   | 7 | A6: trim in the model | 1–2 weeks | ~60 % | 2–4 weeks | the merge of the entries touches the FIFO invariant and the refinement; the geometric merge is hard to state compactly |
   | 8 | **A19** Liveness of the detailed model for any number of readers | 2–4 weeks | medium, ~50 % | 3–6 weeks | the pattern of `StreamBufferWaitForeverLiveProof.tla` carries over, but the detailed model is much larger (the FIFO as a sequence, more stages, the copy per entry), and the assumption of the row below stays |
   | 9 | Prove that fairness per thread gives the fairness by role (`FairRole`, A13 follow-up; today argued and checked by TLC in bounded models) | 1–2 weeks | low, ~30 % | 2–3 weeks | tlapm cannot swap a quantifier over threads with a temporal operator (`\A q : P(q) ~> Q` to `(\E q : P(q)) ~> Q`), which is where it failed; another prover (e.g. Isabelle with a TLA embedding) would be the way out |
@@ -53,6 +53,37 @@ annotated, so everything below is genuinely still open.
 
   **Standing rules:** jqwik stays at 1.9.3 (below); the null-safety refinement (below) as new API
   surfaces appear.
+
+- **A6: several writers and closers in the detailed model (planned 2026-11-14, after A18).** The
+  detailed model `StreamBuffer.tla` has one writer and one closer; the abstractions have several
+  (`StreamBufferWait.tla`: `Writers == 1..NW`, `Closers == 1..NC`). Done when TLC checks the
+  current code with two writers and with two closers (safety and liveness), the older code still
+  fails with its defects, `RefineWaitProof.tla` proves the refinement for any numbers of readers,
+  writers and closers, and A6 records and accepts runs with two writers and two closers. Its own
+  branch from `main` once A18 is merged: both change `StreamBuffer.tla` and `TraceStreamBuffer.tla`.
+
+  Plan, with the reasons:
+  - [ ] `StreamBuffer.tla`: constants `NW`, `NC` with `Writers == 1..NW`, `Closers == 1..NC` (the
+    abstraction's form, so the refinement maps writer i to writer i and `RefineWaitProof.tla` needs
+    no bijection between two sets); `wpc`, `cpc` functions; `WriterStep(i)`, `CloserStep(c)`, weak
+    fairness for each. The writers share `nextByte`: together they write the bytes `1..Bytes`, a
+    chunk per write, in commit order (as the abstraction's shared `w`), so `Fifo` and the
+    invariants keep their meaning. A writer is done once all bytes are written by anyone.
+  - [ ] Every existing configuration with `NW = 1`, `NC = 1`: the state counts must stay as they
+    are (a check that the change is a pure generalization); new models: two writers, two closers,
+    both, for `read()`, records and `waitForAtLeast`; the older code's models with two writers
+    where that shows something new (e.g. F149, a write racing a close, with two writers).
+  - [ ] `StreamBufferForever.tla`, `TraceStreamBuffer.tla` (`StepOf` and the observations per
+    writer and closer; the trace's thread names `w1`.., `c1`.. map to the model's ids) and A6:
+    `TraceScenario` and `TraceGenerator` with several writers and closers; `trace.sh` and its
+    controls on the new traces.
+  - [ ] Refinements: `RefineWait.tla` and `RefineRecords.tla` map `wpc[i]` to the abstraction's
+    writer i (no `1..1` any more); `RefineCounters.tla` stays for one writer (its abstraction has
+    one; it assumes `NW = 1`). `RefineWaitProof.tla`: the writer and closer lemmas per i and c, the
+    detailed invariant for several writers; tlapm on all modules (proof.sh) on a rented machine.
+  - [ ] A18 with two writers or two closers in the smallest scenario, if it fits (rented machine).
+  - [ ] README, CHANGELOG, CLAUDE.md, `VERIFICATION-ASSUMPTIONS.md` (the rows that say "one writer
+    and one closer"), the table above.
 
 - **Spurious wake-ups — open limits** (model and proofs since #231, `src/test/tla/README.md`,
   "Spurious wake-ups"): `FairRole` is TLC-checked only without spurious wake-ups
