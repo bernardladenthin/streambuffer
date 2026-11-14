@@ -43,6 +43,9 @@ public final class TraceRecorder {
 
     private static boolean recording;
 
+    /** Whether events go to the graph export: from {@link #start} or {@link #startGraph} on. */
+    private static boolean emitting;
+
     private TraceRecorder() {}
 
     /**
@@ -55,6 +58,14 @@ public final class TraceRecorder {
         Verify.beginAtomic();
         EVENTS.clear();
         recording = true;
+        emitting = true;
+        Verify.endAtomic();
+    }
+
+    /** Starts the graph export without a recording: events are reported, not kept, so JPF can match states. */
+    public static void startGraph() {
+        Verify.beginAtomic();
+        emitting = true;
         Verify.endAtomic();
     }
 
@@ -73,22 +84,57 @@ public final class TraceRecorder {
 
     private static void add(String site, long value, List<Integer> bytes) {
         final String thread = Thread.currentThread().getName();
-        final StringBuilder line = new StringBuilder(thread).append('	').append(site).append('	').append(value)
-                .append('	');
-        for (int i = 0; i < bytes.size(); i++) {
-            line.append(i == 0 ? "" : ",").append(bytes.get(i));
+        if (emitting) {
+            emit(line(thread, site, value, bytes));
         }
-        emit(line.toString());
         if (recording) {
             EVENTS.add(new Event(thread, site, value, bytes));
         }
+    }
+
+    /** The calls of each thread that returned data so far, for the ordinal of a harness event. */
+    private static final java.util.Map<String, Integer> CALLS = new java.util.HashMap<>();
+
+    /**
+     * The event as A6 writes it ({@code TraceGenerator.line}): thread, method, access, ordinal,
+     * value and bytes, separated by tabs; a site {@code method.access#n} gives the three fields, a
+     * harness event the empty method and the number of the thread's calls that returned data.
+     */
+    private static String line(String thread, String site, long value, List<Integer> bytes) {
+        final String m;
+        final String a;
+        final int n;
+        final int hash = site.indexOf('#');
+        if (hash >= 0) {
+            final int dot = site.lastIndexOf('.', hash);
+            m = site.substring(0, dot);
+            a = site.substring(dot + 1, hash);
+            n = Integer.parseInt(site.substring(hash + 1));
+        } else {
+            m = "";
+            a = site;
+            final Integer before = CALLS.get(thread);
+            final int calls = before == null ? 0 : before;
+            if (a.equals("ret")) {
+                CALLS.put(thread, calls + 1);
+                n = calls + 1;
+            } else {
+                n = calls;
+            }
+        }
+        final StringBuilder b = new StringBuilder(thread).append('	').append(m).append('	').append(a)
+                .append('	').append(n).append('	').append(value).append('	');
+        for (int i = 0; i < bytes.size(); i++) {
+            b.append(i == 0 ? "" : ",").append(bytes.get(i));
+        }
+        return b.toString();
     }
 
     /**
      * Reports one event to the graph export of JPF ({@code GraphExport}, a listener that labels the
      * transition with it); empty, so it leaves no state behind and JPF can still match states.
      *
-     * @param line the event: thread, site, value and bytes, separated by tabs
+     * @param line the event as A6 writes it: thread, method, access, ordinal, value, bytes (tabs)
      */
     public static void emit(String line) {
         // the listener reads the argument on entry
