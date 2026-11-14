@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Every interleaving of the code is a run of the model, for small scenarios (roadmap A18).**
+  Java PathFinder explores the A6-instrumented class with state matching (a tracer for JPF that
+  logs each access in an atomic block behind one scheduling point, so it adds no state); a
+  listener writes the state graph with the logged events at its edges; `graphmin.py` reduces it
+  to the minimal automaton of the event sequences (104,712 JPF states to 373 in the smallest
+  scenario); `TraceGraph.tla`, the product with A6's trace acceptance (`TraceStreamBuffer.tla` as
+  it is), and `graphcheck.py`, a subset construction over TLC's dump of it, show that every word
+  is a run of the model, exactly (no false alarm from the model's choices). `check-graph.sh` runs
+  the chain per scenario with three negative controls: a model whose writer never signals, a
+  corrupted byte or count, a class whose reads do not lower the count. Accepted: one write with a
+  `read()` reader, with a record reader, two writes with a `waitForAtLeast(2)` caller, each with
+  the close after the writes or at any point (README of `src/test/tla`). Two readers, and automata
+  above about 2,500 states, are out of reach so far. CI: the `jpf-interleavings` job runs the
+  smallest scenario with its controls.
 - **Verification assumptions and run manifests (roadmap A16).** `VERIFICATION-ASSUMPTIONS.md`
   lists every verification result as a row (`V1` to `V18`: property, tool, scope, assumptions, CI
   job), the trusted base, the caller contracts and what no result covers; the READMEs name the row
