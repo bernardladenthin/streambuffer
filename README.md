@@ -449,7 +449,7 @@ mvn test-compile org.pitest:pitest-maven:mutationCoverage
 
 ## Testing
 
-Tests are in `StreamBufferTest` using JUnit 6 (JUnit Jupiter); property-based tests live in `StreamBufferProperties` and use jqwik 1.9.3 (pinned — see the contributors note at the end of this section). Most behavioral tests are parameterized across three write strategies:
+Tests are in `StreamBufferTest` using JUnit 6 (JUnit Jupiter); property-based tests live in `StreamBufferProperties` and use jqwik 1.9.3 [V18] (pinned — see the contributors note at the end of this section). Most behavioral tests are parameterized across three write strategies:
 
 | `WriteMethod` | Description |
 |---------------|-------------|
@@ -470,11 +470,11 @@ Test coverage includes:
 - Thread interruption during blocked reads (`InterruptedIOException` with the `InterruptedException` as cause, interrupt flag kept, no byte taken), and an already interrupted thread with and without buffered bytes
 - Several readers on one stream (`StreamBufferConcurrentReadersTest`): two parked readers and two writes or a close, three readers at the lock for two bytes (also closed meanwhile), `read(byte[])` racing `read()`, a reader parked next to a larger `waitForAtLeast`, three writers and three readers
 - Fixed-size records with several readers (1429-byte records with writer id, sequence number and CRC32): one writer with writes of random size and four readers, three writers of whole records and four readers — every record whole, exactly once, in writer order per reader
-- Virtual threads (`StreamBufferVirtualThreadsTest`): 64 virtual readers and 4 virtual writers of records, also with trim and a trim signal; a JFR `jdk.VirtualThreadPinned` check (none inside `StreamBuffer` on JDK 24+, reported on JDK 21 by a scheduled job)
+- Virtual threads (`StreamBufferVirtualThreadsTest`): 64 virtual readers and 4 virtual writers of records, also with trim and a trim signal; a JFR `jdk.VirtualThreadPinned` check (none inside `StreamBuffer` on JDK 24+, reported on JDK 21 by a scheduled job) [V9]
 - `waitForAtLeast(bytes, timeout, unit)`: returns at once, after the timeout, early when bytes arrive, on close; no wait for a timeout of zero; interrupts; two timed waiters woken by one write
-- vmlens interleavings for several readers (`StreamBufferSeveralReadersInterleavingTest`): two readers and a close, two record readers, a trim with a trim start signal, `safeWrite` with a concurrent single-byte write — vmlens also fails the build on any data race
-- jcstress with two readers: `TwoReadersCloseRace`, `TwoReadersTwoWritesRace` (`Mode.Termination`) and `RecordReadersRace` (torn records forbidden)
-- Lincheck including reads (one at a time, only what is buffered) and a variant with `maxBufferElements` 2, so writes trim
+- vmlens interleavings for several readers (`StreamBufferSeveralReadersInterleavingTest`): two readers and a close, two record readers, a trim with a trim start signal, `safeWrite` with a concurrent single-byte write — vmlens also fails the build on any data race [V4]
+- jcstress with two readers: `TwoReadersCloseRace`, `TwoReadersTwoWritesRace` (`Mode.Termination`) and `RecordReadersRace` (torn records forbidden) [V8]
+- Lincheck including reads (one at a time, only what is buffered) and a variant with `maxBufferElements` 2, so writes trim [V7]
 - Concurrent read/write stress tests
 - Parallel close without deadlock
 - Deadlock-freedom of every blocking entry point, stress-checked with jcstress `Mode.Termination`
@@ -485,7 +485,7 @@ Test coverage includes:
   (`src/test/jpf/`, scheduled CI job + local Docker recipe) — the erschöpfende counterpart to the
   jcstress stress tests; seven harnesses: writer and reader, writer racing a closer, two readers,
   two readers of fixed-size records, a `waitForAtLeast` caller next to a reader, the same next to a
-  2-byte write (what `waitForAtLeast` returns), trim re-entrancy through a trim signal
+  2-byte write (what `waitForAtLeast` returns), trim re-entrancy through a trim signal [V6]
 - Signal/slot notification via external semaphores on write and all close paths
 - `removeSignal(null)` returning `false` without throwing
 - `addSignal(null)` throwing `NullPointerException`
@@ -506,16 +506,19 @@ Test coverage includes:
 `StreamBuffer` carries machine-checked JML specifications
 ([`src/main/jml/net/ladenthin/streambuffer/StreamBuffer.jml`](./src/main/jml/net/ladenthin/streambuffer/StreamBuffer.jml)),
 verified in a separate CI pipeline
-([`formal-verification.yml`](./.github/workflows/formal-verification.yml)) in two layers:
+([`formal-verification.yml`](./.github/workflows/formal-verification.yml)) in two layers. Every
+result below names its row `[V<n>]` of
+[`VERIFICATION-ASSUMPTIONS.md`](./VERIFICATION-ASSUMPTIONS.md), which says how far it reaches and
+what it assumes, and lists the trusted base and what no result covers:
 
-- **Deductive proof — OpenJML ESC (Z3, and again with cvc5).** The complete static, sequential core is *proven*
+- **Deductive proof — OpenJML ESC (Z3, and again with cvc5) [V1].** The complete static, sequential core is *proven*
   against full functional contracts: both offset/length validators — including the classic
   `(off + len) < 0` integer-overflow guard, proven equivalent to the clean bounds condition
   under Java wrap semantics — and the thirteen static trim-decision/arithmetic/timeout helpers, among
   them the ceiling division in `calculateResultingChunks` (proven against its multiplicative
   characterization `m·(⌈a/m⌉−1) < a ≤ m·⌈a/m⌉`, including the wrap-around boundary
   `a = Long.MAX_VALUE − m + 1`) and the full decision tree of `decideTrimExecution`.
-- **Runtime assertion checking — OpenJML RAC.** The entire JUnit suite additionally runs
+- **Runtime assertion checking — OpenJML RAC [V2].** The entire JUnit suite additionally runs
   against RAC-instrumented classes (`mvn -P jml-rac`); every JML contract — the proven static
   ones plus runtime contracts on the instance API and the two stream adapters — is then
   checked at runtime and a violation throws instead of scrolling by. That includes four class
@@ -526,7 +529,7 @@ verified in a separate CI pipeline
   statistics. Under concurrency these contracts stay sound because they only use monotone state
   (closed stays closed, a closed buffer only drains, the counters only grow).
 
-- **Model checking of the protocol — TLA+ / TLC.** A TLA+ model of how threads write, close, wait
+- **Model checking of the protocol — TLA+ / TLC [V10].** A TLA+ model of how threads write, close, wait
   and take data ([`src/test/tla/`](./src/test/tla/)) is checked for safety and liveness (every
   waiting reader returns) with up to three readers, for `read()`, for fixed-size records with
   `read(b, off, len)` (also across the entries of multi-byte writes and next to a `read()` reader)
@@ -535,22 +538,23 @@ verified in a separate CI pipeline
   a waiter, before #212 a torn record, before F279 a count from the middle of a read. Inductive
   invariants of counter abstractions remove the bounds for `read()`, for fixed-size records with
   `read(b, off, len)` and for `waitForAtLeast` next to readers:
-  - **Apalache** checks them for fixed reader counts, with any number of bytes, record size and
+  - **Apalache** [V11] checks them for fixed reader counts, with any number of bytes, record size and
     `waitForAtLeast` request.
-  - **TLAPS proofs** show them for any number of readers, and of writers for records and
+  - **TLAPS proofs** [V12] show them for any number of readers, and of writers for records and
     `waitForAtLeast`.
   - **The link:** TLC checks that the detailed model refines each abstraction, in its bounded
-    configurations.
+    configurations; TLAPS proves it for `waitForAtLeast` next to readers and any number of them [V13].
   - **Older code:** each older version reaches a violation in a bounded search.
-  - **Trace validation:** recorded runs of the code (an instrumented copy of the class in the tests,
+  - **Trace validation** [V17]: recorded runs of the code (an instrumented copy of the class in the tests,
     every access to shared state logged in order) are checked against the model with TLC; 990 runs
     were accepted, and models of older code, a mutated model and corrupted runs are rejected.
   - **Threads that call forever:** with a finite stream and a closer every call returns, with fair
     scheduling only and no lock fairness: TLC in bounded models of the abstraction and the
-    detailed model, TLAPS for the abstraction and any number of threads (assuming fairness by role,
+    detailed model, TLAPS for the abstraction and any number of threads [V14] [V15] (assuming fairness by role,
     which follows from fairness per thread and is checked by TLC in bounded models).
     With a writer that writes forever and no close, TLC finds a reader that starves even with fair
     locks.
+  - **The external signals** (F280): at most one permit and no lost signal, TLC and TLAPS [V16].
 
 Concurrency itself is outside the deductive scope by JML doctrine (JML specifies sequential
 behavior; OpenJML does not model `volatile` or monitors) and is covered empirically by the
@@ -568,10 +572,22 @@ and not only about the interleavings they enumerate:
 
 1. **The theorem.** JLS §17.4.5: a program is *correctly synchronized* if no sequentially consistent
    execution has a data race, and then all of its executions appear sequentially consistent. It is
-   machine-checked (Aspinall & Ševčík, TPHOLs 2007; Lochbihler, JinjaThreads, TOPLAS 2014). The
+   machine-checked (Aspinall & Ševčík, TPHOLs 2007; Lochbihler, JinjaThreads, TOPLAS 2014) [V5]. The
    memory model's known problems (out-of-thin-air values, causality) concern racy programs only.
 2. **Every shared field is safe by construction** — final, volatile, atomic, or only touched under
-   one lock (table below).
+   one lock (table below). **This is checked on the bytecode for every execution** [V3] (its
+   assumptions there: a guarded reference is not used after the lock is released, no call through a
+   supertype)
+   (`LockDisciplineBytecodeTest`, roadmap A17, in `mvn test`): for every method of `StreamBuffer`
+   and its inner classes, the locks held at each instruction follow from the control flow, and
+   every access to a `@GuardedBy` field and every call of a `@GuardedBy` method has its lock on
+   every path; a field that is neither final, volatile nor atomic must be `@GuardedBy`. The table
+   below is checked against the class by reflection, both ways. Negative controls on class files
+   mutated in memory are each reported: an unguarded read, the wrong lock, a lock no longer taken
+   or taken on one branch only, a monitor that is the lock on one path only, another object's lock
+   or field, an access in the exception handler after the lock is released, an accessor of an inner
+   class that needs the lock, a lambda body, a method reference to a guarded method, an unguarded
+   call of a guarded method, a plain field, a missing table row.
 3. **vmlens checks it.** It runs the scenarios through their sequentially consistent interleavings and
    reports a data race by the memory model's happens-before; the `vmlens` job of the Publish pipeline
    fails the build on one (`There are N data races`). Scenarios: a reader against a writer, two
@@ -580,16 +596,20 @@ and not only about the interleavings they enumerate:
    (all of them explored); two readers and a close stops at vmlens's limit, and JPF explores that
    case exhaustively (`TwoReaders.jpf`, `WaitAndRead.jpf`).
 
-Hence, for those scenarios, `StreamBuffer` is free of data races, its executions are sequentially
-consistent, and the results of the interleaving-based checks (JPF, vmlens, Lincheck, the jcstress
-outcomes) carry over to the Java memory model. **Limits:** it covers the executed scenarios, not every
-program; the JDK classes it builds on (`ReentrantLock`/`Condition`/AQS, `Semaphore`, `ArrayDeque`,
+Hence `StreamBuffer` is free of data races: by the bytecode check (point 2) for every execution
+under the lock discipline, and by vmlens for the scenarios, which also covers what the lock
+discipline takes for granted (the volatile and atomic fields' order, the JDK classes). Its executions
+are sequentially consistent, and the results of the interleaving-based checks (JPF, vmlens, Lincheck, the jcstress
+outcomes) carry over to the Java memory model. **Limits:** vmlens covers the executed scenarios, the
+bytecode check the lock discipline of `StreamBuffer`'s own fields (not what a caller does with the
+arrays it writes, see below); the JDK classes it builds on (`ReentrantLock`/`Condition`/AQS, `Semaphore`, `ArrayDeque`,
 `CopyOnWriteArrayList`, `AtomicInteger`/`AtomicLong`) and the JVM including its JIT are trusted.
 
 | Field | Kind | Written | Read |
 |---|---|---|---|
 | `bufferLock`, `waitLock`, `modified`, `is`, `os` | `final` | constructor | anywhere |
 | `buffer` (`ArrayDeque<byte[]>`) | `final`, `@GuardedBy("bufferLock")` | under `bufferLock` | under `bufferLock` |
+| `ownedPrefix` (the leading entries a trim allocated, A14) | `int`, `@GuardedBy("bufferLock")` | under `bufferLock` (`trim()`, `pollHead()`) | under `bufferLock` |
 | `availableBytes` | `volatile long` | under `bufferLock` | under `bufferLock`, and lock-free by `available()`, `getAvailableBytesExact()` and the wait (fast path and under `waitLock`) |
 | `positionAtCurrentBufferEntry` | `volatile int` | under `bufferLock` | under `bufferLock` |
 | `streamClosed` | `volatile boolean` | under `bufferLock` (`close()`) | under `bufferLock` (write), lock-free (wait, `isClosed()`) |

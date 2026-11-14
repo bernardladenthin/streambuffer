@@ -240,6 +240,24 @@ SPDX-License-Identifier: Apache-2.0
             <scope>test</scope>
         </dependency>
         <!--
+            The tree and analysis APIs for the lock-discipline check on the bytecode (roadmap A17,
+            net.ladenthin.streambuffer.drf): the control flow of each method and the origin of a
+            monitor's operand. Lincheck brings the same version transitively; declared here because
+            the test uses them directly.
+        -->
+        <dependency>
+            <groupId>org.ow2.asm</groupId>
+            <artifactId>asm-tree</artifactId>
+            <version>${asm.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.ow2.asm</groupId>
+            <artifactId>asm-analysis</artifactId>
+            <version>${asm.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!--
             vmlens interleaving-analysis API. Promoted from the `vmlens` profile to the
             main test classpath (transitive-dependency-free, so convergence-safe) so the
             VmlensInterleavingSmokeTest compiles in every build, keeping the smoke test in

@@ -64,7 +64,7 @@ part of the Maven build and never touches the shipped jar.
 
 ## Models and results
 
-`check.sh` runs every model and compares it with its **expected** outcome: the 16 models below
+`check.sh` runs every model and compares it with its **expected** outcome [V10]: the 16 models below
 (last run 2026-11-13, TLC v1.7.4, about 90 s), the 8 of "Spurious wake-ups" and its mutant, the 18
 of "Liveness with threads that call forever" and the 3 of the external signals (F280), 45 in all;
 361 s on 32 cores (2026-11-13, next to the other checks), 594 s on 4 cores with 32 of them before.
@@ -152,11 +152,11 @@ invariants remove those bounds. The most general one, `StreamBufferWait.tla`, ha
 any number of calls, each a `read(b, 0, K[r])` or a `waitForAtLeast(M[r])`, next to any numbers of
 writers and closers; its liveness is proved too.
 
-- **Apalache v0.63.0** (`inductive.sh`): fixed thread counts, with bytes, read sizes, requests and
+- **Apalache v0.63.0** (`inductive.sh`) [V11]: fixed thread counts, with bytes, read sizes, requests and
   the budget of calls symbolic.
-- **TLAPS** (`proof.sh`): any number of threads, writers and closers.
+- **TLAPS** (`proof.sh`) [V12]: any number of threads, writers and closers.
 - **TLC refinement checks** tie each abstraction to the detailed model; for `StreamBufferWait.tla`
-  a TLAPS proof does so for any number of readers (`RefineWaitProof.tla`, in `proof.sh`).
+  a TLAPS proof does so for any number of readers (`RefineWaitProof.tla`, in `proof.sh`) [V13].
 
 **What this does and does not show.** The unbounded results hold for the abstractions, and the
 safety results carry over to `StreamBuffer.tla` with the current code: `RefineWaitProof.tla` proves
@@ -268,7 +268,7 @@ conjuncts that encode the fix, which is why the bounded searches are the evidenc
 makes a refinement check fail (`avail + 1`, or `eof` left unmapped).
 
 **Liveness** (`StreamBufferWaitLive.tla`, proof `StreamBufferWaitLiveProof.tla`). The theorem
-`Liveness == FairSpec => <>AllDone`: with at least one closer and finitely many threads, every
+`Liveness == FairSpec => <>AllDone` [V14]: with at least one closer and finitely many threads, every
 behaviour of `StreamBufferWait.tla` with weak fairness of `Next` ends with every call returned and
 every thread, writer and closer done. Weak fairness of `Next` as a whole only says that the system
 does not halt while a step is possible; it assumes no fairness per thread or lock. The argument:
@@ -412,7 +412,7 @@ Locally, larger models check as well: 3 threads with 2 bytes (5,377,658 states, 
 writers with 2 closers and 3 bytes (6,138,012 states, 11 min).
 
 **The proof for any number of threads** (`StreamBufferWaitForeverLiveProof.tla`, in `proof.sh`).
-The theorem `ForeverLiveness == SpecRole => EveryCallReturns`, with at least one closer and
+The theorem `ForeverLiveness == SpecRole => EveryCallReturns` [V15], with at least one closer and
 finitely many threads, writers and closers.
 
 - **Fairness by role** (`FairRole`, `StreamBufferWaitForeverLive.tla`). Weak fairness for the
@@ -475,7 +475,7 @@ without the buffered bytes, and without the stale lock holders.
 ## The "max 1 permit" of the external signals (bug-hunt finding F280)
 
 `addSignal`, `addTrimStartSignal` and `addTrimEndSignal` register semaphores that the buffer
-releases only while they have no permit. `StreamBufferSignal.tla` models the release of one such
+releases only while they have no permit [V16]. `StreamBufferSignal.tla` models the release of one such
 semaphore (they are independent):
 - any number of signalers: every write, close or trim, on its own thread or nested in another one's
   `release()`, signals after its change;
@@ -504,7 +504,7 @@ by its observer (outside the contract, see `addSignal`).
 ## Trace validation: recorded runs of the code (roadmap A6)
 
 The model is written by hand from the code. Trace validation checks the other direction on real
-runs: every recorded run of the code must be a behaviour of `StreamBuffer.tla` (the approach of
+runs: every recorded run of the code must be a behaviour of `StreamBuffer.tla` [V17] (the approach of
 Cirstea, Kuppe, Merz et al., "Validating Traces of Distributed Programs Against TLA+
 Specifications", 2024). It checks only the runs it sees, so it is not a proof; it shows that the
 model does what the code does in those runs, including the waits, wake-ups and lock holds.

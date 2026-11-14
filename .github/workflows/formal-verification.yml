@@ -175,6 +175,18 @@ jobs:
             exit 1
           fi
           echo "$completed/$ESC_EXPECTED_PROOFS proved again with cvc5." >> "$GITHUB_STEP_SUMMARY"
+      - name: Write the verification manifest (A16, VERIFICATION-ASSUMPTIONS.md)
+        run: |
+          set -euo pipefail
+          bash src/test/verification/manifest.sh manifest-openjml-esc.json openjml-esc \
+            "rows=V1" "tool=OpenJML $OPENJML_VERSION" "tool_sha256=$OPENJML_SHA256" \
+            "proofs_z3=$(grep -c '^Completed proof of .* - no warnings' esc-output.log || true)" \
+            "proofs_cvc5=$(grep -c '^Completed proof of .* - no warnings' esc-output-cvc5.log || true)"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        timeout-minutes: ${{ fromJSON(env.ARTIFACT_TIMEOUT_MINUTES) }}
+        with:
+          name: manifest-openjml-esc
+          path: manifest-openjml-esc.json
 
   openjml-rac:
     name: OpenJML RAC (contracts under the full test suite)
@@ -244,6 +256,17 @@ jobs:
             echo "### OpenJML RAC"
             echo "Full JUnit suite passed against RAC-instrumented classes (every JML contract checked at runtime, violations thrown)."
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Write the verification manifest (A16, VERIFICATION-ASSUMPTIONS.md)
+        run: |
+          set -euo pipefail
+          tests="$(cat target/surefire-reports/*.txt | grep -oE 'Tests run: [0-9]+' | awk '{s += $3} END {print s + 0}')"
+          bash src/test/verification/manifest.sh manifest-openjml-rac.json openjml-rac \
+            "rows=V2" "tool=OpenJML $OPENJML_VERSION" "tool_sha256=$OPENJML_SHA256" "tests=$tests"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        timeout-minutes: ${{ fromJSON(env.ARTIFACT_TIMEOUT_MINUTES) }}
+        with:
+          name: manifest-openjml-rac
+          path: manifest-openjml-rac.json
 
   # ---------------------------------------------------------------------------------------------
   # JPF — exhaustive thread-interleaving model check of the concurrent read/write/close protocol.
@@ -384,6 +407,23 @@ jobs:
           name: jpf-output
           path: src/test/jpf/jpf-output*.log
           if-no-files-found: ignore
+      - name: Write the verification manifest (A16, VERIFICATION-ASSUMPTIONS.md)
+        run: |
+          set -euo pipefail
+          states=()
+          for log in src/test/jpf/jpf-output*.log; do
+            name="$(basename "$log" .log)"
+            name="${name#jpf-output}"
+            name="${name#-}"
+            states+=("states_${name:-streambuffer}=$(grep -oE 'new=[0-9]+' "$log" | head -1 | cut -d= -f2)")
+          done
+          bash src/test/verification/manifest.sh manifest-jpf-interleavings.json jpf-interleavings \
+            "rows=V6" "tool=jpf-core $JPF_SHA" "harnesses=${#states[@]}" "${states[@]}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        timeout-minutes: ${{ fromJSON(env.ARTIFACT_TIMEOUT_MINUTES) }}
+        with:
+          name: manifest-jpf-interleavings
+          path: manifest-jpf-interleavings.json
 
   # ---------------------------------------------------------------------------------------------
   # Virtual threads on JDK 21 (TODO roadmap A7) -- scheduled/dispatch only, a REPORT, not a gate.
@@ -434,6 +474,17 @@ jobs:
           name: virtual-threads-jdk21
           path: pinned.txt
           if-no-files-found: ignore
+      - name: Write the verification manifest (A16, VERIFICATION-ASSUMPTIONS.md)
+        run: |
+          set -euo pipefail
+          bash src/test/verification/manifest.sh manifest-virtual-threads-jdk21.json virtual-threads-jdk21 \
+            "rows=V9" "tool=JFR on $("$JAVA_HOME_21_X64/bin/java" -version 2>&1 | head -1)" \
+            "pinned_events=$(grep -c 'jdk.VirtualThreadPinned' pinned.txt || true)"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        timeout-minutes: ${{ fromJSON(env.ARTIFACT_TIMEOUT_MINUTES) }}
+        with:
+          name: manifest-virtual-threads-jdk21
+          path: manifest-virtual-threads-jdk21.json
 
   # ---------------------------------------------------------------------------------------------
   # TLA+ model of the protocol (TODO roadmap A5) -- scheduled/dispatch only, about 10 min of TLC
@@ -517,6 +568,21 @@ jobs:
             cat tla-inductive.log
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Write the verification manifest (A16, VERIFICATION-ASSUMPTIONS.md)
+        run: |
+          set -euo pipefail
+          bash src/test/verification/manifest.sh manifest-tla-model.json tla-model \
+            "rows=V10 V11 V16 V17" "tool=TLC $TLA_TOOLS_VERSION" "tool_sha256=$TLA_TOOLS_SHA256" \
+            "apalache=$APALACHE_VERSION" "apalache_sha256=$APALACHE_SHA256" \
+            "models_ok=$(grep -c '^OK' tla-check.log || true)" \
+            "traces=$(grep -oE 'traces: [0-9]+, accepted: [0-9]+' tla-trace.log | head -1)" \
+            "trace_controls_ok=$(grep -c '^OK' tla-trace.log || true)" \
+            "inductive_ok=$(grep -c '^OK' tla-inductive.log || true)"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        timeout-minutes: ${{ fromJSON(env.ARTIFACT_TIMEOUT_MINUTES) }}
+        with:
+          name: manifest-tla-model
+          path: manifest-tla-model.json
 
   # ---------------------------------------------------------------------------------------------
   # TLAPS proofs of the A13 invariants -- scheduled/dispatch only. proof.sh fails unless every
@@ -593,6 +659,19 @@ jobs:
             cat tlaps-proofs.log
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Write the verification manifest (A16, VERIFICATION-ASSUMPTIONS.md)
+        run: |
+          set -euo pipefail
+          bash src/test/verification/manifest.sh manifest-tlaps-proofs.json tlaps-proofs \
+            "rows=V12 V13 V14 V15 V16" "tool=tlapm $TLAPM_SHA (OCaml $OCAML_VERSION)" \
+            "tarball_sha256=$(sha256sum tlapm-release.tar.gz | cut -d' ' -f1)" \
+            "modules=$(grep -c 'obligations proved' tlaps-proofs.log || true)" \
+            "obligations=$(grep -oE 'All [0-9]+ obligations proved' tlaps-proofs.log | awk '{s += $2} END {print s + 0}')"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        timeout-minutes: ${{ fromJSON(env.ARTIFACT_TIMEOUT_MINUTES) }}
+        with:
+          name: manifest-tlaps-proofs
+          path: manifest-tlaps-proofs.json
 
   # ---------------------------------------------------------------------------------------------
   # jcstress in its default mode on x86 -- scheduled/dispatch only. Pull requests run the quick
@@ -627,6 +706,17 @@ jobs:
             *", 0 failed, 0 soft errs, 0 hard errs"*) ;;
             *) echo "::error::jcstress default mode: $result"; exit 1 ;;
           esac
+      - name: Write the verification manifest (A16, VERIFICATION-ASSUMPTIONS.md)
+        run: |
+          set -euo pipefail
+          bash src/test/verification/manifest.sh manifest-jcstress-default.json jcstress-default \
+            "rows=V8" "tool=jcstress $(grep -oE '<jcstress.version>[^<]+' pom.xml | cut -d'>' -f2)" \
+            "result=$(grep -E 'Results: [0-9]+ planned' jcstress-default.log | tail -1)"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        timeout-minutes: ${{ fromJSON(env.ARTIFACT_TIMEOUT_MINUTES) }}
+        with:
+          name: manifest-jcstress-default
+          path: manifest-jcstress-default.json
 
   # ---------------------------------------------------------------------------------------------
   # jcstress and the contended benchmark on arm64 (TODO roadmap A7) -- dispatch only. x86 is TSO
@@ -686,3 +776,14 @@ jobs:
             jcstress-arm64.log
             jmh-arm64.csv
           if-no-files-found: ignore
+      - name: Write the verification manifest (A16, VERIFICATION-ASSUMPTIONS.md)
+        run: |
+          set -euo pipefail
+          bash src/test/verification/manifest.sh manifest-arm64-jcstress-benchmark.json arm64-jcstress-benchmark \
+            "rows=V8" "tool=jcstress $(grep -oE '<jcstress.version>[^<]+' pom.xml | cut -d'>' -f2)" \
+            "result=$(grep -E 'Results: [0-9]+ planned' jcstress-arm64.log | tail -1)"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        timeout-minutes: ${{ fromJSON(env.ARTIFACT_TIMEOUT_MINUTES) }}
+        with:
+          name: manifest-arm64-jcstress-benchmark
+          path: manifest-arm64-jcstress-benchmark.json

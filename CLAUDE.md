@@ -79,6 +79,12 @@ The `vmlens` profile pulls in `com.vmlens:api` and runs the `vmlens-maven-plugin
 
 ## Formal Verification
 
+`VERIFICATION-ASSUMPTIONS.md` (A16) has one row per result (`V1`...): property, tool, scope,
+assumptions, CI job; the READMEs name a claim's row as `[V<n>]`, and `VerificationAssumptionsTest`
+fails on a reference to no row or a row named nowhere. A new result gets a row and a reference.
+Every formal job ends with `src/test/verification/manifest.sh` (commit, tools, counts) uploaded as
+`manifest-<job>`; a new formal job gets one too.
+
 Two layers, run in a **separate** CI pipeline (`.github/workflows/formal-verification.yml` —
 deliberately not part of the synchronous Publish pipeline and never a required check):
 
@@ -286,7 +292,10 @@ mvn -P jml-rac -Dopenjml.home=<openjml> -Dopenjml.jdk.java=<openjml>/jdk/bin/jav
   without the lock when enough bytes are buffered or the stream is closed.
 - **Data-race freedom** (README "Data-Race Freedom"): every shared field is final, volatile, atomic or
   lock-guarded (the table there), and the vmlens job fails the build on any race it finds, so the
-  interleaving-based results hold under the JMM (JLS §17.4.5). A new field goes into that table; a new
+  interleaving-based results hold under the JMM (JLS §17.4.5). `drf/LockDisciplineBytecodeTest` (A17,
+  `mvn test`) checks the lock discipline on the bytecode for every path: a plain field needs
+  `@GuardedBy`, every access to a `@GuardedBy` field or call of a `@GuardedBy` method its lock, and the
+  README table must list every field with its kind. A new field goes into that table; a new
   concurrent scenario goes into `vmlens/StreamBufferSeveralReadersInterleavingTest`.
 - Several writers and several readers are supported: each write is atomic, each byte reaches exactly one
   reader in FIFO order, no fairness. `read(b, off, len)` is atomic too: it waits until `len` bytes are

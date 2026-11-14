@@ -13,34 +13,37 @@ annotated, so everything below is genuinely still open.
 
 - **Open verification items — effort, odds and timeline (estimated 2026-11-13).** Estimates, not
   measurements; "success" means the result is there as described, machine-checked. Details under
-  the items named.
+  the items named. In this order; A15 comes last (see its row).
 
   | Item | Work | Odds of success | Timeline | Why / risk |
   |---|---|---|---|---|
-  | Prove that fairness per thread gives the fairness by role (`FairRole`, A13 follow-up; today argued and checked by TLC in bounded models) | 1–2 weeks | low, ~30 % | 2–3 weeks | tlapm cannot swap a quantifier over threads with a temporal operator (`\A q : P(q) ~> Q` to `(\E q : P(q)) ~> Q`), which is where it failed; another prover (e.g. Isabelle with a TLA embedding) would be the way out |
-  | Liveness of the detailed model for any number of readers (A19) | 2–4 weeks | medium, ~50 % | 3–6 weeks | the pattern of `StreamBufferWaitForeverLiveProof.tla` carries over, but the detailed model is much larger (the FIFO as a sequence, more stages, the copy per entry), and the assumption of the row above stays |
+  | **A16** Assumptions and a proof manifest (`VERIFICATION-ASSUMPTIONS.md`, a manifest artifact per formal run) | 2–3 days | high, ~90 % | ~1 week | diligence: every claim of the READMEs gets a row with a run and a SHA. **In progress, branch `feat/a16-a17`** |
+  | **A17** Data-race freedom checked on the bytecode (an ASM test, the field table against reflection) | 3–5 days | ~80 % | 1–2 weeks | then for every execution, not for scenarios; the hard part is a `@GuardedBy` method whose every caller must hold the lock. **In progress, branch `feat/a16-a17`** |
+  | **A18** Every interleaving of the code is a run of the model (JPF paths as A6 traces) | 1–2 weeks | medium, ~55 % | 2–3 weeks | JPF's state counts (`TwoReaders` 2.3 million): start with the smallest scenarios, time-box |
   | A6: several writers and closers in the detailed model | 1–2 weeks | ~70 % | 2–3 weeks | `StreamBuffer.tla` has one of each; `RefineWaitProof.tla` (2,729 obligations) must follow; the trace scenarios are easy afterwards |
   | A6: trim in the model | 1–2 weeks | ~60 % | 2–4 weeks | the merge of the entries touches the FIFO invariant and the refinement; the geometric merge is hard to state compactly |
+  | Prove that fairness per thread gives the fairness by role (`FairRole`, A13 follow-up; today argued and checked by TLC in bounded models) | 1–2 weeks | low, ~30 % | 2–3 weeks | tlapm cannot swap a quantifier over threads with a temporal operator (`\A q : P(q) ~> Q` to `(\E q : P(q)) ~> Q`), which is where it failed; another prover (e.g. Isabelle with a TLA embedding) would be the way out |
+  | **A19** Liveness of the detailed model for any number of readers | 2–4 weeks | medium, ~50 % | 3–6 weeks | the pattern of `StreamBufferWaitForeverLiveProof.tla` carries over, but the detailed model is much larger (the FIFO as a sequence, more stages, the copy per entry), and the assumption of the row above stays |
   | A8: `ReentrantLock` instead of `synchronized` | 3–5 days, if taken up | technically high, ~90 %; the gain unclear | 1–2 weeks | the measurements show a trade-off (faster for platform threads, slower for virtual threads); it needs a workload that decides which kind matters |
   | A9: functional proof of the instance methods | months | low, ~20–30 % | 3–6 months | OpenJML ESC returns "unknown" on instance methods, and the deque as a ghost sequence is large; extract a sequential core first |
-  | Checker Framework Lock Checker | 1–2 days for a spike | ~40 % | ~1 week | blocked by inconsistent JDK stubs of `close()`; a way out via `-AskipDefs` or own stubs; A17 (the bytecode check) is an alternative that makes it mostly unnecessary |
+  | Checker Framework Lock Checker | 1–2 days for a spike | ~40 % | ~1 week | blocked by inconsistent JDK stubs of `close()`; a way out via `-AskipDefs` or own stubs; A17 makes it mostly unnecessary |
   | `@VisibleForTesting` decision | ½ day | ~95 % | a few days | only the decision (an own marker annotation, or the convention does not apply here), then act |
   | Naming review | ~1 day | ~90 % | ~1 week | mechanical; renaming private methods is cheap, a public API rename is a breaking change for the CHANGELOG |
+  | **A15** Proofs as a release gate (`workflow_call`, publish waits for the formal jobs on `v*` tags) | 1–2 days | high, ~90 % | ~1 week | **only after every other item of this table is done** (owner, 2026-11-13): each package adds checks to the formal jobs, so the gate's run time is known only at the end, and until then the formal jobs stay scheduled and keep the CI of each release short. It changes the release process (about 2 h more per release): the owner confirms before it is merged |
 
-  Best value for the risk: the `@VisibleForTesting` decision and the naming review; then several
-  writers in the detailed model, if that matters. The `FairRole` proof, A19
-  and A9 are research with an open outcome. A17 is in the planned roadmap and covers most of what
-  the Lock Checker would give.
+  Best value for the risk: A16 and A17, then A18; the `@VisibleForTesting` decision and the naming
+  review on the side. The `FairRole` proof, A19 and A9 are research with an open outcome.
 
-- **Spurious wake-ups in the model: done (PR #231, 2026-11-13).** `Condition.await()` may return
-  without a signal. `StreamBuffer.tla` and `StreamBufferWait.tla` have the step `SpuriousWake(r)`
-  within a ghost budget (the constant `Spurious`, not under fairness), with TLC models and a mutant
-  control in `check.sh`, the TLAPS proofs for any budget (safety, liveness, forever liveness,
-  refinement), Apalache, and a control in `trace-controls.sh`; details in
-  `src/test/tla/README.md`, "Spurious wake-ups". Known limits (review 2026-11-13): `FairRole` is
-  TLC-checked only without spurious wake-ups (`WaitForeverMeasure2`); the probe
-  `SpuriousReached2` covers one configuration; the 4-core CI time of `check.sh` is an estimate
-  until the first scheduled run.
+  For the owner: the `ANTHROPIC_API_KEY` secret (`claude-review` fails in every pull request
+  without it), the two tlapm quirks as an issue at tlaplus/tlapm (own account), the comment on
+  OpenJML#1012. Waiting on others: an Apalache release with #3505, OpenJML#1050 (then the RAC
+  scaling of the tests can go), and the first scheduled formal run with the spurious wake-ups
+  (measures the 4-core time of `check.sh`).
+
+- **Spurious wake-ups — open limits** (model and proofs since #231, `src/test/tla/README.md`,
+  "Spurious wake-ups"): `FairRole` is TLC-checked only without spurious wake-ups
+  (`WaitForeverMeasure2`); the probe `SpuriousReached2` covers one configuration; the 4-core CI
+  time of `check.sh` is an estimate until the first scheduled run.
 
 - **Verification roadmap 2026-11 — packages A6–A14.** Each package is closed on its own, ends in a
   machine-checked result and is listed with its acceptance criterion. The contract every package
@@ -253,8 +256,9 @@ annotated, so everything below is genuinely still open.
     by 990 recorded runs (A6), not by every interleaving; assumptions and limits are spread over
     three READMEs and no result is tied to a revision; liveness of the detailed model and the
     instance methods for any number of threads.
-  Order: A16, A15, A17, A18; A19 and A9 only if wanted afterwards. Run with `/loop` and the prompt
-  in "Run prompts" below.
+  Order: A16 and A17 together (branch `feat/a16-a17`), then A18; A19 and A9 only if wanted
+  afterwards. A15 last, once every other item of the table above is done (owner, 2026-11-13). Run
+  with `/loop` and the prompt in "Run prompts" below.
 
   - **A16 — Assumptions and a proof manifest (2–3 days).** A new `VERIFICATION-ASSUMPTIONS.md`:
     the trusted base (JVM and JIT, javac, the JDK classes `ReentrantLock`/`Condition`/AQS,
@@ -265,7 +269,26 @@ annotated, so everything below is genuinely still open.
     (bounded or unbounded; abstraction, detailed model or code) → assumptions → CI job. Every scheduled formal run writes a manifest (commit SHA,
     tool versions and SHA-256, obligations, states) as an artifact. Done when every verification
     claim in the READMEs points to a row of that table, and every row has a run with a SHA.
-  - **A15 — Proofs as a release gate (1–2 days).** `formal-verification.yml` gets a `workflow_call`
+
+    Plan (branch `feat/a16-a17`, started 2026-11-13), with the reasons:
+    - [x] (d142501) `VERIFICATION-ASSUMPTIONS.md` at the root: the trusted base, the caller contracts, what
+      no model covers, what the models assume; one table property → tool → scope → assumptions →
+      CI job → script, each row with an id (`V1`, `V2`, ...). At the root, not under `docs/`,
+      because the README links it next to the verification overview.
+    - [x] (d142501) Every verification claim of `README.md`, `src/test/tla/README.md` and
+      `src/test/jpf/README.md` names its row id; a test script checks both directions (every id
+      in the READMEs exists in the table, every row is referenced), so a new claim without a row
+      fails. A negative control: a README with an unknown id must fail it.
+    - [x] (d142501) The manifest: every formal job of `formal-verification.yml` writes a small JSON (commit
+      SHA, tool name, version and SHA-256, the job's counts: obligations, states, models, traces)
+      and uploads it as an artifact; one shared script writes it, so the jobs stay alike. No new
+      workflow file.
+    - [ ] The table's rows point to the manifest of the job that checks them; "every row has a run
+      with a SHA" closes with the first scheduled run after the merge (noted as such until then). The
+      section "The runs" of `VERIFICATION-ASSUMPTIONS.md` says which artifact covers which row;
+      open until the first scheduled run after the merge writes them.
+    - [x] (d142501) README, CHANGELOG, CLAUDE.md.
+  - **A15 — Proofs as a release gate (1–2 days; last, see the table).** `formal-verification.yml` gets a `workflow_call`
     trigger; `publish.yml` calls it for a `v*` tag and its deploy job needs it (no new workflow
     file). Done when a release of a commit without green formal jobs is impossible. Cost: about 2 h
     more per release. Changes the release process: the owner confirms before it is merged.
@@ -276,6 +299,35 @@ annotated, so everything below is genuinely still open.
     `signalLock`). The README's field table is checked against reflection (kind of each field). Done
     when it holds for every execution, not for scenarios, and a deliberately unguarded access (a
     mutation of the class file in the test) turns it red.
+
+    Plan (branch `feat/a16-a17`, started 2026-11-13), with the reasons:
+    - [x] (531ac60) `asm-tree` and `asm-analysis` as explicit test dependencies (9.9.1, the version Lincheck
+      already brings, so the convergence check stays quiet): the check needs the control flow and
+      the origin of the monitor operand, which the tree and analysis APIs give.
+    - [x] (531ac60) The checker (test code, `net.ladenthin.streambuffer.drf`): for every method of
+      `StreamBuffer` and its inner classes, the locks held at each instruction (a forward data
+      flow over the control flow graph: `monitorenter` of a value loaded from the field
+      `bufferLock` or `signalLock` adds it, `monitorexit` removes it, a merge keeps what every path
+      holds). Every access to a field annotated `@GuardedBy(L)` or to a plain field (not final,
+      volatile or atomic) needs L held there; a plain field without `@GuardedBy` is an error
+      itself. A method annotated `@GuardedBy(L)` starts with L held, and every call of it needs L
+      held. Synthetic accessors (`access$NNN`, Java 8 bytecode has no nestmates) pass their needs
+      on to their callers. Constructors are exempt (before publication); lambda bodies are not
+      (their call sites cannot be seen, so they must take the lock themselves).
+    - [x] (531ac60) The field table: reflection gives every instance field and its kind (final, volatile,
+      atomic, plain); the README's "Data-Race Freedom" table must list each one with the matching
+      kind, both ways. It found `ownedPrefix` (a `@GuardedBy("bufferLock")` int since A14) missing
+      from the table; added.
+    - [x] (531ac60) Negative controls in the test, on class files mutated with ASM: an unguarded read of a
+      guarded field, an unguarded call of a `@GuardedBy` method, the annotation stripped from a
+      guarded method, a plain field without `@GuardedBy`, and a field table without one row: each
+      must fail with its own message.
+    - [x] (d142501) Runs in `mvn test` (fast, no agent); README "Data-Race Freedom" (point 2 is then checked
+      for every execution, not only by vmlens' scenarios), CHANGELOG, CLAUDE.md.
+    - Known limits (reviews 2026-11-13, not blocking, not reachable by the code today): a guarded
+      reference used after the lock is released, calls through a supertype, a static `@GuardedBy`
+      method (matched by the lock's name), a method reference to an accessor, and a method named
+      like a guarded field in a method reference.
   - **A18 — Every interleaving of the code is a run of the model, for small scenarios (1–2
     weeks).** JPF enumerates all interleavings of the real bytecode for the scenarios of
     `src/test/jpf/`; a JPF listener writes each path as a trace in the format of A6, and
@@ -392,14 +444,15 @@ Prompts for long `/loop` runs. The loop is started with a one-line reference to 
 so the prompt can be changed in this file without restarting the loop; the next iteration reads
 the current text.
 
-### Verification roadmap A15–A18
+### Verification roadmap A16–A18
 
-Start: `/loop Work on the verification roadmap A15-A18 as described in TODO.md, section "Run prompts" / "Verification roadmap A15–A18", re-read on every iteration.`
+Start: `/loop Work on the verification roadmap A16-A18 as described in TODO.md, section "Run prompts" / "Verification roadmap A16–A18", re-read on every iteration.`
 
 ````text
-Work on the verification roadmap A15-A18 of streambuffer (TODO.md, "Verification roadmap 2026-11,
-second part") fully automatically and as independently as possible, in the order A16, A15, A17,
-A18. It may take longer than one session; there is no deadline. Work locally (TLC, Apalache and
+Work on the verification roadmap A16-A18 of streambuffer (TODO.md, "Verification roadmap 2026-11,
+second part") fully automatically and as independently as possible: A16 and A17 together, then
+A18. A15 is not part of this run: it comes after every other open item (TODO.md, the table). It
+may take longer than one session; there is no deadline. Work locally (TLC, Apalache and
 tlapm as in src/test/tla/README.md; JPF in Docker, eclipse-temurin:11-jdk + apt-get install git,
 MSYS_NO_PATHCONV=1; OpenJML RAC in WSL as the formal-verification.yml job does it; Maven with
 JAVA_HOME=/c/Users/berna/AppData/Local/Programs/jdk-25.0.4.1+1). A rented instance (see
@@ -408,27 +461,26 @@ remote.md while it runs, delete it and sweep when done. Web search and Chrome ar
 
 Procedure:
 1. Every iteration: in the real clone, switch to the branch of the current package (create it from
-   main if it does not exist: feat/a16-assumptions, feat/a15-release-gate, feat/a17-drf-bytecode,
-   feat/a18-jpf-traces), write the package's plan as checkbox steps under it in TODO.md with the
-   reason for every decision, do the next open step, test it, tick it with its commit, add steps
-   found on the way. One package per branch and PR.
+   main if it does not exist: feat/a16-a17 for A16 and A17 together, then feat/a18-jpf-traces),
+   write the package's plan as checkbox steps under it in TODO.md with the reason for every
+   decision, do the next open step, test it, tick it with its commit, add steps found on the way.
+   One branch and PR for A16 with A17, one for A18.
 2. A change of production code only if a package finds a defect (then a bug-hunt finding in
    BUGHUNT-FOUND.md, a test that is red before and green after, and the fix). Negative controls are
    mandatory for every check: a deliberately broken input must make it fail.
 3. Before every push: mvn verify, PIT (100 % threshold) if test or main code changed, and the
    OpenJML RAC job locally if StreamBuffer.java changed. Results with numbers in the READMEs;
    CHANGELOG.md, CLAUDE.md, TODO.md updated. CI: only the existing workflow files.
-4. A15 changes the release process: open its PR, but leave the merge to the owner and say so.
-5. At the end of each package: review of the branch by an agent. Only regressions against main,
+4. At the end of each package: review of the branch by an agent. Only regressions against main,
    moderate or high bugs in the branch's own changes, and wrong statements in the docs block the
    push; the rest goes as one line under the package in TODO.md. At most one more round. Then one
    push, open the PR (do not merge, no dispatch runs), watch CI; on a CI error of my own: cancel the
    run, commit the fix, push. Check the CodeRabbit review and work off still-valid findings.
-6. Rules: no questions (ask only for something that is the owner's to decide, such as more budget
+5. Rules: no questions (ask only for something that is the owner's to decide, such as more budget
    or a release-process change). No force-push, no pkill -f (kill by PID), delete only with
    Remove-Item, no private data to external services. Remove the done steps of a package from
    TODO.md when its PR is merged; only the result stays.
-7. When a package's PR is open and CI is green: a short summary in German, then go on with the next
+6. When a package's PR is open and CI is green: a short summary in German, then go on with the next
    package; after A18 (or when A18 is time-boxed out): a German summary of all packages, then end
    the loop.
 ````
