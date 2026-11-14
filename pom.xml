@@ -43,7 +43,6 @@ SPDX-License-Identifier: Apache-2.0
         <awaitility.version>4.3.0</awaitility.version>
         <concurrentunit.version>0.4.6</concurrentunit.version>
         <lincheck.version>3.7</lincheck.version>
-        <asm.version>9.11.1</asm.version>
         <vmlens.version>1.2.28</vmlens.version>
         <japicmp.version>0.27.0</japicmp.version>
         <!-- Extra JVM arguments for the forked test JVM, empty by default. Set on the command line
@@ -229,34 +228,14 @@ SPDX-License-Identifier: Apache-2.0
             <scope>test</scope>
         </dependency>
         <!--
-            ASM for the A6 trace validation (net.ladenthin.streambuffer.trace): a test-side class
-            loader rewrites StreamBuffer's accesses to shared state into calls of a tracer. The
-            version is the one Lincheck brings, so the convergence check stays quiet.
+            ASM (asm, asm-tree, asm-analysis) for the A6 trace validation and the A17 lock-discipline
+            check (net.ladenthin.streambuffer.trace, .drf) comes from Lincheck, not from a
+            declaration of ours: its model checking needs its own ASM version. When Dependabot (#234)
+            moved our declared asm, asm-tree and asm-analysis to 9.11.1, both Lincheck tests hung
+            under JaCoCo ("The execution has hung"), even with all five ASM artifacts at 9.11.1;
+            at Lincheck's 9.9.1 they pass. So ASM follows Lincheck's version, and a Lincheck update
+            is the only way it moves.
         -->
-        <dependency>
-            <groupId>org.ow2.asm</groupId>
-            <artifactId>asm</artifactId>
-            <version>${asm.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <!--
-            The tree and analysis APIs for the lock-discipline check on the bytecode (roadmap A17,
-            net.ladenthin.streambuffer.drf): the control flow of each method and the origin of a
-            monitor's operand. Lincheck brings the same version transitively; declared here because
-            the test uses them directly.
-        -->
-        <dependency>
-            <groupId>org.ow2.asm</groupId>
-            <artifactId>asm-tree</artifactId>
-            <version>${asm.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.ow2.asm</groupId>
-            <artifactId>asm-analysis</artifactId>
-            <version>${asm.version}</version>
-            <scope>test</scope>
-        </dependency>
         <!--
             vmlens interleaving-analysis API. Promoted from the `vmlens` profile to the
             main test classpath (transitive-dependency-free, so convergence-safe) so the
