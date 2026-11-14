@@ -13,7 +13,8 @@
 #   4. graphcheck.py decides, by a subset construction, whether every word of the automaton is
 #      accepted; an empty set of model states is a counterexample, printed as its word.
 # With "controls" it also checks that the chain fails where it must: a model whose writer never
-# signals, a corrupted returned byte, and a class whose readSingleByte does not lower the count.
+# signals, a corrupted returned byte, and a class whose reads (readSingleByte, readIntoArray) do not
+# lower the count.
 #
 # Usage: src/test/jpf/trace/check-graph.sh <name> <bytes> <chunk> <read length> <read() readers>
 #          <record readers> <waitForAtLeast callers> <after|any> [controls]
@@ -113,6 +114,6 @@ open(sys.argv[2], "w", encoding="utf-8", newline="\n").write(s)
 EOF
   expect "control: a returned byte + 1 in the graph" 1 product "$name-byte" "$corrupt" "$tla"
   jpf_graph "$name-mutant" "$TRACED_MUTANT"
-  expect "control: readSingleByte does not lower the count" 1 product "$name-mutant" "$WORK/$name-mutant.graph" "$tla"
+  expect "control: the reads do not lower the count" 1 product "$name-mutant" "$WORK/$name-mutant.graph" "$tla"
 fi
 exit "$failed"
