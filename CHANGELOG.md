@@ -10,7 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Every interleaving of the code is a run of the model, for small scenarios (roadmap A18).**
   Java PathFinder explores the A6-instrumented class with state matching (a tracer for JPF that
-  logs each access in an atomic block behind one scheduling point, so it adds no state); a
+  logs each access in an atomic block behind one scheduling point, and keeps only state the path
+  determines); a
   listener writes the state graph with the logged events at its edges; `graphmin.py` reduces it
   to the minimal automaton of the event sequences (104,712 JPF states to 373 in the smallest
   scenario); `TraceGraph.tla`, the product with A6's trace acceptance (`TraceStreamBuffer.tla` as
@@ -18,8 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is a run of the model, exactly (no false alarm from the model's choices). `check-graph.sh` runs
   the chain per scenario with three negative controls: a model whose writer never signals, a
   corrupted byte or count, a class whose reads do not lower the count. Accepted: one write with a
-  `read()` reader, with a record reader, two writes with a `waitForAtLeast(2)` caller, each with
-  the close after the writes or at any point (README of `src/test/tla`). Two readers, and automata
+  `read()` reader and with a record reader, each with the close after the writes or at any point,
+  and a `waitForAtLeast(2)` caller after one 2-byte write (close after) and after two 1-byte
+  writes (close at any point) (README of `src/test/tla`). Two readers, and automata
   above about 2,500 states, are out of reach so far. CI: the `jpf-interleavings` job runs the
   smallest scenario with its controls.
 - **Verification assumptions and run manifests (roadmap A16).** `VERIFICATION-ASSUMPTIONS.md`

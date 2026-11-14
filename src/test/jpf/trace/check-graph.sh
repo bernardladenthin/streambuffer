@@ -42,7 +42,7 @@ for ((i = 1; i <= n; i++)); do
   if [ "$i" -gt $((nbyte + nrecord)) ]; then wait_callers="${wait_callers:+$wait_callers,}r$i"; fi
 done
 
-jpf_graph() {  # jpf_graph <label> <traced classes>: writes $WORK/<label>.graph
+jpf_graph() {  # jpf_graph <label> <traced classes> [mutant]: writes $WORK/<label>.graph
   local out="$WORK/$1-classes"
   rm -rf "$out" && mkdir -p "$out"
   "$javac_jpf" --release 8 -nowarn -cp "$2:$LIB/*:$JPF_CORE/build/jpf-classes.jar:$JPF_CORE/build/jpf.jar" -d "$out" \
@@ -57,11 +57,24 @@ native_classpath+=;$out
 listener = net.ladenthin.streambuffer.jpf.GraphExport
 graph.out = $WORK/$1.graph
 vm.enable_assertions = true
+# a yield is the scheduling point of every logged access (the JPF tracer); set, not left to the default
+cg.threads.break_yield = true
 EOF
   local s
   s=$(date +%s)
   "$JAVA_JPF" "-Xmx${JPF_HEAP:-6g}" -jar "$JPF_CORE/build/RunJPF.jar" "$WORK/$1.jpf" > "$WORK/$1.jpf.log" 2>&1 || true
   echo "  JPF $1: $(grep -oE 'new=[0-9]+' "$WORK/$1.jpf.log" | head -1) states, $(grep -cE '^error #' "$WORK/$1.jpf.log" || true) errors, $(( $(date +%s) - s )) s"
+  # the graph is the whole search only if JPF finished it: no error (it stops at the first one),
+  # and the listener's trailer written; the class mutant is expected to stop at its error
+  if ! grep -q '^# edges ' "$WORK/$1.graph" 2>/dev/null; then
+    echo "FAIL  JPF $1: the graph is incomplete (no trailer)"
+    return 1
+  fi
+  if [ -z "${3:-}" ] && ! grep -q 'no errors detected' "$WORK/$1.jpf.log"; then
+    echo "FAIL  JPF $1: JPF reported an error or did not finish; the graph is no complete search"
+    grep -A3 '^error #' "$WORK/$1.jpf.log" | head -8 | sed 's/^/      /'
+    return 1
+  fi
 }
 
 product() {  # product <label> <graph> <model dir> [sed for the cfg]: TLC's dump and the check
@@ -69,13 +82,19 @@ product() {  # product <label> <graph> <model dir> [sed for the cfg]: TLC's dump
   rm -rf "$d" && mkdir -p "$d"
   cp "$3/StreamBuffer.tla" "$3/TraceStreamBuffer.tla" "$3/TraceGraph.tla" "$d/"
   "$py" -I "$here/graphmin.py" "$2" "Graph_$name" "$d" "$readers" "$byte_readers" "$wait_callers" \
-    "$bytes" "$chunk" "$readlen" | sed 's/^/  /'
-  if [ -n "${4:-}" ]; then sed -i "$4" "$d/Graph_$name.cfg"; fi
+    "$bytes" "$chunk" "$readlen" > "$d/graphmin.log" 2>&1 || { sed 's/^/  /' "$d/graphmin.log"; return 2; }
+  sed 's/^/  /' "$d/graphmin.log"
+  if [ -n "${4:-}" ]; then sed -i "$4" "$d/Graph_$name.cfg" || return 2; fi
   local s
   s=$(date +%s)
   (cd "$d" && "$JAVA_TLC" -XX:+UseParallelGC -cp "$TLA2TOOLS" tlc2.TLC -workers "${TLC_WORKERS:-auto}" \
      -dump dot,actionlabels product.dot -config "Graph_$name.cfg" "Graph_$name.tla" > tlc.log 2>&1) || true
   echo "  TLC $1: $(grep -oE '[0-9]+ distinct states found' "$d/tlc.log" | tail -1), $(( $(date +%s) - s )) s"
+  if ! grep -q 'Model checking completed. No error has been found.' "$d/tlc.log" || [ ! -s "$d/product.dot" ]; then
+    echo "  TLC $1 did not complete; no result"
+    grep -E 'Error' "$d/tlc.log" | head -3 | sed 's/^/    /'
+    return 2
+  fi
   local e=0
   "$py" -I "$here/graphcheck.py" "$d/product.dot" "$d/Graph_$name.tla" > "$d/check.log" 2>&1 || e=$?
   grep -E '^OK|^REJECTED|^FAIL' "$d/check.log" | head -1 | sed 's/^/  /'
@@ -89,12 +108,12 @@ expect() {  # expect <label> <0 accepted | 1 rejected> <command...>
   local e=0
   "$@" || e=$?
   if [ "$want" = 0 ] && [ "$e" = 0 ]; then echo "OK    $label: every word accepted"
-  elif [ "$want" = 1 ] && [ "$e" = 1 ]; then echo "OK    $label: rejected, as it must be"
-  else echo "FAIL  $label (graphcheck exit $e)"; failed=1
+  elif [ "$want" = 1 ] && [ "$e" = 3 ]; then echo "OK    $label: rejected, as it must be"
+  else echo "FAIL  $label (exit $e: 0 accepted, 3 rejected, else no result)"; failed=1
   fi
 }
 
-jpf_graph "$name" "$TRACED"
+jpf_graph "$name" "$TRACED" || exit 1
 expect "$name" 0 product "$name" "$WORK/$name.graph" "$tla"
 if [ "$controls" = controls ]; then
   mutant="$WORK/model-nosignal"
@@ -115,7 +134,7 @@ open(sys.argv[2], "w", encoding="utf-8", newline="\n").write(s)
 EOF
   expect "control: a returned byte (or count) + 1 in the graph" 1 product "$name-byte" "$corrupt" "$tla"
   if [ $((nbyte + nrecord)) -gt 0 ]; then
-    jpf_graph "$name-mutant" "$TRACED_MUTANT"
+    jpf_graph "$name-mutant" "$TRACED_MUTANT" mutant || failed=1
     expect "control: the reads do not lower the count" 1 product "$name-mutant" "$WORK/$name-mutant.graph" "$tla"
   else
     # the mutation is on the read paths, which a scenario of waitForAtLeast callers only never runs

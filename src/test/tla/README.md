@@ -611,14 +611,15 @@ the same trace acceptance as A6 and without a sampling step.
    `TracingClassLoader` produces, and JPF runs them in `JpfTraceHarness` (`src/test/jpf/trace/`),
    with A6's threads and harness events. Under JPF the tracer (`src/test/jpf/trace/.../
    TraceRecorder.java`) logs each access in an atomic block, behind one `Thread.yield()`, which is
-   the access's scheduling point. It keeps no state of its own, so JPF matches states. A6's
+   the access's scheduling point. It keeps only state the path determines (each thread's
+   number of calls), so JPF matches states. A6's
    tracer used a global lock, which gave the lock's states and two scheduling points per access,
    and the graph did not finish.
 2. **The state graph.** A JPF listener (`GraphExport`) writes the graph JPF explores. Each
    transition is labelled with the events the tracer reported during it.
 3. **The minimal automaton.** `graphmin.py` removes the edges without an event, determinizes and
-   minimizes. Only the language of the event sequences matters, and it is small. In the smallest
-   scenario 104,712 JPF states become 373, in the others 1,451 to 5,102.
+   minimizes. Only the language of the event sequences matters, and it is small: in the smallest
+   scenario 104,712 JPF states become 373; the automata checked have 188 to 1,555 states.
 4. **The product.** `TraceGraph.tla` extends `TraceStreamBuffer.tla` and uses its `StepOf` and
    `Obs` as they are. An edge of the automaton is chosen, the thread of its event takes up to K
    steps of the model, and the event must agree with the model's state. TLC dumps the product's
@@ -647,7 +648,7 @@ after" means the closer closes once the writer is done, "any" means at any point
 | `S1A`: one 1-byte write, a `read()` reader, close after | 104,712 | 373 | 82,944 | yes | 3 of 3 rejected |
 | `S1N`: the same, close any | 617,544 | 1,451 | 542,666 | yes | 3 of 3 rejected |
 | `S4A`: one 2-byte write, a record reader of 2, close after | 102,132 | 373 | 82,944 | yes | 3 of 3 rejected |
-| `S4N`: the same, close any | 601,656 | 1,451 | 542,666 | yes | 2 of 2 rejected |
+| `S4N`: the same, close any | 601,656 | 1,451 | 542,666 | yes | 2 of 3 rejected (the class control missed this path, below) |
 | `S7A`: one 2-byte write, a `waitForAtLeast(2)` caller, close after | 41,211 | 188 | 10,813 | yes | 2 of 2 rejected (no class control: nothing reads) |
 | `S7N`: two 1-byte writes, a `waitForAtLeast(2)` caller, close any | 1,036,384 | 1,555 | 251,529 | yes | 1 of 1 rejected |
 
@@ -671,6 +672,10 @@ scenarios run on a rented machine.
 - The tracer adds one scheduling point per logged access.
 - Two small tools, `graphmin.py` (partition refinement) and `graphcheck.py` (the subset
   construction).
+- The check is about the sequences of events, every prefix of a run (the end states play no
+  role). A deadlock or an uncaught exception on some interleaving is JPF's own finding: the
+  scenario's run must end with "no errors detected", or `check-graph.sh` fails, since JPF stops
+  at its first error and the graph would be incomplete.
 
 The controls show that the chain finds defects. They do not show that the tools are free of
 errors.

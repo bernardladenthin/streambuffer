@@ -10,6 +10,8 @@ w; X(w e) is reached from X(w) by Choose of e, any number of GSilent (at most K,
 allows), and GConsume. Every word is accepted exactly when no reachable X(w e) is empty for an edge
 e of the automaton's state after w; an empty one is a counterexample, printed as its word.
 Usage: python graphcheck.py <product.dot> <automaton module .tla>
+Exit codes: 0 every word accepted, 3 a word rejected, anything else the check could not run
+(a missing or malformed input), so a negative control never mistakes a crash for a rejection.
 """
 import re
 import sys
@@ -53,6 +55,12 @@ for line in open(sys.argv[2], encoding="utf-8"):
     elif line.startswith("TInit == "):
         ginit = int(line.split("==")[1])
 print("automaton: %d edges, initial state %s" % (len(event), ginit))
+# the module must be read whole: its edges numbered 1.., and as many as TEdge has lines
+tedge_lines = sum(1 for line in open(sys.argv[2], encoding="utf-8") if line.lstrip(", ").startswith("[i |-> "))
+if ginit is None or not event or sorted(event) != list(range(1, len(event) + 1)) or len(event) != tedge_lines:
+    sys.exit("FAIL: the automaton module was not read whole (%d edges parsed, %d edge lines)" % (len(event), tedge_lines))
+if not info or len(info) < len(succ):
+    sys.exit("FAIL: the product dump was not read whole (%d states parsed)" % len(info))
 if not initial or any(info[n] != (ginit, -1) for n in initial):
     sys.exit("FAIL: the product's initial states are not at the automaton's initial state")
 
@@ -103,6 +111,6 @@ if violations:
         print("REJECTED word of %d events, the last is the first the model cannot take:" % len(w))
         for i in w:
             print("  " + event[i])
-    sys.exit(1)
+    sys.exit(3)
 print("OK: every word of the automaton is a run of the model (%d words' states, %d edges)"
       % (len(parent), len(event)))

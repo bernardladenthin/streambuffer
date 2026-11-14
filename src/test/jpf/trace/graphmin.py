@@ -40,6 +40,10 @@ for line in open(sys.argv[1], encoding="utf-8"):
                 lab[cur].append((e, nxt))
                 cur = nxt
 print("graph: %d states, %d edges, %d labelled sources, init %s (%.1fs)" % (len(nodes), nedges, len(lab), init, time.time() - t0))
+# a graph JPF did not finish writing (no initial state, no edge, or no trailer) is no input
+trailer = any(line.startswith("# edges ") for line in open(sys.argv[1], encoding="utf-8"))
+if init is None or nedges == 0 or not trailer:
+    sys.exit("FAIL: the graph is incomplete (init %s, %d edges, trailer %s)" % (init, nedges, trailer))
 
 closure_cache = {}
 
