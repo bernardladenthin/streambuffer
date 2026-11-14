@@ -135,11 +135,23 @@ if len(sys.argv) > 2:
              "TWaitCallers == " + tla_set(wait_callers),
              "TBytes == " + nbytes, "TChunkLen == " + chunk, "TReadLen == " + readlen,
              "TEmpty == <<>>",
-             "TInit == %d" % block[0],
-             "TEdges == {"]
-    for i, ((f, e), d) in enumerate(sorted(edges.items())):
-        lines.append(("  " if i == 0 else ", ") + "[i |-> %d, f |-> %d, d |-> %d, e |-> %s]" % (i, f, d, tla_event(e)))
-    lines += ["}", "===="]
+             "TInit == %d" % block[0]]
+    ordered = sorted(edges.items())
+    lines.append("TEdge == <<")
+    for i, ((f, e), d) in enumerate(ordered):
+        # a sequence is indexed from 1: edge i is TEdge[i]; "i" repeats the id for the checker
+        lines.append(("  " if i == 0 else ", ") + "[i |-> %d, f |-> %d, d |-> %d, e |-> %s]" % (i + 1, f, d, tla_event(e)))
+    lines.append(">>")
+    out_of = defaultdict(list)
+    for i, ((f, e), d) in enumerate(ordered):
+        out_of[f].append(i + 1)
+    # the edges out of each state: a sequence of sets (state s is element s + 1), as a function
+    lines.append("TOutSeq == <<")
+    for s in range(nblocks):
+        lines.append(("  " if s == 0 else ", ") + "{%s}" % ", ".join(map(str, out_of[s])))
+    lines.append(">>")
+    lines.append("TOut == [s \\in 0..%d |-> TOutSeq[s + 1]]" % (nblocks - 1))
+    lines += ["===="]
     with open(os.path.join(outdir, module + ".tla"), "w", encoding="utf-8", newline="\n") as out:
         out.write("\n".join(lines) + "\n")
     cfg = """CONSTANTS
@@ -151,7 +163,8 @@ if len(sys.argv) > 2:
     ReadLen <- TReadLen
     TraceLog <- TEmpty
     GInit <- TInit
-    GEdges <- TEdges
+    GEdge <- TEdge
+    GOut <- TOut
     K = 6
     Spurious = 3
     Protocol = "condition"
