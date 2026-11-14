@@ -601,6 +601,80 @@ runs have the properties is what model checking (`check.sh`) and the proofs show
   those methods needs the mapping in `TraceStreamBuffer.tla` changed with it (`TraceRecorderTest`
   fails first, with the fixed list of a single-threaded run).
 
+## Every interleaving of the code is a run of the model (roadmap A18)
+
+Trace validation checks the runs it sees. For small scenarios this checks **every** interleaving
+of the real bytecode [V19]. Java PathFinder enumerates them, and the model accepts every one, as
+the same trace acceptance as A6 and without a sampling step.
+
+1. **JPF over the instrumented class.** `TracedClassDump` writes the class files A6's
+   `TracingClassLoader` produces, and JPF runs them in `JpfTraceHarness` (`src/test/jpf/trace/`),
+   with A6's threads and harness events. Under JPF the tracer (`src/test/jpf/trace/.../
+   TraceRecorder.java`) logs each access in an atomic block, behind one `Thread.yield()`, which is
+   the access's scheduling point. It keeps no state of its own, so JPF matches states. A6's
+   tracer used a global lock, which gave the lock's states and two scheduling points per access,
+   and the graph did not finish.
+2. **The state graph.** A JPF listener (`GraphExport`) writes the graph JPF explores. Each
+   transition is labelled with the events the tracer reported during it.
+3. **The minimal automaton.** `graphmin.py` removes the edges without an event, determinizes and
+   minimizes. Only the language of the event sequences matters, and it is small. In the smallest
+   scenario 104,712 JPF states become 373, in the others 1,451 to 5,102.
+4. **The product.** `TraceGraph.tla` extends `TraceStreamBuffer.tla` and uses its `StepOf` and
+   `Obs` as they are. An edge of the automaton is chosen, the thread of its event takes up to K
+   steps of the model, and the event must agree with the model's state. TLC dumps the product's
+   state graph.
+5. **The subset check.** `graphcheck.py` follows each word of the automaton. For each word it
+   keeps the set of the product's states that consume it. If that set is ever empty, the word is a
+   counterexample. The check is exact: the model's choices (how many silent steps, which ones) are
+   existential, so a single product state that cannot go on is no counterexample. Checking that
+   instead raised false alarms on accepted traces.
+
+`check-graph.sh` runs the chain for one scenario, and with `controls` also checks that it fails
+where it must:
+
+- **a model whose writer never signals**, with `Spurious = 0`, which could otherwise stand in for
+  the signal;
+- **a corrupted returned byte**, or for a scenario without reads, the count `waitForAtLeast`
+  returned;
+- **a class whose reads do not lower the count** (`TracedClassDump ... no-decrement`, on both read
+  paths; skipped where nothing reads).
+
+**Results** (2026-11-14; locally and on a rented 32-core machine, 4 h per scenario; "close
+after" means the closer closes once the writer is done, "any" means at any point):
+
+| Scenario | JPF states | Minimal automaton | Product states | Every word a run of the model | Controls |
+|---|---|---|---|---|---|
+| `S1A`: one 1-byte write, a `read()` reader, close after | 104,712 | 373 | 82,944 | yes | 3 of 3 rejected |
+| `S1N`: the same, close any | 617,544 | 1,451 | 542,666 | yes | 3 of 3 rejected |
+| `S4A`: one 2-byte write, a record reader of 2, close after | 102,132 | 373 | 82,944 | yes | 3 of 3 rejected |
+| `S4N`: the same, close any | 601,656 | 1,451 | 542,666 | yes | 2 of 2 rejected |
+| `S7N`: two 1-byte writes, a `waitForAtLeast(2)` caller, close any | 1,036,384 | 1,555 | 251,529 | yes | 1 of 1 rejected |
+
+`S4N` ran before the class control mutated both read paths, so its class control missed the
+record reader's path; on `S4A` the fixed control is rejected. `S7N` ran before the byte control
+could corrupt a count, a scenario without reads; that variant has not run on a `waitForAtLeast`
+scenario yet.
+
+**Out of reach so far:**
+- Two `read()` readers: JPF did not finish in 4 h.
+- Automata of 2,500 states and more (two 1-byte writes with a `read()` reader or a record reader;
+  a waiter next to a reader, 15 million JPF states): TLC's dump of the product did not finish in
+  4 h. One thread writes the dump.
+
+**CI:** the `jpf-interleavings` job runs `S1A` with its controls, about 3 minutes. The larger
+scenarios run on a rented machine.
+
+**What it rests on:**
+- JPF and its models of the JDK classes. Its interleavings are those of its scheduling points,
+  each shared access and synchronization; they are sequentially consistent, which the data-race
+  freedom of the code (README, "Data-Race Freedom") makes sufficient.
+- The tracer adds one scheduling point per logged access.
+- Two small tools, `graphmin.py` (partition refinement) and `graphcheck.py` (the subset
+  construction).
+
+The controls show that the chain finds defects. They do not show that the tools are free of
+errors.
+
 ## Limits
 
 - **Not in the model:** several writers (each write is atomic under the lock, so they interleave

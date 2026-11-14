@@ -178,6 +178,13 @@ deliberately not part of the synchronous Publish pipeline and never a required c
    one of those methods changes, `TraceStreamBuffer.tla` (`WaitPc`) and the expected list of
    `TraceRecorderTest` change with it; a new access to shared state needs its rewrite in
    `TracingClassLoader`.
+   **Every interleaving** (A18, `src/test/jpf/trace/`, the `jpf-interleavings` job): JPF runs the
+   instrumented class (`TracedClassDump`) under a JPF-only `TraceRecorder` (an atomic block per
+   access behind one `Thread.yield()`; keep its API in step with the JVM's tracer), `GraphExport`
+   writes the state graph, `graphmin.py` the minimal automaton as a module of `TraceGraph.tla`, and
+   `graphcheck.py` runs a subset construction over TLC's dump of the product; `check-graph.sh` does
+   it per scenario with its controls. A change of `TraceStreamBuffer.tla`'s `StepOf` or `Obs`
+   changes this check too (it uses them as they are).
 
 The `@GuardedBy("bufferLock")` lock discipline is gated separately by Error Prone in the default
 build. The Checker Framework Lock Checker was evaluated as a further layer and deferred — see

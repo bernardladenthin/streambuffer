@@ -548,6 +548,11 @@ what it assumes, and lists the trusted base and what no result covers:
   - **Trace validation** [V17]: recorded runs of the code (an instrumented copy of the class in the tests,
     every access to shared state logged in order) are checked against the model with TLC; 990 runs
     were accepted, and models of older code, a mutated model and corrupted runs are rejected.
+  - **Every interleaving** [V19]: for small scenarios (one writer, one closer, one reader), Java
+    PathFinder explores every interleaving of the instrumented bytecode, its state graph is reduced
+    to the minimal automaton of all their event sequences, and an exact check (a subset
+    construction over TLC's product with the model) shows every one of them is a run of the model.
+    A model whose writer never signals, a corrupted byte and a defective class are rejected.
   - **Threads that call forever:** with a finite stream and a closer every call returns, with fair
     scheduling only and no lock fairness: TLC in bounded models of the abstraction and the
     detailed model, TLAPS for the abstraction and any number of threads [V14] [V15] (assuming fairness by role,

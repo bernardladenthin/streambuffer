@@ -37,6 +37,7 @@ caller must do for the results to apply (the caller contracts), and what no row 
 | V16 | The "max 1 permit" release of the external signals (F280) keeps at most one permit and loses no signal | TLC 1.7.4 (bounded) and TLAPS (any number of signalers) | the model `StreamBufferSignal.tla` | the model of `releaseMaxOnePermit` matches the code (changed together) | `tla-model`, `tlaps-proofs` (formal-verification) |
 | V17 | Recorded runs of the code are runs of the model; models of older code, a mutated model and corrupted runs are rejected | TLC 1.7.4 (`trace.sh`, `trace-controls.sh`) over the instrumented class (A6) | the code's runs that were recorded (990 locally, 33 in CI) | the instrumentation logs every access to shared state in order; the trace lock serializes the traced accesses | `tla-model` (formal-verification) |
 | V18 | The functional behaviour of the API (reads, writes, trim, signals, statistics), with mutation testing at 100 % | JUnit 6, jqwik 1.9.3 properties, PIT | the code, the tests | -- | `test`, `report` (PIT) (publish) |
+| V19 | Every interleaving of the code that JPF explores, in small scenarios, is a run of the model: the automaton of all their event sequences is accepted word by word by the trace acceptance of A6 | JPF (jpf-core `e61e396`) with a graph export over the A6-instrumented class; `graphmin.py`; TLC 1.7.4 (`TraceGraph.tla`); `graphcheck.py` (a subset construction); `check-graph.sh` | the code's bytecode, every interleaving of the scenarios (one writer and one closer, one reader; bounded) | JPF's scheduling points (each shared access and synchronization, one per logged access) and its models of the JDK classes; sequential consistency, which V3/V5 make sufficient; the two Python tools | `jpf-interleavings` (formal-verification), the smallest scenario; the larger ones on a rented machine |
 
 ## The runs: which revision a result is for
 
@@ -57,7 +58,7 @@ manifest of the latest scheduled run, not necessarily of the latest commit. A15 
 
 What every row takes for granted:
 
-- **The JVM and its JIT, and javac.** The rows on the code (V1-V4, V6-V9, V17, V18) check the source or the
+- **The JVM and its JIT, and javac.** The rows on the code (V1-V4, V6-V9, V17-V19) check the source or the
   bytecode javac produced; that the JVM runs that bytecode as the JLS says is assumed.
 - **The JDK classes** the buffer builds on: `ReentrantLock`, `Condition` and the AQS behind them,
   `Semaphore`, `ArrayDeque`, `CopyOnWriteArrayList`, `AtomicInteger`, `AtomicLong`. The TLA+ models
@@ -85,7 +86,10 @@ What a caller must do for the results to apply:
 - `waitForAtLeast` with a timeout (`awaitNanos`) and interrupts: in no model, not traced.
 - Trim in the TLA+ models: it keeps the bytes, their order and `availableBytes`, which is why the
   models leave it out; JPF (V6), vmlens (V4) and the tests (V18) cover it.
-- Several writers and closers in the detailed TLA+ model (the abstractions have them, V11-V15).
+- Several writers and closers in the detailed TLA+ model (the abstractions have them, V11-V15), and so
+  in V10, V17 and V19.
+- Every interleaving (V19) for more than the small scenarios: two readers, or automata above about
+  2,500 states, are out of reach so far (`src/test/tla/README.md`, A18).
 - Liveness of the detailed model for any number of readers (bounded only, V10), and the instance
   methods' functional contracts beyond runtime checking (V2).
 - Infinitely many spurious wake-ups without progress: liveness assumes finitely many (V10, V14,
