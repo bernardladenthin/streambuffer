@@ -134,9 +134,11 @@ refine RefineCounters RefineCondition2
 refine RefineCounters RefineCondition3
 refine RefineRecords RefineRecordsRecords2
 refine RefineRecords RefineRecordsChunks2
+refine RefineRecords RefineRecordsWriters2Records2
 # StreamBufferWait covers every configuration of the current code, also with spurious wake-ups
+# and with two writers and two closers
 for c in Condition2 Condition3 Records2 Chunks2 Mixed2 WaitAndRead2 WaitChecked2 \
-         SpuriousWaitChecked2 SpuriousMixed2; do
+         SpuriousWaitChecked2 SpuriousMixed2 Writers2Mixed2 Writers2WaitChecked2; do
   refine RefineWait "RefineWait$c"
 done
 exit "$failed"
