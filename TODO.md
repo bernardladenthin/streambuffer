@@ -305,6 +305,36 @@ annotated, so everything below is genuinely still open.
       finish: 61,220 printed in 15 minutes, 10,718 distinct (the paths of a small graph are still
       exponentially many). So per-trace checking stays bounded; a complete check has to work on
       the graph.
+    - [x] The owner's choice: a check on the graph. A probe first (2026-11-14): the trace model
+      runs into dead branches on accepted traces (TLC with a deadlock check and a stutter at the
+      end: three of three accepted traces deadlock after 17 states). Before each line the thread
+      may take up to K silent model steps, and a wrong choice dies only later, so the sufficient
+      condition "every product state can consume every edge" would raise false alarms; an exact
+      check against this nondeterministic model is a language inclusion (a subset construction
+      over the model's states).
+    - Owner (2026-11-14): close to 100 % proven software; heavy computation on a rented machine
+      (the owner's private notes), only minimal examples in GitHub Actions; a redesign that
+      saves time is welcome if the proof stays as strong. The design that gives that:
+      **one marker per model step.** The instrumentation logs exactly one event at the code site of
+      each action of `StreamBuffer.tla` (plus the observations it has today), so the model replays
+      a trace deterministically, without silent steps. Then:
+      1. JPF exports its state graph (a listener; the events at the edges), with state matching;
+      2. a tool removes the edges without an event and minimizes the graph to a deterministic
+         automaton over the events (only the language of the event sequences matters);
+      3. TLC checks the product of that automaton and the replaying model completely; since the
+         replay is deterministic, "every edge can be consumed in every reachable product state"
+         is exactly "every interleaving of the code is a run of the model", with no false alarms.
+      A6 gets faster on the way (no search over silent steps).
+    - [ ] Gate 2: the size of the minimized automaton for the smallest scenario (the graph export,
+      the minimization); if it is small, the design carries.
+    - [ ] The markers: one per action of `StreamBuffer.tla`, at its code site (a table code site ->
+      action, checked against the model's action list), and `ReplayStreamBuffer.tla` (consumes
+      one marker per step, checks the observations); A6's traces accepted by it as well.
+    - [ ] The product check (`StreamBufferGraph.tla` or a generated module per scenario), with
+      negative controls: a mutated class (its graph has an edge the model cannot take), a mutated
+      model.
+    - [ ] Scenarios: the smallest in CI (minutes), the larger ones on a rented machine; README,
+      CHANGELOG, CLAUDE.md, `VERIFICATION-ASSUMPTIONS.md` (a row for A18).
     - [ ] If the count fits: an importer writes each distinct trace as an A6 module
       (`TraceGenerator.write`), `trace.sh` checks all of them, `trace-controls.sh` still rejects;
       then the next larger scenarios, as far as the time-box allows.
