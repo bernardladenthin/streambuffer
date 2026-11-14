@@ -44,6 +44,15 @@ models=(
   "SpuriousReached2|Error: Invariant NoSpuriousWake is violated."
   "WaitAlone1|Model checking completed. No error has been found."
   "SpuriousWaitAlone1|Model checking completed. No error has been found."
+  # several writers and closers (the bytes shared in commit order); the probes show they interleave
+  "Writers2Condition2|Model checking completed. No error has been found."
+  "Closers2Condition2|Model checking completed. No error has been found."
+  "Writers2Records2|Model checking completed. No error has been found."
+  "Writers2Mixed2|Model checking completed. No error has been found."
+  "Writers2WaitChecked2|Model checking completed. No error has been found."
+  "Writers2WaitAndRead2|Model checking completed. No error has been found."
+  "Writers2Reached2|Error: Invariant NoTwoWritersSignalling is violated."
+  "Closers2Reached2|Error: Invariant NoTwoClosersSignalling is violated."
   # model@module: threads that call forever; fairness per process, no lock fairness
   "WaitForever2@StreamBufferWaitForever|Model checking completed. No error has been found."
   "WaitForever3@StreamBufferWaitForever|Model checking completed. No error has been found."
@@ -69,6 +78,7 @@ models=(
   "ForeverRecords2@StreamBufferForever|Model checking completed. No error has been found."
   "ForeverChunks2@StreamBufferForever|Model checking completed. No error has been found."
   "ForeverCondition3@StreamBufferForever|Model checking completed. No error has been found."
+  "ForeverWriters2Mixed2@StreamBufferForever|Model checking completed. No error has been found."
   "ForeverNextOnlyWaitAndRead2@StreamBufferForever|Error: Temporal properties were violated."
 )
 

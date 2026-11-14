@@ -505,6 +505,11 @@ Spec == Init /\ [][Next]_vars /\ Fairness
 (* happens there (the models with one are not vacuous).                    *)
 NoSpuriousWake == spurious = Spurious
 
+(* Probes that must fail with two writers or two closers: two of them have committed their     *)
+(* write or close and are signalling at once (the models with two are not vacuous).            *)
+NoTwoWritersSignalling == ~\E i, j \in Writers : i # j /\ wpc[i] = "sigread" /\ wpc[j] = "sigread"
+NoTwoClosersSignalling == ~\E c, e \in Closers : c # e /\ cpc[c] = "sigread" /\ cpc[e] = "sigread"
+
 (* No NoSuchElementException out of read() (F278). *)
 NoEmptyTake == \A r \in Readers : rpc[r] # "nsee"
 
