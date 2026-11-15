@@ -23,8 +23,8 @@
 #   with TracedClassDump's no-decrement, for the controls), LIB (the annotation jars:
 #   checker-qual.jar, jspecify.jar, error-prone-annotations.jar), WORK (a scratch directory),
 #   JPF_HEAP (default 6g), TLC_WORKERS (default auto), GRAPHMIN_LOCK (optional: a lock file, so
-#   that the graphmin.py of scenarios run at once take turns; it holds the whole graph in memory,
-#   40 GB and more for a 9 GB graph), REUSE_GRAPH (1: take the graph and JPF log of an earlier run
+#   that the graphmin.py of scenarios run at once take turns; each holds its whole graph in
+#   memory, about 0.7 GB per GB of graph), REUSE_GRAPH (1: take the graph and JPF log of an earlier run
 #   in the same WORK instead of running JPF again, checked as a new one is: to finish a scenario
 #   whose later steps were cut off, without repeating a day of JPF).
 set -euo pipefail
