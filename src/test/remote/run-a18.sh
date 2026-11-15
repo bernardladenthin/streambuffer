@@ -14,7 +14,10 @@
 #                   <wait callers> <after|any>" (default: a18-scenarios.txt next to this script)
 #   parallel        scenarios at once (default: memory / (JPF_HEAP + 3 GB), at most cores / 4)
 # Environment: JPF_HEAP (default 7g; JPF is single-threaded and needs the heap), TLC_WORKERS
-#   (default 4: the product's TLC run, single-threaded in its dump anyway).
+#   (default 4: the product's TLC run, single-threaded in its dump anyway). The scenarios'
+#   graphmin.py take turns (GRAPHMIN_LOCK): each holds its whole graph in memory, about 5 GB per
+#   GB of graph (a 9 GB graph of two readers: 40 GB and more), and several at once fill memory;
+#   setup.sh swap adds swap as a further guard.
 # Start it detached (detach.sh), never in the foreground of an ssh session.
 set -u
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -40,6 +43,7 @@ one() { # one <name> <args...>
   local s e
   s=$(date +%s)
   WORK="$payload/work/a18/$name" JPF_HEAP="$heap" TLC_WORKERS="${TLC_WORKERS:-4}" \
+    GRAPHMIN_LOCK="$payload/work/a18/graphmin.lock" \
     bash "$payload/sb/src/test/jpf/trace/check-graph.sh" "$name" "$@" controls > "$out/$name.log" 2>&1
   e=$?
   log "$name ($*): exit $e in $(( $(date +%s) - s )) s; $(grep -cE '^OK' "$out/$name.log") OK, $(grep -cE '^FAIL' "$out/$name.log") FAIL, $(grep -cE '^SKIP' "$out/$name.log") SKIP"

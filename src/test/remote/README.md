@@ -45,7 +45,7 @@ owner's private notes, never in this repository.
 4. **Set up and start, detached.**
    ```bash
    R=/root/run/sb/src/test/remote
-   $S "bash $R/detach.sh /root/run/out/setup.out bash $R/setup.sh tlc jpf"
+   $S "bash $R/detach.sh /root/run/out/setup.out bash $R/setup.sh tlc jpf swap"
    # when /root/run/out/setup.log ends with "setup done":
    $S "bash $R/detach.sh /root/run/out/a18.out bash $R/run-a18.sh"
    # or the TLA+ checks and proofs (setup.sh tlc apalache tlapm first):
@@ -85,6 +85,13 @@ owner's private notes, never in this repository.
 - **Windows line endings.** A script written on Windows fails on the machine with `$'\r'`; the
   repository's `.gitattributes` keeps these files LF, a script from elsewhere needs
   `sed -i 's/\r$//'` first.
+- **Memory peaks after a day of JPF.** `graphmin.py` holds a scenario's whole graph in memory,
+  about 5 GB per GB of graph. Two scenarios with two readers ended JPF within minutes of each
+  other after 20 hours, with 9 GB graphs each, and their two `graphmin.py` filled 62 GB at once.
+  `run-a18.sh` lets them take turns (`GRAPHMIN_LOCK`), and `setup.sh swap` (in its default)
+  adds swap, so that a peak slows the run instead of the OOM killer ending a JPF or TLC that has
+  computed for hours. In a run without both: stop all but one `graphmin.py` (SIGSTOP, by PID)
+  and continue the next when it ends.
 - **Big dumps.** `-dump dot` of TLC grows to GBs per scenario; `run-a18.sh` deletes it when the
   scenario ends, the logs keep the numbers.
 - **Nothing private in the payload or the results.** `pack.sh` packs sources, classes and the
