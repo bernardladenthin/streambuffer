@@ -85,13 +85,16 @@ owner's private notes, never in this repository.
 - **Windows line endings.** A script written on Windows fails on the machine with `$'\r'`; the
   repository's `.gitattributes` keeps these files LF, a script from elsewhere needs
   `sed -i 's/\r$//'` first.
-- **Memory peaks after a day of JPF.** `graphmin.py` holds a scenario's whole graph in memory,
-  about 5 GB per GB of graph. Two scenarios with two readers ended JPF within minutes of each
-  other after 20 hours, with 9 GB graphs each, and their two `graphmin.py` filled 62 GB at once.
-  `run-a18.sh` lets them take turns (`GRAPHMIN_LOCK`), and `setup.sh swap` (in its default)
-  adds swap, so that a peak slows the run instead of the OOM killer ending a JPF or TLC that has
-  computed for hours. In a run without both: stop all but one `graphmin.py` (SIGSTOP, by PID)
-  and continue the next when it ends.
+- **Memory peaks after a day of JPF.** `graphmin.py` holds a scenario's whole graph in memory.
+  Its first version kept every edge as Python objects (about 150 bytes each): two scenarios with
+  two readers ended JPF within minutes of each other after 20 hours, with 9 GB graphs each, and
+  one `graphmin.py` alone filled 62 GB and 74 GB of swap before its parse ended. Now the edges are
+  flat integer arrays (0.9 GB peak for a 1.36 GB graph); `run-a18.sh` still lets them take turns
+  (`GRAPHMIN_LOCK`), and `setup.sh swap` (in its default) adds swap, so that a peak slows the run
+  instead of the OOM killer ending a JPF or TLC that has computed for hours.
+- **A scenario cut off after its JPF.** The graph and the JPF log stay in its `WORK`;
+  `REUSE_GRAPH=1 check-graph.sh ...` with the same `WORK` runs the rest of the chain from them
+  (checked as a new graph: the trailer, no JPF error), without repeating the day of JPF.
 - **Big dumps.** `-dump dot` of TLC grows to GBs per scenario; `run-a18.sh` deletes it when the
   scenario ends, the logs keep the numbers.
 - **Nothing private in the payload or the results.** `pack.sh` packs sources, classes and the
