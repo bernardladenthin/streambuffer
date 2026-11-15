@@ -185,6 +185,11 @@ deliberately not part of the synchronous Publish pipeline and never a required c
    `graphcheck.py` runs a subset construction over TLC's dump of the product; `check-graph.sh` does
    it per scenario with its controls. A change of `TraceStreamBuffer.tla`'s `StepOf` or `Obs`
    changes this check too (it uses them as they are).
+   **Long runs on a rented machine** (`src/test/remote/`, README there): `pack.sh` builds the
+   payload locally, `setup.sh` installs the tools at the workflow's pins, `run-a18.sh` and
+   `run-formal.sh` run without a time limit, `detach.sh` starts them past the ssh session,
+   `status.sh` is the 30-minute check. Nothing about the provider, machine or key goes into the
+   repository.
 
 The `@GuardedBy("bufferLock")` lock discipline is gated separately by Error Prone in the default
 build. The Checker Framework Lock Checker was evaluated as a further layer and deferred — see

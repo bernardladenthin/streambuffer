@@ -577,7 +577,7 @@ nothing, so these must reject:
 | the semaphore wait (before F278) | 16 of 33 |
 | no re-check under `bufferLock` (`ReCheck = FALSE`, before F278, the `Bytes*` traces) | 9 of 9 |
 | a mutated model whose writer never signals (without spurious wake-ups, which could stand in for the signal) | 9 of 33 |
-| a spurious wake-up written into a trace (unpark, the test, park right after a reader's park, before any other thread's line): accepted with the budget, rejected with `Spurious = 0` | 3 of 3 |
+| a spurious wake-up written into a trace (unpark, the test, park right after a reader's park with `availableBytes` 0 and the stream open, before any other thread's line): accepted with the budget, rejected with `Spurious = 0` | 3 of 3 |
 | every trace with a completed read, its first returned byte changed by one | 33 of 33 |
 
 The traces a wrong model accepts are those that never reach the difference, e.g. no thread
@@ -724,3 +724,7 @@ bash src/test/tla/proof.sh "$PWD/tlapm/bin/tlapm"
 One model by hand, with its error trace: `java -cp tla2tools.jar tlc2.TLC -config Semaphore2.cfg
 StreamBuffer.tla` from this directory. CI: the `tla-model` job (`check.sh`, `inductive.sh`) and the
 `tlaps-proofs` job (`proof.sh`) of `formal-verification.yml`, both scheduled or dispatched.
+
+Runs too long for CI (the A18 scenarios beyond the smallest, all proofs at once, every model): on
+a rented machine with the scripts of [`src/test/remote/`](../remote/README.md), which pack the
+payload, install the pinned tools, run without a time limit and say what to watch.
