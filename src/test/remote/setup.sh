@@ -11,10 +11,14 @@
 #   jpf       jpf-core at JPF_SHA with the AtomicLong model patch of src/test/jpf, built with JDK 11
 #   tlapm     tlapm built from TLAPM_SHA with OCaml OCAML_VERSION (about 10-20 min; Isabelle is a
 #             1 GB download from one server, fetched with retries)
+#   swap      a swap file of twice the memory (at most half the free disk), swappiness 10: a
+#             guard against a memory peak (graphmin.py of a large graph) killing a run that has
+#             computed for a day
 # Writes <payload>/tools/env.sh, which run-a18.sh and run-formal.sh source. Logs in
 # <payload>/out/setup.log; a failed step stops the script.
 #
-# Usage: <payload>/sb/src/test/remote/setup.sh [tlc] [apalache] [jpf] [tlapm]   (default: tlc jpf)
+# Usage: <payload>/sb/src/test/remote/setup.sh [tlc] [apalache] [jpf] [tlapm] [swap]
+#        (default: tlc jpf swap)
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 payload="$(cd "$here/../../../.." && pwd)"
@@ -22,7 +26,7 @@ wf="$payload/sb/.github/workflows/formal-verification.yml"
 tools="$payload/tools"
 mkdir -p "$tools" "$payload/out"
 exec > >(tee -a "$payload/out/setup.log") 2>&1
-[ "$#" -gt 0 ] || set -- tlc jpf
+[ "$#" -gt 0 ] || set -- tlc jpf swap
 want() { case " $* " in *" $1 "*) return 0 ;; esac; return 1; }
 pin() { # the first value of a key in the workflow's env blocks
   local v
@@ -104,5 +108,21 @@ case "$args" in *" tlapm "*)
   tar xzf "$src"/_build/tlapm-*-x86_64-linux-gnu.tar.gz -C "$tools/tlapm"
   echo "export TLAPM=$tools/tlapm/tlapm/bin/tlapm" >> "$tools/env.sh"
   echo "== tlapm $sha ok: $("$tools/tlapm/tlapm/bin/tlapm" --version 2>&1 | head -1)" ;;
+esac
+case "$args" in *" swap "*)
+  if [ -e /swap-run ]; then
+    echo "== swap /swap-run exists"
+  else
+    mem_gb=$(( $(awk '/MemTotal/ {print $2}' /proc/meminfo) / 1024 / 1024 ))
+    free_gb=$(( $(df --output=avail -k / | tail -n 1) / 1024 / 1024 ))
+    gb=$(( 2 * mem_gb ))
+    [ "$gb" -le $(( free_gb / 2 )) ] || gb=$(( free_gb / 2 ))
+    fallocate -l "${gb}G" /swap-run
+    chmod 600 /swap-run
+    mkswap -q /swap-run
+    swapon /swap-run
+    sysctl -q vm.swappiness=10
+    echo "== swap ${gb} GB on /swap-run (swappiness 10)"
+  fi ;;
 esac
 echo "== $(date -u +%H:%M:%S) setup done; env in $tools/env.sh"
