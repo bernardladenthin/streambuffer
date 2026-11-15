@@ -44,11 +44,14 @@ owner's private notes, never in this repository.
    the personal one clean; addresses are reused for other machines.
 4. **Set up and start, detached.**
    ```bash
-   $S '/root/run/sb/src/test/remote/detach.sh /root/run/out/setup.out /root/run/sb/src/test/remote/setup.sh tlc jpf'
-   # when setup.log ends with "setup done":
-   $S '/root/run/sb/src/test/remote/detach.sh /root/run/out/a18.out /root/run/sb/src/test/remote/run-a18.sh'
+   R=/root/run/sb/src/test/remote
+   $S "bash $R/detach.sh /root/run/out/setup.out bash $R/setup.sh tlc jpf"
+   # when /root/run/out/setup.log ends with "setup done":
+   $S "bash $R/detach.sh /root/run/out/a18.out bash $R/run-a18.sh"
+   # or the TLA+ checks and proofs (setup.sh tlc apalache tlapm first):
+   $S "bash $R/detach.sh /root/run/out/formal.out bash $R/run-formal.sh"
    ```
-5. **Watch it every 30 minutes**, with `$S /root/run/sb/src/test/remote/status.sh`. Stop the run
+5. **Watch it every 30 minutes**, with `$S "bash $R/status.sh"` (exit 1 at a WARN, 2 once every run is DONE). Stop the run
    (and the machine) at a WARN: memory or disk almost full, or nothing computing without `DONE`.
    A run that is merely slow goes on: there is no time limit.
 6. **Copy the results off before anything is destroyed**:
