@@ -1,92 +1,167 @@
-# SPDX-FileCopyrightText: 2014-2026 Bernard Ladenthin <bernard.ladenthin@gmail.com>
-#
-# SPDX-License-Identifier: Apache-2.0
 """A18 gate 2: the size of JPF's state graph as a minimal deterministic automaton over its events.
 
 Reads GraphExport's file (I, E, F lines), splits multi-event edges into chains, removes the edges
 without an event (epsilon closure), determinizes (subset construction) and minimizes (Moore's
 partition refinement) the automaton of the prefix-closed language (every state accepting).
 Usage: python graphmin.py <graph.txt>
+
+Memory: the graphs of two readers have 400 million edges and more (9 GB of text), so the edges
+are kept in flat arrays of 32-bit integers (compressed sparse rows, events as small integers),
+about 16 bytes per edge at the peak, not as Python objects (about 150 bytes per edge: the first
+version needed more than RAM and swap of a 62 GB machine for one such graph). The subset
+construction visits states and events in sorted order, so the numbering is deterministic; any
+numbering gives the same automaton up to isomorphism, which is all TLC and graphcheck.py use.
 """
 import sys
 import time
+from array import array
 from collections import defaultdict
 
 t0 = time.time()
 init = None
-eps = defaultdict(list)
-lab = defaultdict(list)  # state -> [(event, state)]
-nodes = set()
-fresh = -2
+trailer = False
 nedges = 0
-for line in open(sys.argv[1], encoding="utf-8"):
-    if line.startswith("I "):
-        init = int(line.split()[1])
-        nodes.add(init)
-    elif line.startswith("E "):
-        parts = line.rstrip("\n").split(" ", 3)
-        a, b = int(parts[1]), int(parts[2])
-        events = [e for e in parts[3].split("|") if e] if len(parts) > 3 else []
-        nodes.update((a, b))
-        nedges += 1
-        if not events:
-            eps[a].append(b)
-        else:
+event_id = {}  # event text -> small integer
+events = []  # small integer -> event text
+# raw ids: JPF's state ids (>= -1), and fresh ids (<= -2) for the inner states of a chain
+eps_s, eps_d = array("i"), array("i")
+lab_s, lab_e, lab_d = array("i"), array("H"), array("i")
+fresh = -2
+maxid = -1
+with open(sys.argv[1], encoding="utf-8") as f:
+    for line in f:
+        c = line[:2]
+        if c == "E ":
+            parts = line.rstrip("\n").split(" ", 3)
+            a, b = int(parts[1]), int(parts[2])
+            if a > maxid:
+                maxid = a
+            if b > maxid:
+                maxid = b
+            nedges += 1
+            evs = [e for e in parts[3].split("|") if e] if len(parts) > 3 else []
+            if not evs:
+                eps_s.append(a)
+                eps_d.append(b)
+                continue
             cur = a
-            for i, e in enumerate(events):
-                nxt = b if i == len(events) - 1 else fresh
-                if nxt == fresh:
+            last = len(evs) - 1
+            for k, e in enumerate(evs):
+                if k == last:
+                    nxt = b
+                else:
+                    nxt = fresh
                     fresh -= 1
-                lab[cur].append((e, nxt))
+                ev = event_id.get(e)
+                if ev is None:
+                    ev = event_id[e] = len(events)
+                    events.append(e)
+                lab_s.append(cur)
+                lab_e.append(ev)
+                lab_d.append(nxt)
                 cur = nxt
-print("graph: %d states, %d edges, %d labelled sources, init %s (%.1fs)" % (len(nodes), nedges, len(lab), init, time.time() - t0))
-# a graph JPF did not finish writing (no initial state, no edge, or no trailer) is no input
-trailer = any(line.startswith("# edges ") for line in open(sys.argv[1], encoding="utf-8"))
+        elif c == "I ":
+            init = int(line.split()[1])
+            if init > maxid:
+                maxid = init
+        elif line.startswith("# edges "):
+            trailer = True
+
 if init is None or nedges == 0 or not trailer:
     sys.exit("FAIL: the graph is incomplete (init %s, %d edges, trailer %s)" % (init, nedges, trailer))
 
-closure_cache = {}
+# dense ids: JPF's id v as v + 1 (so -1 is 0), fresh id v as njpf + (-2 - v)
+njpf = maxid + 2
+nfresh = -2 - fresh
+nstates = njpf + nfresh
+
+
+def csr(src, dst, lab=None):
+    """The edges as compressed sparse rows over the dense ids: (offsets, targets[, labels])."""
+    off = array("q", [0]) * (nstates + 1)
+    for v in src:
+        off[(v + 1 if v >= -1 else njpf - 2 - v) + 1] += 1
+    for k in range(nstates):
+        off[k + 1] += off[k]
+    pos = array("q", off)
+    tgt = array("i", [0]) * len(src)
+    lbl = array("H", [0]) * len(src) if lab is not None else None
+    for k in range(len(src)):
+        v = src[k]
+        s = v + 1 if v >= -1 else njpf - 2 - v
+        p = pos[s]
+        w = dst[k]
+        tgt[p] = w + 1 if w >= -1 else njpf - 2 - w
+        if lbl is not None:
+            lbl[p] = lab[k]
+        pos[s] = p + 1
+    return off, tgt, lbl
+
+
+# JPF's states that occur, for the count (its ids may have gaps; the chains' inner states are
+# not counted, as before)
+seen_jpf = bytearray(njpf)
+for arr in (eps_s, eps_d, lab_s, lab_d):
+    for v in arr:
+        if v >= -1:
+            seen_jpf[v + 1] = 1
+seen_jpf[init + 1] = 1
+eoff, etgt, _ = csr(eps_s, eps_d)
+del eps_s, eps_d
+loff, ltgt, llab = csr(lab_s, lab_d, lab_e)
+del lab_s, lab_d, lab_e
+labelled = sum(1 for k in range(nstates) if loff[k + 1] > loff[k])
+print("graph: %d states, %d edges, %d labelled sources, init %s (%.1fs)"
+      % (sum(seen_jpf), nedges, labelled, init, time.time() - t0))
+sys.stdout.flush()
 
 
 def closure(states):
-    key = states
-    if key in closure_cache:
-        return closure_cache[key]
+    """The epsilon closure of a set of dense ids, as a sorted array."""
     seen = set(states)
     todo = list(states)
     while todo:
         s = todo.pop()
-        for n in eps.get(s, ()):
+        for k in range(eoff[s], eoff[s + 1]):
+            n = etgt[k]
             if n not in seen:
                 seen.add(n)
                 todo.append(n)
-    r = frozenset(seen)
-    closure_cache[key] = r
-    return r
+    return array("i", sorted(seen))
 
 
-start = closure(frozenset([init]))
-index = {start: 0}
+start = closure([init + 1])
+index = {start.tobytes(): 0}  # a dfa state (its sorted closure) -> its number
+via = {}  # a set of targets before the closure -> the dfa state its closure is
 order = [start]
 trans = []  # dfa state -> {event: dfa state}
 i = 0
 while i < len(order):
     S = order[i]
+    order[i] = None  # done with it once its moves are known
     moves = defaultdict(set)
     for s in S:
-        for e, n in lab.get(s, ()):
-            moves[e].add(n)
+        for k in range(loff[s], loff[s + 1]):
+            moves[llab[k]].add(ltgt[k])
     row = {}
-    for e, ns in moves.items():
-        T = closure(frozenset(ns))
-        if T not in index:
-            index[T] = len(order)
-            order.append(T)
-        row[e] = index[T]
+    for e in sorted(moves, key=events.__getitem__):
+        key = array("i", sorted(moves[e])).tobytes()
+        t = via.get(key)
+        if t is None:
+            T = closure(moves[e])
+            tk = T.tobytes()
+            t = index.get(tk)
+            if t is None:
+                t = index[tk] = len(order)
+                order.append(T)
+            via[key] = t
+        row[e] = t
     trans.append(row)
     i += 1
     if i % 20000 == 0:
         print("  determinizing: %d done, %d found (%.0fs)" % (i, len(order), time.time() - t0))
+        sys.stdout.flush()
+del index, via, order
 alphabet = sorted({e for row in trans for e in row})
 print("dfa: %d states, %d transitions, alphabet %d (%.1fs)" % (len(trans), sum(len(r) for r in trans), len(alphabet), time.time() - t0))
 
@@ -121,7 +196,7 @@ if len(sys.argv) > 2:
     edges = {}
     for s, row in enumerate(trans):
         for e, t in row.items():
-            edges[(block[s], e)] = block[t]
+            edges[(block[s], events[e])] = block[t]
 
     def tla_set(names):
         return "{" + ", ".join('"%s"' % n for n in names) + "}"
