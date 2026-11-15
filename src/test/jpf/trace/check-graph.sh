@@ -22,7 +22,11 @@
 #   for TLC), TLA2TOOLS (the jar), TRACED (the instrumented class files), TRACED_MUTANT (the same
 #   with TracedClassDump's no-decrement, for the controls), LIB (the annotation jars:
 #   checker-qual.jar, jspecify.jar, error-prone-annotations.jar), WORK (a scratch directory),
-#   JPF_HEAP (default 6g), TLC_WORKERS (default auto).
+#   JPF_HEAP (default 6g), TLC_WORKERS (default auto), GRAPHMIN_LOCK (optional: a lock file, so
+#   that the graphmin.py of scenarios run at once take turns; it holds the whole graph in memory,
+#   40 GB and more for a 9 GB graph), REUSE_GRAPH (1: take the graph and JPF log of an earlier run
+#   in the same WORK instead of running JPF again, checked as a new one is: to finish a scenario
+#   whose later steps were cut off, without repeating a day of JPF).
 set -euo pipefail
 name="$1" bytes="$2" chunk="$3" readlen="$4" nbyte="$5" nrecord="$6" nwait="$7" close="$8"
 controls="${9:-}"
@@ -64,9 +68,13 @@ EOF
   s=$(date +%s)
   "$JAVA_JPF" "-Xmx${JPF_HEAP:-6g}" -jar "$JPF_CORE/build/RunJPF.jar" "$WORK/$1.jpf" > "$WORK/$1.jpf.log" 2>&1 || true
   echo "  JPF $1: $(grep -oE 'new=[0-9]+' "$WORK/$1.jpf.log" | head -1) states, $(grep -cE '^error #' "$WORK/$1.jpf.log" || true) errors, $(( $(date +%s) - s )) s"
+  graph_ok "$@"
+}
+
+graph_ok() {  # graph_ok <label> <traced classes> [mutant]: $WORK/<label>.graph is a whole search
   # the graph is the whole search only if JPF finished it: no error (it stops at the first one),
   # and the listener's trailer written; the class mutant is expected to stop at its error
-  if ! grep -q '^# edges ' "$WORK/$1.graph" 2>/dev/null; then
+  if ! tail -c 4096 "$WORK/$1.graph" 2>/dev/null | grep -q '^# edges '; then
     echo "FAIL  JPF $1: the graph is incomplete (no trailer)"
     return 1
   fi
@@ -81,7 +89,9 @@ product() {  # product <label> <graph> <model dir> [sed for the cfg]: TLC's dump
   local d="$WORK/$1"
   rm -rf "$d" && mkdir -p "$d"
   cp "$3/StreamBuffer.tla" "$3/TraceStreamBuffer.tla" "$3/TraceGraph.tla" "$d/"
-  "$py" -I "$here/graphmin.py" "$2" "Graph_$name" "$d" "$readers" "$byte_readers" "$wait_callers" \
+  local lock=()
+  [ -z "${GRAPHMIN_LOCK:-}" ] || lock=(flock "$GRAPHMIN_LOCK")
+  "${lock[@]}" "$py" -I "$here/graphmin.py" "$2" "Graph_$name" "$d" "$readers" "$byte_readers" "$wait_callers" \
     "$bytes" "$chunk" "$readlen" > "$d/graphmin.log" 2>&1 || { sed 's/^/  /' "$d/graphmin.log"; return 2; }
   sed 's/^/  /' "$d/graphmin.log"
   if [ -n "${4:-}" ]; then sed -i "$4" "$d/Graph_$name.cfg" || return 2; fi
@@ -113,7 +123,12 @@ expect() {  # expect <label> <0 accepted | 1 rejected> <command...>
   fi
 }
 
-jpf_graph "$name" "$TRACED" || exit 1
+if [ "${REUSE_GRAPH:-}" = 1 ]; then
+  echo "  JPF $name: the graph of an earlier run, $(grep -oE 'new=[0-9]+' "$WORK/$name.jpf.log" | head -1) states"
+  graph_ok "$name" "$TRACED" || exit 1
+else
+  jpf_graph "$name" "$TRACED" || exit 1
+fi
 expect "$name" 0 product "$name" "$WORK/$name.graph" "$tla"
 if [ "$controls" = controls ]; then
   mutant="$WORK/model-nosignal"
@@ -126,11 +141,26 @@ if [ "$controls" = controls ]; then
   corrupt="$WORK/$name-byte.graph"
   "$py" -I - "$WORK/$name.graph" "$corrupt" <<'EOF'
 import re, sys
-s = open(sys.argv[1], encoding="utf-8").read()
-# the first byte a read returned; in a scenario without reads, the count a waitForAtLeast returned
-m = re.search(r"\tret\t\d+\t\d+\t(\d+)", s) or re.search(r"\twfa\t\d+\t(-?\d+)\t", s)
-s = s[:m.start(1)] + str(int(m.group(1)) + 1) + s[m.end(1):]
-open(sys.argv[2], "w", encoding="utf-8", newline="\n").write(s)
+# the first byte a read returned; in a scenario without reads, the count a waitForAtLeast returned.
+# Line by line (a graph of two readers is 9 GB): first the line to change, then the copy.
+ret, wfa = re.compile(r"\tret\t\d+\t\d+\t(\d+)"), re.compile(r"\twfa\t\d+\t(-?\d+)\t")
+target = None
+first_wfa = None
+with open(sys.argv[1], encoding="utf-8") as f:
+    for k, line in enumerate(f):
+        if ret.search(line):
+            target = (k, ret)
+            break
+        if first_wfa is None and wfa.search(line):
+            first_wfa = k
+if target is None:
+    target = (first_wfa, wfa)
+with open(sys.argv[1], encoding="utf-8") as f, open(sys.argv[2], "w", encoding="utf-8", newline="\n") as out:
+    for k, line in enumerate(f):
+        if k == target[0]:
+            m = target[1].search(line)
+            line = line[:m.start(1)] + str(int(m.group(1)) + 1) + line[m.end(1):]
+        out.write(line)
 EOF
   expect "control: a returned byte (or count) + 1 in the graph" 1 product "$name-byte" "$corrupt" "$tla"
   if [ $((nbyte + nrecord)) -gt 0 ]; then
