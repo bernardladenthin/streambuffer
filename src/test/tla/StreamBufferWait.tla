@@ -118,8 +118,8 @@ ConstInitUnchecked == Threads = {1, 2} /\ None = 0 /\ NW = 1 /\ NC = 1 /\ Bytes 
              /\ M \in [{1, 2} -> Nat] /\ (\A r \in {1, 2} : M[r] >= 1)
              /\ RecLen \in Nat /\ RecLen >= 1 /\ Calls0 = 0 /\ CheckedReturn = FALSE /\ Spurious \in Nat
 
-States == {"start", "reread", "lockwait", "inc", "test", "parked", "woken", "wret", "lock",
-           "decide", "copy", "finish", "ret0", "done", "nsee"}
+States == {"start", "fastclosed", "reread", "lockwait", "inc", "test", "waitclosed", "parked",
+           "woken", "wret", "lock", "decide", "copy", "finish", "ret0", "done", "nsee"}
 
 InFlight == IF bl = None THEN 0 ELSE hold[bl]
 Buffered == w - t - InFlight
@@ -198,13 +198,25 @@ Return(r) ==
     /\ wclosed' = [wclosed EXCEPT ![r] = closed]
     /\ EndCall(r)
 
-\* the lock-free fast path: enough bytes (a wait returns the count it checked), closed, or wait
+\* A18: the fast path and the loop of awaitAtLeast read availableBytes and, only if that is too
+\* few, then streamClosed: two volatile reads, two steps, and a write or a close can come between
+\* them (the thread then goes on as one that saw too few). A park so overtaken by a write is woken
+\* all the same: the write's signal waits for waitLock, which the parking thread holds.
+\* the lock-free fast path: enough bytes (a wait returns the count it checked), or too few
 ThreadStart(r) ==
     /\ rpc[r] = "start"
     /\ IF avail >= Want(r) /\ op[r] = "wait"
           THEN Return(r)
-          ELSE /\ Go(r, IF avail >= Want(r) THEN "lock" ELSE IF closed THEN "reread" ELSE "lockwait")
+          ELSE /\ Go(r, IF avail >= Want(r) THEN "lock" ELSE "fastclosed")
                /\ UNCHANGED <<wres, wclosed, op, calls>>
+    /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, hold, eofAt, parked, wl, bl>>
+    /\ UNCHANGED spurious
+
+\* too few seen: closed, or wait
+ThreadFastClosed(r) ==
+    /\ rpc[r] = "fastclosed"
+    /\ Go(r, IF closed THEN "reread" ELSE "lockwait")
+    /\ UNCHANGED <<wres, wclosed, op, calls>>
     /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, hold, eofAt, parked, wl, bl>>
     /\ UNCHANGED spurious
 
@@ -235,11 +247,23 @@ ThreadInc(r) ==
 \* (CheckedReturn), else, once enough or closed, reads availableBytes again under waitLock
 ThreadTest(r) ==
     /\ rpc[r] = "test" /\ wl = r
-    /\ IF avail >= Want(r) \/ closed
+    /\ IF avail >= Want(r)
           THEN IF op[r] = "wait"
-                  THEN IF CheckedReturn /\ avail >= Want(r)
+                  THEN IF CheckedReturn
                           THEN /\ Return(r) /\ wl' = None /\ UNCHANGED parked
                           ELSE /\ Go(r, "wret") /\ UNCHANGED <<wl, parked, wres, wclosed, op, calls>>
+                  ELSE /\ Go(r, "lock") /\ wl' = None
+                       /\ UNCHANGED <<parked, wres, wclosed, op, calls>>
+          ELSE /\ Go(r, "waitclosed") /\ UNCHANGED <<wl, parked, wres, wclosed, op, calls>>
+    /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, hold, eofAt, bl>>
+    /\ UNCHANGED spurious
+
+\* too few seen in the loop: closed (a wait returns availableBytes read again), or park
+ThreadWaitClosed(r) ==
+    /\ rpc[r] = "waitclosed" /\ wl = r
+    /\ IF closed
+          THEN IF op[r] = "wait"
+                  THEN /\ Go(r, "wret") /\ UNCHANGED <<wl, parked, wres, wclosed, op, calls>>
                   ELSE /\ Go(r, IF avail >= 1 THEN "lock" ELSE "ret0") /\ wl' = None
                        /\ UNCHANGED <<parked, wres, wclosed, op, calls>>
           ELSE /\ parked' = parked \cup {r} /\ Go(r, "parked") /\ wl' = None
@@ -302,9 +326,9 @@ ThreadRet0(r) ==
 
 \* a step of the protocol keeps the budget of spurious wake-ups
 ThreadStep(r) ==
-    \/ ThreadStart(r) \/ ThreadReread(r) \/ ThreadWaitLock(r) \/ ThreadInc(r)
-    \/ ThreadTest(r) \/ ThreadWaitReturn(r) \/ ThreadLock(r) \/ ThreadDecide(r)
-    \/ ThreadCopy(r) \/ ThreadFinish(r) \/ ThreadRet0(r)
+    \/ ThreadStart(r) \/ ThreadFastClosed(r) \/ ThreadReread(r) \/ ThreadWaitLock(r)
+    \/ ThreadInc(r) \/ ThreadTest(r) \/ ThreadWaitClosed(r) \/ ThreadWaitReturn(r)
+    \/ ThreadLock(r) \/ ThreadDecide(r) \/ ThreadCopy(r) \/ ThreadFinish(r) \/ ThreadRet0(r)
 
 \* a spurious wake-up: Condition.await() may return without a signal (JDK); the thread takes
 \* waitLock again and tests, as after a signal. At most Spurious in a run: safety for every
@@ -366,7 +390,7 @@ CopyHasBytes == \A r \in Threads : rpc[r] = "copy" => Buffered >= left[r]
 OpStates == \A r \in Threads :
     /\ rpc[r] = "wret" => op[r] = "wait" /\ closed
     /\ rpc[r] \in {"lock", "decide", "copy", "finish", "ret0"} => op[r] = "read"
-WaitLockInv == \A r \in Threads : (rpc[r] \in {"inc", "test", "wret"}) <=> wl = r
+WaitLockInv == \A r \in Threads : (rpc[r] \in {"inc", "test", "waitclosed", "wret"}) <=> wl = r
 ParkedInv == parked = {r \in Threads : rpc[r] = "parked"}
 RereadClosed == \A r \in Threads : rpc[r] = "reread" => closed
 Ret0Empty == \A r \in Threads : rpc[r] = "ret0" => closed /\ avail = 0
