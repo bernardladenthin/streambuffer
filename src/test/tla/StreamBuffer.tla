@@ -123,9 +123,9 @@ BufBytes == IF buf = <<>> THEN <<>>
 (* The bytes reader r received, over all its completed reads. *)
 Got(r) == Flat(reads[r])
 
-ReaderStates == {"start", "reread", "acquire", "lockwait", "inc", "test", "parked",
-                 "woken", "wret", "lock", "decide", "copy", "finish", "ret0", "eof",
-                 "done", "nsee"}
+ReaderStates == {"start", "fastclosed", "reread", "acquire", "lockwait", "inc", "test",
+                 "waitclosed", "parked", "woken", "wret", "lock", "decide", "copy", "finish",
+                 "ret0", "eof", "done", "nsee"}
 
 TypeOK ==
     /\ buf \in Seq(Seq(1..Bytes)) /\ \A i \in 1..Len(buf) : buf[i] # <<>>
@@ -273,15 +273,22 @@ WantNow(r) == IF AtomicRead \/ r \in WaitCallers THEN LenOf(r)
 
 (* The lock-free fast path of the wait: enough bytes, then the returned    *)
 (* count is the one just checked.                                          *)
+(* The fast path reads availableBytes, and only if that is too few, then streamClosed: two       *)
+(* volatile reads, two steps (A18: a write and a close can come between them, and the code     *)
+(* then goes on as one that saw too few on a closed buffer).                                   *)
 ReaderStart(r) ==
     /\ rpc[r] = "start"
     /\ want' = [want EXCEPT ![r] = WantNow(r)]
     /\ IF avail >= WantNow(r) /\ r \in WaitCallers THEN Return(r)
-       ELSE /\ IF avail >= WantNow(r) THEN Goto(r, "lock")
-               ELSE IF closed THEN Goto(r, "reread")
-               ELSE Goto(r, IF Protocol = "condition" THEN "lockwait" ELSE "acquire")
+       ELSE /\ Goto(r, IF avail >= WantNow(r) THEN "lock" ELSE "fastclosed")
             /\ UNCHANGED <<wres, wclosed>>
     /\ UNCHANGED <<Shared, cur, hold, left, reads, eofAt, Sync>>
+
+ReaderFastClosed(r) ==
+    /\ rpc[r] = "fastclosed"
+    /\ Goto(r, IF closed THEN "reread"
+               ELSE IF Protocol = "condition" THEN "lockwait" ELSE "acquire")
+    /\ UNCHANGED <<Shared, want, cur, hold, left, reads, wres, wclosed, eofAt, Sync>>
 
 (* Closed seen: the wait returns availableBytes, read again. *)
 ReaderReread(r) ==
@@ -318,18 +325,37 @@ ReaderInc(r) ==
 (* "condition": the loop condition under waitLock; await() parks and       *)
 (* releases the lock in one step. Leaving, a reader goes on with the count  *)
 (* it read; a WaitCallers thread reads availableBytes again to return it.   *)
+(* The loop of awaitAtLeast reads availableBytes, and only if that is too few, then           *)
+(* streamClosed: two steps, as in the fast path (a write needs no waitLock, so it can commit    *)
+(* between them; its signal waits for waitLock, so a park after it is woken all the same).     *)
 ReaderTest(r) ==
     /\ rpc[r] = "test" /\ wl = r
-    /\ IF avail >= want[r] \/ closed
+    /\ IF avail >= want[r]
           THEN IF r \in WaitCallers
                   \* CheckedReturn: enough bytes, return the count just checked
-                  THEN IF CheckedReturn /\ avail >= want[r]
+                  THEN IF CheckedReturn
                           THEN /\ Return(r)
                                /\ waiters' = waiters - 1
                                /\ wl' = None
                                /\ UNCHANGED parked
                           ELSE /\ Goto(r, "wret")
                                /\ UNCHANGED <<waiters, parked, wl, wres, wclosed>>
+                  ELSE /\ waiters' = waiters - 1
+                       /\ Goto(r, "lock")
+                       /\ wl' = None
+                       /\ UNCHANGED <<parked, wres, wclosed>>
+          ELSE /\ Goto(r, "waitclosed")
+               /\ UNCHANGED <<waiters, parked, wl, wres, wclosed>>
+    /\ UNCHANGED <<Shared, want, cur, hold, left, reads, eofAt, permits, bl>>
+
+(* Too few seen: streamClosed. Closed: a wait returns availableBytes read again, a read goes on *)
+(* by it; open: await.                                                                         *)
+ReaderWaitClosed(r) ==
+    /\ rpc[r] = "waitclosed" /\ wl = r
+    /\ IF closed
+          THEN IF r \in WaitCallers
+                  THEN /\ Goto(r, "wret")
+                       /\ UNCHANGED <<waiters, parked, wl, wres, wclosed>>
                   ELSE /\ waiters' = waiters - 1
                        /\ Goto(r, IF avail >= 1 THEN "lock" ELSE "ret0")
                        /\ wl' = None
@@ -449,8 +475,9 @@ ReaderEof(r) ==
 
 \* a step of the protocol keeps the budget of spurious wake-ups
 ReaderStep(r) ==
-    /\ \/ ReaderStart(r) \/ ReaderReread(r) \/ ReaderAcquire(r) \/ ReaderWaitLock(r)
-       \/ ReaderInc(r) \/ ReaderTest(r) \/ ReaderWaitReturn(r) \/ ReaderLock(r)
+    /\ \/ ReaderStart(r) \/ ReaderFastClosed(r) \/ ReaderReread(r) \/ ReaderAcquire(r)
+       \/ ReaderWaitLock(r) \/ ReaderInc(r) \/ ReaderTest(r) \/ ReaderWaitClosed(r)
+       \/ ReaderWaitReturn(r) \/ ReaderLock(r)
        \/ ReaderDecide(r) \/ ReaderCopy(r) \/ ReaderFinish(r) \/ ReaderRet0(r) \/ ReaderEof(r)
     /\ UNCHANGED spurious
 

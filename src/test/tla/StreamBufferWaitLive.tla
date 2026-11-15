@@ -44,10 +44,12 @@ Rank(r) ==
       [] rpc[r] = "decide" -> IF Ok(r) THEN 3 ELSE 9
       [] rpc[r] = "lock" -> IF Ok(r) THEN 4 ELSE 10
       [] rpc[r] \in {"ret0", "wret", "parked"} -> 1
-      [] rpc[r] \in {"reread", "test"} -> 5
-      [] rpc[r] \in {"inc", "woken"} -> 6
-      [] rpc[r] = "lockwait" -> 7
-      [] rpc[r] = "start" -> 8
+      [] rpc[r] \in {"reread", "waitclosed"} -> 5
+      [] rpc[r] = "test" -> 6
+      [] rpc[r] \in {"inc", "woken"} -> 7
+      [] rpc[r] = "lockwait" -> 8
+      [] rpc[r] = "fastclosed" -> 9
+      [] rpc[r] = "start" -> 10
       [] OTHER -> 0
 
 RankF == [r \in Threads |-> Rank(r)]
@@ -70,12 +72,12 @@ CloserPot ==
 
 \* the bytes to write and to commit, the bytes buffered, the calls left, the spurious wake-ups
 \* still to come (one lifts a parked thread's rank from 1 to 6)
-GlobalPot == (Wake + 2) * (Bytes - w) + Buffered + (10 * NT + 1) * (Bytes - t) + 9 * calls
+GlobalPot == (Wake + 2) * (Bytes - w) + Buffered + (10 * NT + 1) * (Bytes - t) + 10 * calls
              + 10 * spurious
 Pot == ThreadPot + WriterPot + CloserPot + GlobalPot
 
 \* Pot in the initial state
-Pot0 == 8 * NT + NW + (Wake + 1) * NC + (Wake + 2) * Bytes + (10 * NT + 1) * Bytes + 9 * Calls0
+Pot0 == 10 * NT + NW + (Wake + 1) * NC + (Wake + 2) * Bytes + (10 * NT + 1) * Bytes + 10 * Calls0
         + 10 * Spurious
 
 -----------------------------------------------------------------------------
@@ -88,9 +90,9 @@ Guard ==
     \/ \E c \in Closers : cpc[c] = "close" /\ bl = None
     \/ \E c \in Closers : cpc[c] = "siglock" /\ (parked = {} \/ wl = None)
     \/ \E r \in Threads :
-          \/ rpc[r] \in {"start", "reread", "ret0"}
+          \/ rpc[r] \in {"start", "fastclosed", "reread", "ret0"}
           \/ rpc[r] \in {"lockwait", "woken"} /\ wl = None
-          \/ rpc[r] \in {"inc", "test", "wret", "decide", "copy", "finish"}
+          \/ rpc[r] \in {"inc", "test", "waitclosed", "wret", "decide", "copy", "finish"}
           \/ rpc[r] = "lock" /\ bl = None
 NoDeadlock == AllDone \/ Guard
 PotNat == Pot \in Nat /\ (~AllDone => Pot >= 1)
