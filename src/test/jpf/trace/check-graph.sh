@@ -22,7 +22,8 @@
 #   for TLC), TLA2TOOLS (the jar), TRACED (the instrumented class files), TRACED_MUTANT (the same
 #   with TracedClassDump's no-decrement, for the controls), LIB (the annotation jars:
 #   checker-qual.jar, jspecify.jar, error-prone-annotations.jar), WORK (a scratch directory),
-#   JPF_HEAP (default 6g), TLC_WORKERS (default auto), GRAPHMIN_LOCK (optional: a lock file, so
+#   JPF_HEAP (default 6g), TLC_WORKERS (default auto), TLC_HEAP (optional: TLC's -Xmx; the JVM's
+#   default is a quarter of the memory, and a product of millions of states grows past it), GRAPHMIN_LOCK (optional: a lock file, so
 #   that the graphmin.py of scenarios run at once take turns; each holds its whole graph in
 #   memory, about 0.7 GB per GB of graph), REUSE_GRAPH (1: take the graph and JPF log of an earlier run
 #   in the same WORK instead of running JPF again, checked as a new one is: to finish a scenario
@@ -97,7 +98,7 @@ product() {  # product <label> <graph> <model dir> [sed for the cfg]: TLC's dump
   if [ -n "${4:-}" ]; then sed -i "$4" "$d/Graph_$name.cfg" || return 2; fi
   local s
   s=$(date +%s)
-  (cd "$d" && "$JAVA_TLC" -XX:+UseParallelGC -cp "$TLA2TOOLS" tlc2.TLC -workers "${TLC_WORKERS:-auto}" \
+  (cd "$d" && "$JAVA_TLC" -XX:+UseParallelGC ${TLC_HEAP:+"-Xmx$TLC_HEAP"} -cp "$TLA2TOOLS" tlc2.TLC -workers "${TLC_WORKERS:-auto}" \
      -dump dot,actionlabels product.dot -config "Graph_$name.cfg" "Graph_$name.tla" > tlc.log 2>&1) || true
   echo "  TLC $1: $(grep -oE '[0-9]+ distinct states found' "$d/tlc.log" | tail -1), $(( $(date +%s) - s )) s"
   if ! grep -q 'Model checking completed. No error has been found.' "$d/tlc.log" || [ ! -s "$d/product.dot" ]; then
