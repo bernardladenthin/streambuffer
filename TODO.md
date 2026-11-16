@@ -442,6 +442,21 @@ annotated, so everything below is genuinely still open.
       decides whether it is worth it; the spike's numbers go into the table.
     - [ ] CI (if it fits): in the `jpf-interleavings` job (JDK 11, jpf-core already built), plus
       TLC; README, CHANGELOG, CLAUDE.md, `VERIFICATION-ASSUMPTIONS.md` (a row for A18).
+  - **A18 found a gap in the model (2026-11-15), repaired on branch `fix/stale-reads`.** The
+    fast path of `waitForAtLeast` and the loop of `awaitAtLeast` read `availableBytes`, then
+    `streamClosed`; the models read both in one step. S6A (a waiter next to a reader, close after)
+    was rejected with 5 words: the waiter sees too few, a write and the close come, it reads
+    closed and the byte again. The code is right; the model was coarser than it. Both reads are
+    steps now (`fastclosed`, `waitclosed`) in `StreamBuffer.tla` and the three abstractions.
+    - [x] Models and measures (`b8524ba`): `check.sh` 54/54, `trace.sh` (51/51) and
+      `trace-controls.sh` clean on the rented machine; the 5 S6A words accepted.
+    - [ ] `inductive.sh` (Apalache: the inductive invariants, `PotDecreases`, the refinements).
+    - [ ] TLAPS: the action lemmas of the new steps in every proof (`*Proof.tla`,
+      `StreamBufferWaitEnabled.tla`, `StreamBufferWaitForeverEnabled.tla`), all modules at once.
+    - [ ] A18 again for every scenario with the repaired model (the JPF graphs of the earlier runs
+      reused, `REUSE_GRAPH=1`; S8A anew, S3N once its JPF is done).
+    - [ ] Docs: the numbers of the reruns in the READMEs, `VERIFICATION-ASSUMPTIONS.md` (V19),
+      CHANGELOG.
   - **A19 — Liveness of the detailed model for any number of readers (optional, weeks).** TLAPS,
     on the pattern of `StreamBufferWaitForeverLiveProof.tla` (a measure per thread, fairness by
     role), for `StreamBuffer.tla` directly, or a refinement that carries fairness. Done when the

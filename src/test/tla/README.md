@@ -360,9 +360,11 @@ above. With the ranges made non-empty, the torn record is found in 6 steps inste
   and a closer every call returns without lock fairness; with an endless writer a reader can
   starve.
 - **Inherited from `StreamBuffer.tla`:**
-  - A reader's lock-free read of `availableBytes` and of `streamClosed` is one step, where Java
-    reads them one after the other. This is harmless for safety: `RereadClosed` needs only
-    `closed`, and nothing raises the count after the close.
+  - Until 2026-11 a reader's read of `availableBytes` and then of `streamClosed` (the fast path of
+    `waitForAtLeast` and the loop of `awaitAtLeast`) was one step, where Java reads them one after
+    the other. The A18 graph check found it (`S6A`, below): a write and a close between the two
+    reads give runs of the code the model did not have. Both reads are steps of their own since
+    (`fastclosed`, `waitclosed`, in the detailed model and in the three abstractions).
   - Spurious wake-ups of `await` are modelled with a finite budget ("Spurious wake-ups" above):
     safety holds for any budget, liveness assumes finitely many.
 - **The refinement proof is for the current code** (`Protocol = "condition"` and the four fixes on),
@@ -580,10 +582,8 @@ with its configuration. A module rather than ndjson, because `ndJsonDeserialize`
 CommunityModules jar as a second pinned dependency.
 
 **Matching** (`TraceStreamBuffer.tla`, which extends the model unchanged). The model is coarser
-than the code in three places, so a thread's model steps are not tied to single lines:
+than the code in two places, so a thread's model steps are not tied to single lines:
 
-- the fast path of the wait reads `availableBytes` and `streamClosed` in one step, the code in two
-  reads;
 - `ReaderTest` lowers `waitingReaders` in the step that reads the count, the code a few accesses
   later;
 - a waiter's closed branch reads the count again for its result.

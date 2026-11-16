@@ -175,6 +175,40 @@ LEMMA StepSafe == SafeInv /\ [Next]_vars => SafeInv'
         OBVIOUS
       <3> QED
         BY <3>1, <3>2, <3>3, <3>4, <3>5, <3>6, <3>7, <3>8, <3>9, <3>10, <3>11, <3>12, <3>13, <3>14, <3>15 DEF SafeInv
+    <2>11 CASE ReaderFastClosed(r)
+      <3> USE <2>11 DEF ReaderFastClosed, Go
+      <3>1 TypeOK'
+        OBVIOUS
+      <3>2 Safety'
+        OBVIOUS
+      <3>3 BufLock'
+        OBVIOUS
+      <3>4 HoldLeft'
+        OBVIOUS
+      <3>5 BufNonNeg'
+        OBVIOUS
+      <3>6 CopyHasBytes'
+        OBVIOUS
+      <3>7 WholeRead'
+        OBVIOUS
+      <3>8 CurZero'
+        OBVIOUS
+      <3>9 WaitLockInv'
+        OBVIOUS
+      <3>10 ParkedInv'
+        OBVIOUS
+      <3>11 RereadClosed'
+        OBVIOUS
+      <3>12 Ret0Empty'
+        OBVIOUS
+      <3>13 DoneEof'
+        OBVIOUS
+      <3>14 CloserInv'
+        OBVIOUS
+      <3>15 WriterInv'
+        OBVIOUS
+      <3> QED
+        BY <3>1, <3>2, <3>3, <3>4, <3>5, <3>6, <3>7, <3>8, <3>9, <3>10, <3>11, <3>12, <3>13, <3>14, <3>15 DEF SafeInv
     <2>2 CASE ReaderReread(r)
       <3> USE <2>2 DEF ReaderReread, Go
       <3>1 TypeOK'
@@ -279,6 +313,40 @@ LEMMA StepSafe == SafeInv /\ [Next]_vars => SafeInv'
         BY <3>1, <3>2, <3>3, <3>4, <3>5, <3>6, <3>7, <3>8, <3>9, <3>10, <3>11, <3>12, <3>13, <3>14, <3>15 DEF SafeInv
     <2>5 CASE ReaderTest(r)
       <3> USE <2>5 DEF ReaderTest, Go
+      <3>1 TypeOK'
+        OBVIOUS
+      <3>2 Safety'
+        OBVIOUS
+      <3>3 BufLock'
+        OBVIOUS
+      <3>4 HoldLeft'
+        OBVIOUS
+      <3>5 BufNonNeg'
+        OBVIOUS
+      <3>6 CopyHasBytes'
+        OBVIOUS
+      <3>7 WholeRead'
+        OBVIOUS
+      <3>8 CurZero'
+        OBVIOUS
+      <3>9 WaitLockInv'
+        OBVIOUS
+      <3>10 ParkedInv'
+        OBVIOUS
+      <3>11 RereadClosed'
+        OBVIOUS
+      <3>12 Ret0Empty'
+        OBVIOUS
+      <3>13 DoneEof'
+        OBVIOUS
+      <3>14 CloserInv'
+        OBVIOUS
+      <3>15 WriterInv'
+        OBVIOUS
+      <3> QED
+        BY <3>1, <3>2, <3>3, <3>4, <3>5, <3>6, <3>7, <3>8, <3>9, <3>10, <3>11, <3>12, <3>13, <3>14, <3>15 DEF SafeInv
+    <2>12 CASE ReaderWaitClosed(r)
+      <3> USE <2>12 DEF ReaderWaitClosed, Go
       <3>1 TypeOK'
         OBVIOUS
       <3>2 Safety'
@@ -515,7 +583,7 @@ LEMMA StepSafe == SafeInv /\ [Next]_vars => SafeInv'
       <3> QED
         BY <3>1, <3>2, <3>3, <3>4, <3>5, <3>6, <3>7, <3>8, <3>9, <3>10, <3>11, <3>12, <3>13, <3>14, <3>15 DEF SafeInv
     <2> QED
-      BY <2>1, <2>2, <2>3, <2>4, <2>5, <2>6, <2>7, <2>8, <2>9, <2>10 DEF ReaderStep
+      BY <2>1, <2>2, <2>3, <2>4, <2>5, <2>6, <2>7, <2>8, <2>9, <2>10, <2>11, <2>12 DEF ReaderStep
   <1>4 CASE UNCHANGED vars
     BY <1>4 DEF vars
   <1> QED

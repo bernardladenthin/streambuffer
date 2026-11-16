@@ -22,11 +22,11 @@ WW == Cardinality(At(Writers, wpc, "write"))
 WS == Cardinality(At(Writers, wpc, "siglock"))
 CC == Cardinality(At(Closers, cpc, "close"))
 CS == Cardinality(At(Closers, cpc, "siglock"))
-TP == LSum(Threads, RankF)
+TP == LSum12(Threads, RankF)
 GP == GlobalPot
 
 LEMMA Fin == /\ IsFiniteSet(Threads) /\ IsFiniteSet(Writers) /\ IsFiniteSet(Closers)
-             /\ NT \in Nat /\ Wake \in Nat /\ Wake = 10 * NT + 2
+             /\ NT \in Nat /\ Wake \in Nat /\ Wake = 12 * NT + 2
              /\ Cardinality(Writers) = NW /\ Cardinality(Closers) = NC
   <1>1 IsFiniteSet(Writers) /\ Cardinality(Writers) = NW
     BY ConstAssump, FS_Interval DEF Writers
@@ -41,21 +41,21 @@ LEMMA Fin == /\ IsFiniteSet(Threads) /\ IsFiniteSet(Writers) /\ IsFiniteSet(Clos
 LEMMA MulGe == ASSUME NEW a \in Nat, NEW b \in Nat, b >= 1 PROVE a * b >= a /\ a * b \in Nat
   OBVIOUS
 
-LEMMA RankRange == RankF \in [Threads -> 0..10]
+LEMMA RankRange == RankF \in [Threads -> 0..12]
   BY DEF RankF, Rank
 
 LEMMA PotSplit == Pot = TP + (WW + Wake * WS) + ((Wake + 1) * CC + Wake * CS) + GP
-  BY DEF Pot, ThreadPot, Layer, LSum, LLo, LHi, Lay, WriterPot, CloserPot, At, TP, WW, WS, CC, CS, GP, GlobalPot
+  BY DEF Pot, ThreadPot, Layer, LSum12, L12a, L12b, L12c, Lay, WriterPot, CloserPot, At, TP, WW, WS, CC, CS, GP, GlobalPot
 
 \* the parts are natural numbers in a state of SafeInv
 LEMMA PartsType ==
   ASSUME SafeInv
-  PROVE /\ TP \in Nat /\ TP <= 10 * NT
+  PROVE /\ TP \in Nat /\ TP <= 12 * NT
         /\ WW \in Nat /\ WS \in Nat /\ CC \in Nat /\ CS \in Nat
         /\ Bytes - w \in Nat /\ Bytes - t \in Nat /\ Buffered \in Nat /\ calls \in Nat
         /\ spurious \in Nat /\ GP \in Nat /\ Pot \in Nat
-  <1>1 TP \in Nat /\ TP <= 10 * NT
-    BY Fin, LSumType DEF TP, NT
+  <1>1 TP \in Nat /\ TP <= 12 * NT
+    BY Fin, LSum12Type DEF TP, NT
   <1>2 WW \in Nat /\ WS \in Nat /\ CC \in Nat /\ CS \in Nat
     BY Fin, AtType DEF WW, WS, CC, CS
   <1>3 Bytes - w \in Nat /\ Bytes - t \in Nat /\ Buffered \in Nat /\ calls \in Nat
@@ -107,11 +107,11 @@ LEMMA LiveStep == LiveInv /\ [Next]_vars => LiveInv'
       <3> PICK r \in Threads : ThreadStep(r)
         BY <2>3
       <3>1 cpc' = cpc
-        BY DEF ThreadStep, ThreadStart, ThreadReread, ThreadWaitLock, ThreadInc, ThreadTest,
+        BY DEF ThreadStep, ThreadStart, ThreadReread, ThreadWaitLock, ThreadInc, ThreadTest, ThreadFastClosed, ThreadWaitClosed,
                ThreadWaitReturn, ThreadLock, ThreadDecide, ThreadCopy, ThreadFinish, ThreadRet0,
                Go, Return, EndCall
-      <3>2 parked' # parked => ThreadTest(r) /\ ~closed
-        BY DEF ThreadStep, ThreadStart, ThreadReread, ThreadWaitLock, ThreadInc, ThreadTest,
+      <3>2 parked' # parked => ThreadWaitClosed(r) /\ ~closed
+        BY DEF ThreadStep, ThreadStart, ThreadReread, ThreadWaitLock, ThreadInc, ThreadTest, ThreadFastClosed, ThreadWaitClosed,
                ThreadWaitReturn, ThreadLock, ThreadDecide, ThreadCopy, ThreadFinish, ThreadRet0,
                Go, Return, EndCall
       <3> QED
@@ -131,16 +131,16 @@ LEMMA PotDec == LiveInv /\ Next => Pot' < Pot
   <1>1 SafeInv /\ SafeInv'
     BY StepSafe DEF LiveInv
   <1>2 Pot' = TP' + (WW' + Wake * WS') + ((Wake + 1) * CC' + Wake * CS') + GP'
-    BY DEF Pot, ThreadPot, Layer, LSum, LLo, LHi, Lay, WriterPot, CloserPot, At, TP, WW, WS, CC, CS, GP, GlobalPot
-  <1>3 /\ TP \in Nat /\ TP <= 10 * NT /\ WW \in Nat /\ WS \in Nat /\ CC \in Nat /\ CS \in Nat
+    BY DEF Pot, ThreadPot, Layer, LSum12, L12a, L12b, L12c, Lay, WriterPot, CloserPot, At, TP, WW, WS, CC, CS, GP, GlobalPot
+  <1>3 /\ TP \in Nat /\ TP <= 12 * NT /\ WW \in Nat /\ WS \in Nat /\ CC \in Nat /\ CS \in Nat
        /\ Bytes - w \in Nat /\ Bytes - t \in Nat /\ Buffered \in Nat /\ calls \in Nat /\ GP \in Nat
        /\ spurious \in Nat
     BY <1>1, PartsType
-  <1>4 /\ TP' \in Nat /\ TP' <= 10 * NT /\ WW' \in Nat /\ WS' \in Nat /\ CC' \in Nat /\ CS' \in Nat
+  <1>4 /\ TP' \in Nat /\ TP' <= 12 * NT /\ WW' \in Nat /\ WS' \in Nat /\ CC' \in Nat /\ CS' \in Nat
        /\ Bytes - w' \in Nat /\ Bytes - t' \in Nat /\ Buffered' \in Nat /\ calls' \in Nat /\ GP' \in Nat
        /\ spurious' \in Nat
-    <2>1 TP' \in Nat /\ TP' <= 10 * NT
-      BY Fin, LSumType DEF TP, NT
+    <2>1 TP' \in Nat /\ TP' <= 12 * NT
+      BY Fin, LSum12Type DEF TP, NT
     <2>2 WW' \in Nat /\ WS' \in Nat /\ CC' \in Nat /\ CS' \in Nat
       BY Fin, AtType DEF WW, WS, CC, CS
     <2>3 Bytes - w' \in Nat /\ Bytes - t' \in Nat /\ Buffered' \in Nat /\ calls' \in Nat
@@ -172,7 +172,7 @@ LEMMA PotDec == LiveInv /\ Next => Pot' < Pot
       <3>1 \A x \in Threads : RankF'[x] \in Int /\ RankF[x] \in Int /\ RankF'[x] <= RankF[x]
         BY <2>1, <1>1 DEF WriterWrite, WGo, SafeInv, TypeOK, RankF, Rank, Ok
       <3>2 TP' <= TP
-        BY <3>1, Fin, LSumMono DEF TP
+        BY <3>1, Fin, LSum12Mono DEF TP
       <3>3 CASE closed \/ w >= Bytes
         <4>1 WW' = WW - 1 /\ WS' = WS
           BY <3>3, <2>1, <2>b, <2>c, <1>1, <1>3, <1>4 DEF WriterWrite, WGo, SafeInv, TypeOK
@@ -231,7 +231,7 @@ LEMMA PotDec == LiveInv /\ Next => Pot' < Pot
       <3>1 \A x \in Threads : RankF'[x] \in Int /\ RankF[x] \in Int /\ RankF'[x] <= RankF[x]
         BY <2>1, <1>1 DEF CloserClose, CGo, SafeInv, TypeOK, RankF, Rank, Ok
       <3>2 TP' <= TP
-        BY <3>1, Fin, LSumMono DEF TP
+        BY <3>1, Fin, LSum12Mono DEF TP
       <3>3 CC' = CC - 1 /\ CS' = CS + 1
         BY <2>1, <2>b, <2>c, <1>1, <1>3, <1>4 DEF CloserClose, CGo, SafeInv, TypeOK
       <3>4 (Wake + 1) * CC' + Wake * CS' = (Wake + 1) * CC + Wake * CS - 1
@@ -252,23 +252,23 @@ LEMMA PotDec == LiveInv /\ Next => Pot' < Pot
     <2> PICK r \in Threads : ThreadStep(r)
       BY <1>12
     <2>0 spurious' = spurious
-      BY DEF ThreadStep, ThreadStart, ThreadReread, ThreadWaitLock, ThreadInc, ThreadTest,
+      BY DEF ThreadStep, ThreadStart, ThreadReread, ThreadWaitLock, ThreadInc, ThreadTest, ThreadFastClosed, ThreadWaitClosed,
              ThreadWaitReturn, ThreadLock, ThreadDecide, ThreadCopy, ThreadFinish, ThreadRet0
     <2> USE <2>0
     <2>1 CASE ThreadStart(r)
       <3>1 WW' = WW /\ WS' = WS /\ CC' = CC /\ CS' = CS
         BY <2>1 DEF ThreadStart, Go, Return, EndCall, Want, WW, WS, CC, CS
-      <3>2 RankF[r] \in 0..10 /\ RankF'[r] \in 0..10
+      <3>2 RankF[r] \in 0..12 /\ RankF'[r] \in 0..12
         BY DEF RankF, Rank
       <3>3 \A x \in Threads \ {r} : RankF'[x] = RankF[x]
         BY <2>1, <1>1 DEF ThreadStart, Go, Return, EndCall, Want, RankF, Rank, Ok, SafeInv, TypeOK
       <3>4 TP' = TP - RankF[r] + RankF'[r]
-        BY <3>2, <3>3, Fin, LSumExcept DEF TP
+        BY <3>2, <3>3, Fin, LSum12Except DEF TP
       <3>5 w' = w /\ t' = t /\ Buffered' = Buffered
         BY <2>1, <1>1 DEF ThreadStart, Go, Return, EndCall, Want, Buffered, InFlight, SafeInv, TypeOK, Safety, NoEmptyTake, AvailLinearizable, WholeRead, BufLock, HoldLeft, BufNonNeg, CopyHasBytes, OpStates, WaitLockInv, ParkedInv, RereadClosed, Ret0Empty, CloserInv, WriterInv, States, Ops, Writers, Closers
-      <3>6 GP' - 9 * calls' = GP - 9 * calls
+      <3>6 GP' - 10 * calls' = GP - 10 * calls
         BY <3>5, <1>3, <1>4, Fin DEF GP, GlobalPot
-      <3>7 RankF'[r] + 9 * calls' < RankF[r] + 9 * calls
+      <3>7 RankF'[r] + 10 * calls' < RankF[r] + 10 * calls
         BY <2>1, <1>1, <1>3, <1>4 DEF ThreadStart, Go, Return, EndCall, Want, RankF, Rank, Ok, SafeInv, TypeOK, Safety, NoEmptyTake, AvailLinearizable, WholeRead, BufLock, HoldLeft, BufNonNeg, CopyHasBytes, OpStates, WaitLockInv, ParkedInv, RereadClosed, Ret0Empty, CloserInv, WriterInv, States, Ops, Writers, Closers
       <3>8 Pot' - Pot = (TP' - TP) + (GP' - GP)
         BY <3>1, PotSplit, <1>2, <1>3, <1>4, Fin
@@ -279,18 +279,44 @@ LEMMA PotDec == LiveInv /\ Next => Pot' < Pot
     <2>2 CASE ThreadReread(r)
       <3>1 WW' = WW /\ WS' = WS /\ CC' = CC /\ CS' = CS
         BY <2>2 DEF ThreadReread, Go, Return, EndCall, WW, WS, CC, CS
-      <3>2 RankF[r] \in 0..10 /\ RankF'[r] \in 0..10
+      <3>2 RankF[r] \in 0..12 /\ RankF'[r] \in 0..12
         BY DEF RankF, Rank
       <3>3 \A x \in Threads \ {r} : RankF'[x] = RankF[x]
         BY <2>2, <1>1 DEF ThreadReread, Go, Return, EndCall, RankF, Rank, Ok, SafeInv, TypeOK
       <3>4 TP' = TP - RankF[r] + RankF'[r]
-        BY <3>2, <3>3, Fin, LSumExcept DEF TP
+        BY <3>2, <3>3, Fin, LSum12Except DEF TP
       <3>5 w' = w /\ t' = t /\ Buffered' = Buffered
         BY <2>2, <1>1 DEF ThreadReread, Go, Return, EndCall, Buffered, InFlight, SafeInv, TypeOK, Safety, NoEmptyTake, AvailLinearizable, WholeRead, BufLock, HoldLeft, BufNonNeg, CopyHasBytes, OpStates, WaitLockInv, ParkedInv, RereadClosed, Ret0Empty, CloserInv, WriterInv, States, Ops, Writers, Closers
-      <3>6 GP' - 9 * calls' = GP - 9 * calls
+      <3>6 GP' - 10 * calls' = GP - 10 * calls
         BY <3>5, <1>3, <1>4, Fin DEF GP, GlobalPot
-      <3>7 RankF'[r] + 9 * calls' < RankF[r] + 9 * calls
+      <3>7 RankF'[r] + 10 * calls' < RankF[r] + 10 * calls
         BY <2>2, <1>1, <1>3, <1>4 DEF ThreadReread, Go, Return, EndCall, RankF, Rank, Ok, SafeInv, TypeOK, Safety, NoEmptyTake, AvailLinearizable, WholeRead, BufLock, HoldLeft, BufNonNeg, CopyHasBytes, OpStates, WaitLockInv, ParkedInv, RereadClosed, Ret0Empty, CloserInv, WriterInv, States, Ops, Writers, Closers
+      <3>8 Pot' - Pot = (TP' - TP) + (GP' - GP)
+        BY <3>1, PotSplit, <1>2, <1>3, <1>4, Fin
+      <3>9 (TP' - TP) + (GP' - GP) < 0
+        BY ONLY <3>2, <3>4, <3>6, <3>7, <1>5, <1>6
+      <3> QED
+        BY <3>8, <3>9, PotSplit, <1>2, <1>3, <1>4, Fin
+    <2>12 CASE ThreadFastClosed(r)
+      <3>1 WW' = WW /\ WS' = WS /\ CC' = CC /\ CS' = CS
+        BY <2>12 DEF ThreadFastClosed, Go, Return, EndCall, WW, WS, CC, CS
+      <3>2 RankF[r] \in 0..12 /\ RankF'[r] \in 0..12
+        BY DEF RankF, Rank
+      <3>3 \A x \in Threads \ {r} : RankF'[x] = RankF[x]
+        BY <2>12, <1>1 DEF ThreadFastClosed, Go, Return, EndCall, RankF, Rank, Ok, SafeInv, TypeOK
+      <3>4 TP' = TP - RankF[r] + RankF'[r]
+        BY <3>2, <3>3, Fin, LSum12Except DEF TP
+      <3>5 w' = w /\ t' = t /\ Buffered' = Buffered
+        BY <2>12, <1>1 DEF ThreadFastClosed, Go, Return, EndCall, Buffered, InFlight, SafeInv, TypeOK, Safety, NoEmptyTake, AvailLinearizable, WholeRead, BufLock, HoldLeft, BufNonNeg, CopyHasBytes, OpStates, WaitLockInv, ParkedInv, RereadClosed, Ret0Empty, CloserInv, WriterInv, States, Ops, Writers, Closers
+      <3>6 GP' - 10 * calls' = GP - 10 * calls
+        BY <3>5, <1>3, <1>4, Fin DEF GP, GlobalPot
+      <3>7 RankF'[r] + 10 * calls' < RankF[r] + 10 * calls
+        <4>1 rpc[r] = "fastclosed" /\ rpc'[r] \in {"reread", "lockwait"} /\ calls' = calls
+          BY <2>12, <1>1 DEF ThreadFastClosed, Go, SafeInv, TypeOK
+        <4>2 RankF[r] = 9 /\ RankF'[r] \in {5, 8}
+          BY <4>1 DEF RankF, Rank
+        <4> QED
+          BY <4>1, <4>2, <1>3
       <3>8 Pot' - Pot = (TP' - TP) + (GP' - GP)
         BY <3>1, PotSplit, <1>2, <1>3, <1>4, Fin
       <3>9 (TP' - TP) + (GP' - GP) < 0
@@ -300,17 +326,17 @@ LEMMA PotDec == LiveInv /\ Next => Pot' < Pot
     <2>3 CASE ThreadWaitLock(r)
       <3>1 WW' = WW /\ WS' = WS /\ CC' = CC /\ CS' = CS
         BY <2>3 DEF ThreadWaitLock, Go, WW, WS, CC, CS
-      <3>2 RankF[r] \in 0..10 /\ RankF'[r] \in 0..10
+      <3>2 RankF[r] \in 0..12 /\ RankF'[r] \in 0..12
         BY DEF RankF, Rank
       <3>3 \A x \in Threads \ {r} : RankF'[x] = RankF[x]
         BY <2>3, <1>1 DEF ThreadWaitLock, Go, RankF, Rank, Ok, SafeInv, TypeOK
       <3>4 TP' = TP - RankF[r] + RankF'[r]
-        BY <3>2, <3>3, Fin, LSumExcept DEF TP
+        BY <3>2, <3>3, Fin, LSum12Except DEF TP
       <3>5 w' = w /\ t' = t /\ Buffered' = Buffered
         BY <2>3, <1>1 DEF ThreadWaitLock, Go, Buffered, InFlight, SafeInv, TypeOK, Safety, NoEmptyTake, AvailLinearizable, WholeRead, BufLock, HoldLeft, BufNonNeg, CopyHasBytes, OpStates, WaitLockInv, ParkedInv, RereadClosed, Ret0Empty, CloserInv, WriterInv, States, Ops, Writers, Closers
-      <3>6 GP' - 9 * calls' = GP - 9 * calls
+      <3>6 GP' - 10 * calls' = GP - 10 * calls
         BY <3>5, <1>3, <1>4, Fin DEF GP, GlobalPot
-      <3>7 RankF'[r] + 9 * calls' < RankF[r] + 9 * calls
+      <3>7 RankF'[r] + 10 * calls' < RankF[r] + 10 * calls
         BY <2>3, <1>1, <1>3, <1>4 DEF ThreadWaitLock, Go, RankF, Rank, Ok, SafeInv, TypeOK, Safety, NoEmptyTake, AvailLinearizable, WholeRead, BufLock, HoldLeft, BufNonNeg, CopyHasBytes, OpStates, WaitLockInv, ParkedInv, RereadClosed, Ret0Empty, CloserInv, WriterInv, States, Ops, Writers, Closers
       <3>8 Pot' - Pot = (TP' - TP) + (GP' - GP)
         BY <3>1, PotSplit, <1>2, <1>3, <1>4, Fin
@@ -321,17 +347,17 @@ LEMMA PotDec == LiveInv /\ Next => Pot' < Pot
     <2>4 CASE ThreadInc(r)
       <3>1 WW' = WW /\ WS' = WS /\ CC' = CC /\ CS' = CS
         BY <2>4 DEF ThreadInc, Go, WW, WS, CC, CS
-      <3>2 RankF[r] \in 0..10 /\ RankF'[r] \in 0..10
+      <3>2 RankF[r] \in 0..12 /\ RankF'[r] \in 0..12
         BY DEF RankF, Rank
       <3>3 \A x \in Threads \ {r} : RankF'[x] = RankF[x]
         BY <2>4, <1>1 DEF ThreadInc, Go, RankF, Rank, Ok, SafeInv, TypeOK
       <3>4 TP' = TP - RankF[r] + RankF'[r]
-        BY <3>2, <3>3, Fin, LSumExcept DEF TP
+        BY <3>2, <3>3, Fin, LSum12Except DEF TP
       <3>5 w' = w /\ t' = t /\ Buffered' = Buffered
         BY <2>4, <1>1 DEF ThreadInc, Go, Buffered, InFlight, SafeInv, TypeOK, Safety, NoEmptyTake, AvailLinearizable, WholeRead, BufLock, HoldLeft, BufNonNeg, CopyHasBytes, OpStates, WaitLockInv, ParkedInv, RereadClosed, Ret0Empty, CloserInv, WriterInv, States, Ops, Writers, Closers
-      <3>6 GP' - 9 * calls' = GP - 9 * calls
+      <3>6 GP' - 10 * calls' = GP - 10 * calls
         BY <3>5, <1>3, <1>4, Fin DEF GP, GlobalPot
-      <3>7 RankF'[r] + 9 * calls' < RankF[r] + 9 * calls
+      <3>7 RankF'[r] + 10 * calls' < RankF[r] + 10 * calls
         BY <2>4, <1>1, <1>3, <1>4 DEF ThreadInc, Go, RankF, Rank, Ok, SafeInv, TypeOK, Safety, NoEmptyTake, AvailLinearizable, WholeRead, BufLock, HoldLeft, BufNonNeg, CopyHasBytes, OpStates, WaitLockInv, ParkedInv, RereadClosed, Ret0Empty, CloserInv, WriterInv, States, Ops, Writers, Closers
       <3>8 Pot' - Pot = (TP' - TP) + (GP' - GP)
         BY <3>1, PotSplit, <1>2, <1>3, <1>4, Fin
@@ -342,18 +368,39 @@ LEMMA PotDec == LiveInv /\ Next => Pot' < Pot
     <2>5 CASE ThreadTest(r)
       <3>1 WW' = WW /\ WS' = WS /\ CC' = CC /\ CS' = CS
         BY <2>5 DEF ThreadTest, Go, Return, EndCall, Want, WW, WS, CC, CS
-      <3>2 RankF[r] \in 0..10 /\ RankF'[r] \in 0..10
+      <3>2 RankF[r] \in 0..12 /\ RankF'[r] \in 0..12
         BY DEF RankF, Rank
       <3>3 \A x \in Threads \ {r} : RankF'[x] = RankF[x]
         BY <2>5, <1>1 DEF ThreadTest, Go, Return, EndCall, Want, RankF, Rank, Ok, SafeInv, TypeOK
       <3>4 TP' = TP - RankF[r] + RankF'[r]
-        BY <3>2, <3>3, Fin, LSumExcept DEF TP
+        BY <3>2, <3>3, Fin, LSum12Except DEF TP
       <3>5 w' = w /\ t' = t /\ Buffered' = Buffered
         BY <2>5, <1>1 DEF ThreadTest, Go, Return, EndCall, Want, Buffered, InFlight, SafeInv, TypeOK, Safety, NoEmptyTake, AvailLinearizable, WholeRead, BufLock, HoldLeft, BufNonNeg, CopyHasBytes, OpStates, WaitLockInv, ParkedInv, RereadClosed, Ret0Empty, CloserInv, WriterInv, States, Ops, Writers, Closers
-      <3>6 GP' - 9 * calls' = GP - 9 * calls
+      <3>6 GP' - 10 * calls' = GP - 10 * calls
         BY <3>5, <1>3, <1>4, Fin DEF GP, GlobalPot
-      <3>7 RankF'[r] + 9 * calls' < RankF[r] + 9 * calls
+      <3>7 RankF'[r] + 10 * calls' < RankF[r] + 10 * calls
         BY <2>5, <1>1, <1>3, <1>4 DEF ThreadTest, Go, Return, EndCall, Want, RankF, Rank, Ok, SafeInv, TypeOK, Safety, NoEmptyTake, AvailLinearizable, WholeRead, BufLock, HoldLeft, BufNonNeg, CopyHasBytes, OpStates, WaitLockInv, ParkedInv, RereadClosed, Ret0Empty, CloserInv, WriterInv, States, Ops, Writers, Closers
+      <3>8 Pot' - Pot = (TP' - TP) + (GP' - GP)
+        BY <3>1, PotSplit, <1>2, <1>3, <1>4, Fin
+      <3>9 (TP' - TP) + (GP' - GP) < 0
+        BY ONLY <3>2, <3>4, <3>6, <3>7, <1>5, <1>6
+      <3> QED
+        BY <3>8, <3>9, PotSplit, <1>2, <1>3, <1>4, Fin
+    <2>13 CASE ThreadWaitClosed(r)
+      <3>1 WW' = WW /\ WS' = WS /\ CC' = CC /\ CS' = CS
+        BY <2>13 DEF ThreadWaitClosed, Go, Return, EndCall, Want, WW, WS, CC, CS
+      <3>2 RankF[r] \in 0..12 /\ RankF'[r] \in 0..12
+        BY DEF RankF, Rank
+      <3>3 \A x \in Threads \ {r} : RankF'[x] = RankF[x]
+        BY <2>13, <1>1 DEF ThreadWaitClosed, Go, Return, EndCall, Want, RankF, Rank, Ok, SafeInv, TypeOK
+      <3>4 TP' = TP - RankF[r] + RankF'[r]
+        BY <3>2, <3>3, Fin, LSum12Except DEF TP
+      <3>5 w' = w /\ t' = t /\ Buffered' = Buffered
+        BY <2>13, <1>1 DEF ThreadWaitClosed, Go, Return, EndCall, Want, Buffered, InFlight, SafeInv, TypeOK, Safety, NoEmptyTake, AvailLinearizable, WholeRead, BufLock, HoldLeft, BufNonNeg, CopyHasBytes, OpStates, WaitLockInv, ParkedInv, RereadClosed, Ret0Empty, CloserInv, WriterInv, States, Ops, Writers, Closers
+      <3>6 GP' - 10 * calls' = GP - 10 * calls
+        BY <3>5, <1>3, <1>4, Fin DEF GP, GlobalPot
+      <3>7 RankF'[r] + 10 * calls' < RankF[r] + 10 * calls
+        BY <2>13, <1>1, <1>3, <1>4 DEF ThreadWaitClosed, Go, Return, EndCall, Want, RankF, Rank, Ok, SafeInv, TypeOK, Safety, NoEmptyTake, AvailLinearizable, WholeRead, BufLock, HoldLeft, BufNonNeg, CopyHasBytes, OpStates, WaitLockInv, ParkedInv, RereadClosed, Ret0Empty, CloserInv, WriterInv, States, Ops, Writers, Closers
       <3>8 Pot' - Pot = (TP' - TP) + (GP' - GP)
         BY <3>1, PotSplit, <1>2, <1>3, <1>4, Fin
       <3>9 (TP' - TP) + (GP' - GP) < 0
@@ -363,17 +410,17 @@ LEMMA PotDec == LiveInv /\ Next => Pot' < Pot
     <2>6 CASE ThreadWaitReturn(r)
       <3>1 WW' = WW /\ WS' = WS /\ CC' = CC /\ CS' = CS
         BY <2>6 DEF ThreadWaitReturn, Go, Return, EndCall, WW, WS, CC, CS
-      <3>2 RankF[r] \in 0..10 /\ RankF'[r] \in 0..10
+      <3>2 RankF[r] \in 0..12 /\ RankF'[r] \in 0..12
         BY DEF RankF, Rank
       <3>3 \A x \in Threads \ {r} : RankF'[x] = RankF[x]
         BY <2>6, <1>1 DEF ThreadWaitReturn, Go, Return, EndCall, RankF, Rank, Ok, SafeInv, TypeOK
       <3>4 TP' = TP - RankF[r] + RankF'[r]
-        BY <3>2, <3>3, Fin, LSumExcept DEF TP
+        BY <3>2, <3>3, Fin, LSum12Except DEF TP
       <3>5 w' = w /\ t' = t /\ Buffered' = Buffered
         BY <2>6, <1>1 DEF ThreadWaitReturn, Go, Return, EndCall, Buffered, InFlight, SafeInv, TypeOK, Safety, NoEmptyTake, AvailLinearizable, WholeRead, BufLock, HoldLeft, BufNonNeg, CopyHasBytes, OpStates, WaitLockInv, ParkedInv, RereadClosed, Ret0Empty, CloserInv, WriterInv, States, Ops, Writers, Closers
-      <3>6 GP' - 9 * calls' = GP - 9 * calls
+      <3>6 GP' - 10 * calls' = GP - 10 * calls
         BY <3>5, <1>3, <1>4, Fin DEF GP, GlobalPot
-      <3>7 RankF'[r] + 9 * calls' < RankF[r] + 9 * calls
+      <3>7 RankF'[r] + 10 * calls' < RankF[r] + 10 * calls
         BY <2>6, <1>1, <1>3, <1>4 DEF ThreadWaitReturn, Go, Return, EndCall, RankF, Rank, Ok, SafeInv, TypeOK, Safety, NoEmptyTake, AvailLinearizable, WholeRead, BufLock, HoldLeft, BufNonNeg, CopyHasBytes, OpStates, WaitLockInv, ParkedInv, RereadClosed, Ret0Empty, CloserInv, WriterInv, States, Ops, Writers, Closers
       <3>8 Pot' - Pot = (TP' - TP) + (GP' - GP)
         BY <3>1, PotSplit, <1>2, <1>3, <1>4, Fin
@@ -384,17 +431,17 @@ LEMMA PotDec == LiveInv /\ Next => Pot' < Pot
     <2>7 CASE ThreadLock(r)
       <3>1 WW' = WW /\ WS' = WS /\ CC' = CC /\ CS' = CS
         BY <2>7 DEF ThreadLock, Go, WW, WS, CC, CS
-      <3>2 RankF[r] \in 0..10 /\ RankF'[r] \in 0..10
+      <3>2 RankF[r] \in 0..12 /\ RankF'[r] \in 0..12
         BY DEF RankF, Rank
       <3>3 \A x \in Threads \ {r} : RankF'[x] = RankF[x]
         BY <2>7, <1>1 DEF ThreadLock, Go, RankF, Rank, Ok, SafeInv, TypeOK
       <3>4 TP' = TP - RankF[r] + RankF'[r]
-        BY <3>2, <3>3, Fin, LSumExcept DEF TP
+        BY <3>2, <3>3, Fin, LSum12Except DEF TP
       <3>5 w' = w /\ t' = t /\ Buffered' = Buffered
         BY <2>7, <1>1 DEF ThreadLock, Go, Buffered, InFlight, SafeInv, TypeOK, Safety, NoEmptyTake, AvailLinearizable, WholeRead, BufLock, HoldLeft, BufNonNeg, CopyHasBytes, OpStates, WaitLockInv, ParkedInv, RereadClosed, Ret0Empty, CloserInv, WriterInv, States, Ops, Writers, Closers
-      <3>6 GP' - 9 * calls' = GP - 9 * calls
+      <3>6 GP' - 10 * calls' = GP - 10 * calls
         BY <3>5, <1>3, <1>4, Fin DEF GP, GlobalPot
-      <3>7 RankF'[r] + 9 * calls' < RankF[r] + 9 * calls
+      <3>7 RankF'[r] + 10 * calls' < RankF[r] + 10 * calls
         BY <2>7, <1>1, <1>3, <1>4 DEF ThreadLock, Go, RankF, Rank, Ok, SafeInv, TypeOK, Safety, NoEmptyTake, AvailLinearizable, WholeRead, BufLock, HoldLeft, BufNonNeg, CopyHasBytes, OpStates, WaitLockInv, ParkedInv, RereadClosed, Ret0Empty, CloserInv, WriterInv, States, Ops, Writers, Closers
       <3>8 Pot' - Pot = (TP' - TP) + (GP' - GP)
         BY <3>1, PotSplit, <1>2, <1>3, <1>4, Fin
@@ -405,17 +452,17 @@ LEMMA PotDec == LiveInv /\ Next => Pot' < Pot
     <2>8 CASE ThreadDecide(r)
       <3>1 WW' = WW /\ WS' = WS /\ CC' = CC /\ CS' = CS
         BY <2>8 DEF ThreadDecide, Go, Min, WW, WS, CC, CS
-      <3>2 RankF[r] \in 0..10 /\ RankF'[r] \in 0..10
+      <3>2 RankF[r] \in 0..12 /\ RankF'[r] \in 0..12
         BY DEF RankF, Rank
       <3>3 \A x \in Threads \ {r} : RankF'[x] = RankF[x]
         BY <2>8, <1>1 DEF ThreadDecide, Go, Min, RankF, Rank, Ok, SafeInv, TypeOK
       <3>4 TP' = TP - RankF[r] + RankF'[r]
-        BY <3>2, <3>3, Fin, LSumExcept DEF TP
+        BY <3>2, <3>3, Fin, LSum12Except DEF TP
       <3>5 w' = w /\ t' = t /\ Buffered' = Buffered
         BY <2>8, <1>1 DEF ThreadDecide, Go, Min, Buffered, InFlight, SafeInv, TypeOK, Safety, NoEmptyTake, AvailLinearizable, WholeRead, BufLock, HoldLeft, BufNonNeg, CopyHasBytes, OpStates, WaitLockInv, ParkedInv, RereadClosed, Ret0Empty, CloserInv, WriterInv, States, Ops, Writers, Closers
-      <3>6 GP' - 9 * calls' = GP - 9 * calls
+      <3>6 GP' - 10 * calls' = GP - 10 * calls
         BY <3>5, <1>3, <1>4, Fin DEF GP, GlobalPot
-      <3>7 RankF'[r] + 9 * calls' < RankF[r] + 9 * calls
+      <3>7 RankF'[r] + 10 * calls' < RankF[r] + 10 * calls
         BY <2>8, <1>1, <1>3, <1>4 DEF ThreadDecide, Go, Min, RankF, Rank, Ok, SafeInv, TypeOK, Safety, NoEmptyTake, AvailLinearizable, WholeRead, BufLock, HoldLeft, BufNonNeg, CopyHasBytes, OpStates, WaitLockInv, ParkedInv, RereadClosed, Ret0Empty, CloserInv, WriterInv, States, Ops, Writers, Closers
       <3>8 Pot' - Pot = (TP' - TP) + (GP' - GP)
         BY <3>1, PotSplit, <1>2, <1>3, <1>4, Fin
@@ -426,12 +473,12 @@ LEMMA PotDec == LiveInv /\ Next => Pot' < Pot
     <2>9 CASE ThreadCopy(r)
       <3>1 WW' = WW /\ WS' = WS /\ CC' = CC /\ CS' = CS
         BY <2>9 DEF ThreadCopy, Go, WW, WS, CC, CS
-      <3>2 RankF[r] \in 0..10 /\ RankF'[r] \in 0..10
+      <3>2 RankF[r] \in 0..12 /\ RankF'[r] \in 0..12
         BY DEF RankF, Rank
       <3>3 \A x \in Threads \ {r} : RankF'[x] = RankF[x]
         BY <2>9, <1>1 DEF ThreadCopy, Go, RankF, Rank, Ok, SafeInv, TypeOK
       <3>4 TP' = TP - RankF[r] + RankF'[r]
-        BY <3>2, <3>3, Fin, LSumExcept DEF TP
+        BY <3>2, <3>3, Fin, LSum12Except DEF TP
       <3>5 w' = w /\ t' = t /\ Buffered' < Buffered /\ calls' = calls
         BY <2>9, <1>1, <1>3, <1>4 DEF ThreadCopy, Go, Buffered, InFlight, SafeInv, TypeOK, Safety, NoEmptyTake, AvailLinearizable, WholeRead, BufLock, HoldLeft, BufNonNeg, CopyHasBytes, OpStates, WaitLockInv, ParkedInv, RereadClosed, Ret0Empty, CloserInv, WriterInv, States, Ops, Writers, Closers
       <3>6 GP' < GP
@@ -451,31 +498,31 @@ LEMMA PotDec == LiveInv /\ Next => Pot' < Pot
         BY <2>10, <1>1 DEF ThreadFinish, SafeInv, TypeOK, Safety, NoEmptyTake, AvailLinearizable, WholeRead, BufLock, HoldLeft, BufNonNeg, CopyHasBytes, OpStates, WaitLockInv, ParkedInv, RereadClosed, Ret0Empty, CloserInv, WriterInv, States, Ops, Writers, Closers
       <3>3 Buffered' = Buffered /\ w' = w /\ t' = t + hold[r] /\ calls' <= calls /\ calls' \in Nat
         BY <2>10, <3>2, <1>1, <1>3 DEF ThreadFinish, Go, EndCall, Buffered, InFlight, SafeInv, TypeOK, Safety, NoEmptyTake, AvailLinearizable, WholeRead, BufLock, HoldLeft, BufNonNeg, CopyHasBytes, OpStates, WaitLockInv, ParkedInv, RereadClosed, Ret0Empty, CloserInv, WriterInv, States, Ops, Writers, Closers
-      <3>4 (10 * NT + 1) * (Bytes - t') <= (10 * NT + 1) * (Bytes - t) - (10 * NT + 1)
-        <4>1 (10 * NT + 1) * hold[r] >= 10 * NT + 1
+      <3>4 (12 * NT + 1) * (Bytes - t') <= (12 * NT + 1) * (Bytes - t) - (12 * NT + 1)
+        <4>1 (12 * NT + 1) * hold[r] >= 12 * NT + 1
           BY <3>2, Fin, MulGe
-        <4>2 (10 * NT + 1) * (Bytes - t') = (10 * NT + 1) * (Bytes - t) - (10 * NT + 1) * hold[r]
+        <4>2 (12 * NT + 1) * (Bytes - t') = (12 * NT + 1) * (Bytes - t) - (12 * NT + 1) * hold[r]
           BY <3>2, <3>3, Fin
         <4> QED
           BY <4>1, <4>2, <3>2, <1>3, <1>4, Fin
-      <3>5 GP' <= GP - (10 * NT + 1)
+      <3>5 GP' <= GP - (12 * NT + 1)
         BY <3>3, <3>4, <1>3, <1>4, Fin DEF GP, GlobalPot
       <3> QED
         BY <3>1, <3>5, PotSplit, <1>2, <1>3, <1>4, Fin
     <2>11 CASE ThreadRet0(r)
       <3>1 WW' = WW /\ WS' = WS /\ CC' = CC /\ CS' = CS
         BY <2>11 DEF ThreadRet0, Go, EndCall, WW, WS, CC, CS
-      <3>2 RankF[r] \in 0..10 /\ RankF'[r] \in 0..10
+      <3>2 RankF[r] \in 0..12 /\ RankF'[r] \in 0..12
         BY DEF RankF, Rank
       <3>3 \A x \in Threads \ {r} : RankF'[x] = RankF[x]
         BY <2>11, <1>1 DEF ThreadRet0, Go, EndCall, RankF, Rank, Ok, SafeInv, TypeOK
       <3>4 TP' = TP - RankF[r] + RankF'[r]
-        BY <3>2, <3>3, Fin, LSumExcept DEF TP
+        BY <3>2, <3>3, Fin, LSum12Except DEF TP
       <3>5 w' = w /\ t' = t /\ Buffered' = Buffered
         BY <2>11, <1>1 DEF ThreadRet0, Go, EndCall, Buffered, InFlight, SafeInv, TypeOK, Safety, NoEmptyTake, AvailLinearizable, WholeRead, BufLock, HoldLeft, BufNonNeg, CopyHasBytes, OpStates, WaitLockInv, ParkedInv, RereadClosed, Ret0Empty, CloserInv, WriterInv, States, Ops, Writers, Closers
-      <3>6 GP' - 9 * calls' = GP - 9 * calls
+      <3>6 GP' - 10 * calls' = GP - 10 * calls
         BY <3>5, <1>3, <1>4, Fin DEF GP, GlobalPot
-      <3>7 RankF'[r] + 9 * calls' < RankF[r] + 9 * calls
+      <3>7 RankF'[r] + 10 * calls' < RankF[r] + 10 * calls
         BY <2>11, <1>1, <1>3, <1>4 DEF ThreadRet0, Go, EndCall, RankF, Rank, Ok, SafeInv, TypeOK, Safety, NoEmptyTake, AvailLinearizable, WholeRead, BufLock, HoldLeft, BufNonNeg, CopyHasBytes, OpStates, WaitLockInv, ParkedInv, RereadClosed, Ret0Empty, CloserInv, WriterInv, States, Ops, Writers, Closers
       <3>8 Pot' - Pot = (TP' - TP) + (GP' - GP)
         BY <3>1, PotSplit, <1>2, <1>3, <1>4, Fin
@@ -484,22 +531,23 @@ LEMMA PotDec == LiveInv /\ Next => Pot' < Pot
       <3> QED
         BY <3>8, <3>9, PotSplit, <1>2, <1>3, <1>4, Fin
     <2> QED
-      BY <2>1, <2>2, <2>3, <2>4, <2>5, <2>6, <2>7, <2>8, <2>9, <2>10, <2>11 DEF ThreadStep
-  \* a spurious wake-up lifts the woken thread's rank from 1 to 6 and pays 10 from the budget
+      BY <2>1, <2>2, <2>3, <2>4, <2>5, <2>6, <2>7, <2>8, <2>9, <2>10, <2>11, <2>12, <2>13
+         DEF ThreadStep
+  \* a spurious wake-up lifts the woken thread's rank from 1 to 7 and pays 10 from the budget
   <1>13 CASE \E r \in Threads : SpuriousWake(r)
     <2> PICK r \in Threads : SpuriousWake(r)
       BY <1>13
     <2>1 WW' = WW /\ WS' = WS /\ CC' = CC /\ CS' = CS
       BY DEF SpuriousWake, WW, WS, CC, CS
-    <2>2 RankF[r] = 1 /\ RankF'[r] = 6
+    <2>2 RankF[r] = 1 /\ RankF'[r] = 7
       BY <1>1 DEF SpuriousWake, Go, RankF, Rank, SafeInv, TypeOK
     <2>3 \A x \in Threads \ {r} : RankF'[x] = RankF[x]
       BY <1>1 DEF SpuriousWake, Go, RankF, Rank, Ok, SafeInv, TypeOK
     <2>4 TP' = TP - RankF[r] + RankF'[r]
-      <3>1 RankF[r] \in 0..10 /\ RankF'[r] \in 0..10
+      <3>1 RankF[r] \in 0..12 /\ RankF'[r] \in 0..12
         BY DEF RankF, Rank
       <3> QED
-        BY <2>3, <3>1, Fin, LSumExcept DEF TP
+        BY <2>3, <3>1, Fin, LSum12Except DEF TP
     <2>5 GP' = GP - 10
       <3>1 w' = w /\ t' = t /\ calls' = calls /\ Buffered' = Buffered /\ spurious' = spurious - 1
         BY <1>1 DEF SpuriousWake, Buffered, InFlight, SafeInv, TypeOK
@@ -526,7 +574,7 @@ LEMMA EnabledLive == LiveInv /\ ~AllDone => ENABLED <<Next>>_vars
   BY Progress, LiveAssump DEF LiveInv, ClosedNoPark, AllDone
 
 \* an upper bound of Pot in the initial state
-PotMax == 10 * NT + NW + (Wake + 1) * NC + (Wake + 2) * Bytes + (10 * NT + 1) * Bytes + 9 * Calls0
+PotMax == 12 * NT + NW + (Wake + 1) * NC + (Wake + 2) * Bytes + (12 * NT + 1) * Bytes + 10 * Calls0
           + 10 * Spurious
 
 LEMMA InitPot == Init => Pot <= PotMax /\ PotMax \in Nat
@@ -534,7 +582,7 @@ LEMMA InitPot == Init => Pot <= PotMax /\ PotMax \in Nat
     OBVIOUS
   <1>1 SafeInv
     BY InitSafe
-  <1>2 TP <= 10 * NT /\ TP \in Nat
+  <1>2 TP <= 12 * NT /\ TP \in Nat
     BY <1>1, PartsType
   <1>3 WW <= NW /\ WW \in Nat
     BY Fin, AtType DEF WW
@@ -543,7 +591,7 @@ LEMMA InitPot == Init => Pot <= PotMax /\ PotMax \in Nat
     BY DEF Init, At
   <1>5 WS = 0 /\ CS = 0 /\ CC = NC
     BY <1>4, Fin, FS_EmptySet DEF WS, CS, CC
-  <1>6 GP = (Wake + 2) * Bytes + (10 * NT + 1) * Bytes + 9 * Calls0 + 10 * Spurious
+  <1>6 GP = (Wake + 2) * Bytes + (12 * NT + 1) * Bytes + 10 * Calls0 + 10 * Spurious
     BY ConstAssump, Fin DEF Init, GP, GlobalPot, Buffered, InFlight
   <1>7 PotMax \in Nat
     BY Fin, ConstAssump DEF PotMax

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The two reads of the wait are two steps in the TLA+ models (found by A18).** The fast path
+  of `waitForAtLeast` and the loop of `awaitAtLeast` read `availableBytes` and then
+  `streamClosed`; the models read both in one step, so a write and a close between the two reads
+  had no run in the model. The graph check of A18 found such runs of the code (`S6A`: a waiter
+  that sees too few, then a write and the close, then reads closed and the byte again). The code
+  was right, the model coarser than it. `StreamBuffer.tla`, `StreamBufferWait.tla`,
+  `StreamBufferRecords.tla` and `StreamBufferCounters.tla` now take the second read as a step of
+  its own (`fastclosed`, `waitclosed`). The measures of the liveness proofs rank the new stages:
+  in `StreamBufferWaitLive.tla` a failed re-check now ranks above `start` (12 rank layers,
+  `LSum12` in `StreamBufferCountLemmas.tla`), in `StreamBufferWaitForeverLive.tla` the second read
+  of the fast path ranks a write that came between the reads. TLC (`check.sh`), Apalache
+  (`inductive.sh`), the traces and their controls, and every TLAPS proof hold for the repaired
+  models.
+
 ### Added
 - **Several writers and closers in the detailed TLA+ model (roadmap A6 follow-up).**
   `StreamBuffer.tla` has `NW` writers and `NC` closers, each with its own steps and weak fairness;

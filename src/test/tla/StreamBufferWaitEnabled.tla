@@ -49,7 +49,13 @@ DStartRet(x) ==
 
 DStartGo(x) ==
     /\ TypeOK /\ rpc[x] = "start" /\ ~(avail >= Want(x) /\ op[x] = "wait")
-    /\ Go(x, IF avail >= Want(x) THEN "lock" ELSE IF closed THEN "reread" ELSE "lockwait")
+    /\ Go(x, IF avail >= Want(x) THEN "lock" ELSE "fastclosed")
+    /\ UNCHANGED <<wres, wclosed, op, calls>> /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, hold, eofAt, parked, wl, bl>>
+    /\ UNCHANGED spurious
+
+DFastClosed(x) ==
+    /\ TypeOK /\ rpc[x] = "fastclosed"
+    /\ Go(x, IF closed THEN "reread" ELSE "lockwait")
     /\ UNCHANGED <<wres, wclosed, op, calls>> /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, hold, eofAt, parked, wl, bl>>
     /\ UNCHANGED spurious
 
@@ -70,18 +76,34 @@ DTestRet(x) ==
     /\ UNCHANGED spurious
 
 DTestWret(x) ==
-    /\ TypeOK /\ rpc[x] = "test" /\ wl = x /\ op[x] = "wait" /\ ~(avail >= Want(x)) /\ closed
+    /\ TypeOK /\ rpc[x] = "test" /\ wl = x /\ op[x] = "wait" /\ avail >= Want(x) /\ ~CheckedReturn
     /\ Go(x, "wret") /\ UNCHANGED <<wl, parked, wres, wclosed, op, calls>> /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, hold, eofAt, bl>>
     /\ UNCHANGED spurious
 
 DTestRead(x) ==
-    /\ TypeOK /\ rpc[x] = "test" /\ wl = x /\ op[x] # "wait" /\ (avail >= Want(x) \/ closed)
+    /\ TypeOK /\ rpc[x] = "test" /\ wl = x /\ op[x] # "wait" /\ avail >= Want(x)
+    /\ Go(x, "lock") /\ wl' = None
+    /\ UNCHANGED <<parked, wres, wclosed, op, calls>> /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, hold, eofAt, bl>>
+    /\ UNCHANGED spurious
+
+DTestClosed(x) ==
+    /\ TypeOK /\ rpc[x] = "test" /\ wl = x /\ ~(avail >= Want(x))
+    /\ Go(x, "waitclosed") /\ UNCHANGED <<wl, parked, wres, wclosed, op, calls>> /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, hold, eofAt, bl>>
+    /\ UNCHANGED spurious
+
+DWCWret(x) ==
+    /\ TypeOK /\ rpc[x] = "waitclosed" /\ wl = x /\ closed /\ op[x] = "wait"
+    /\ Go(x, "wret") /\ UNCHANGED <<wl, parked, wres, wclosed, op, calls>> /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, hold, eofAt, bl>>
+    /\ UNCHANGED spurious
+
+DWCRead(x) ==
+    /\ TypeOK /\ rpc[x] = "waitclosed" /\ wl = x /\ closed /\ op[x] # "wait"
     /\ Go(x, IF avail >= 1 THEN "lock" ELSE "ret0") /\ wl' = None
     /\ UNCHANGED <<parked, wres, wclosed, op, calls>> /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, hold, eofAt, bl>>
     /\ UNCHANGED spurious
 
-DTestPark(x) ==
-    /\ TypeOK /\ rpc[x] = "test" /\ wl = x /\ ~(avail >= Want(x) \/ closed)
+DWCPark(x) ==
+    /\ TypeOK /\ rpc[x] = "waitclosed" /\ wl = x /\ ~closed
     /\ parked' = parked \cup {x} /\ Go(x, "parked") /\ wl' = None
     /\ UNCHANGED <<wres, wclosed, op, calls>> /\ UNCHANGED <<left, off, w, t, avail, closed, wpc, cpc, hold, eofAt, bl>>
     /\ UNCHANGED spurious
@@ -206,8 +228,20 @@ LEMMA DTestWretImpl == ASSUME NEW x \in Threads, DTestWret(x) PROVE ThreadTest(x
 LEMMA DTestReadImpl == ASSUME NEW x \in Threads, DTestRead(x) PROVE ThreadTest(x)
   BY ConstAssump DEF DTestRead, ThreadTest, TypeOK, Go, WGo, CGo, WakeAll, WriterNext, Return, RetStop, EndStop, Want, Buffered, InFlight, Ops
 
-LEMMA DTestParkImpl == ASSUME NEW x \in Threads, DTestPark(x) PROVE ThreadTest(x)
-  BY ConstAssump DEF DTestPark, ThreadTest, TypeOK, Go, WGo, CGo, WakeAll, WriterNext, Return, RetStop, EndStop, Want, Buffered, InFlight, Ops
+LEMMA DTestClosedImpl == ASSUME NEW x \in Threads, DTestClosed(x) PROVE ThreadTest(x)
+  BY ConstAssump DEF DTestClosed, ThreadTest, TypeOK, Go, WGo, CGo, WakeAll, WriterNext, Return, RetStop, EndStop, Want, Buffered, InFlight, Ops
+
+LEMMA DFastClosedImpl == ASSUME NEW x \in Threads, DFastClosed(x) PROVE ThreadFastClosed(x)
+  BY ConstAssump DEF DFastClosed, ThreadFastClosed, TypeOK, Go, WGo, CGo, WakeAll, WriterNext, Return, RetStop, EndStop, Want, Buffered, InFlight, Ops
+
+LEMMA DWCWretImpl == ASSUME NEW x \in Threads, DWCWret(x) PROVE ThreadWaitClosed(x)
+  BY ConstAssump DEF DWCWret, ThreadWaitClosed, TypeOK, Go, WGo, CGo, WakeAll, WriterNext, Return, RetStop, EndStop, Want, Buffered, InFlight, Ops
+
+LEMMA DWCReadImpl == ASSUME NEW x \in Threads, DWCRead(x) PROVE ThreadWaitClosed(x)
+  BY ConstAssump DEF DWCRead, ThreadWaitClosed, TypeOK, Go, WGo, CGo, WakeAll, WriterNext, Return, RetStop, EndStop, Want, Buffered, InFlight, Ops
+
+LEMMA DWCParkImpl == ASSUME NEW x \in Threads, DWCPark(x) PROVE ThreadWaitClosed(x)
+  BY ConstAssump DEF DWCPark, ThreadWaitClosed, TypeOK, Go, WGo, CGo, WakeAll, WriterNext, Return, RetStop, EndStop, Want, Buffered, InFlight, Ops
 
 LEMMA DWaitReturnImpl == ASSUME NEW x \in Threads, DWaitReturn(x) PROVE ThreadWaitReturn(x)
   BY RetStopReturn, ConstAssump DEF DWaitReturn, ThreadWaitReturn, TypeOK, Go, WGo, CGo, WakeAll, WriterNext, Return, RetStop, EndStop, Want, Buffered, InFlight, Ops
@@ -336,7 +370,7 @@ LEMMA En5 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "test" /\ wl = x /\ op[x
     BY <1>1, <1>5
 
 \* ThreadTest: from the guard of DTestWret, a step of Next
-LEMMA En6 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "test" /\ wl = x /\ op[x] = "wait" /\ ~(avail >= Want(x)) /\ closed PROVE ENABLED <<Next>>_vars
+LEMMA En6 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "test" /\ wl = x /\ op[x] = "wait" /\ avail >= Want(x) /\ ~CheckedReturn PROVE ENABLED <<Next>>_vars
   <1>1 ENABLED <<DTestWret(x)>>_vars
     BY ConstAssump, ExpandENABLED, AutoUSE DEF DTestWret, TypeOK, Go, Want, vars
   <1>2 <<DTestWret(x)>>_vars \in BOOLEAN
@@ -351,7 +385,7 @@ LEMMA En6 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "test" /\ wl = x /\ op[x
     BY <1>1, <1>5
 
 \* ThreadTest: from the guard of DTestRead, a step of Next
-LEMMA En7 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "test" /\ wl = x /\ op[x] # "wait" /\ (avail >= Want(x) \/ closed) PROVE ENABLED <<Next>>_vars
+LEMMA En7 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "test" /\ wl = x /\ op[x] # "wait" /\ avail >= Want(x) PROVE ENABLED <<Next>>_vars
   <1>1 ENABLED <<DTestRead(x)>>_vars
     BY ConstAssump, ExpandENABLED, AutoUSE DEF DTestRead, TypeOK, Go, Want, vars
   <1>2 <<DTestRead(x)>>_vars \in BOOLEAN
@@ -365,17 +399,17 @@ LEMMA En7 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "test" /\ wl = x /\ op[x
   <1> QED
     BY <1>1, <1>5
 
-\* ThreadTest: from the guard of DTestPark, a step of Next
-LEMMA En8 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "test" /\ wl = x /\ ~(avail >= Want(x) \/ closed) PROVE ENABLED <<Next>>_vars
-  <1>1 ENABLED <<DTestPark(x)>>_vars
-    BY ConstAssump, ExpandENABLED, AutoUSE DEF DTestPark, TypeOK, Go, Want, vars
-  <1>2 <<DTestPark(x)>>_vars \in BOOLEAN
+\* ThreadTest: from the guard of DTestClosed, a step of Next
+LEMMA En8 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "test" /\ wl = x /\ ~(avail >= Want(x)) PROVE ENABLED <<Next>>_vars
+  <1>1 ENABLED <<DTestClosed(x)>>_vars
+    BY ConstAssump, ExpandENABLED, AutoUSE DEF DTestClosed, TypeOK, Go, Want, vars
+  <1>2 <<DTestClosed(x)>>_vars \in BOOLEAN
     OBVIOUS
   <1>3 <<Next>>_vars \in BOOLEAN
     OBVIOUS
-  <1>4 <<DTestPark(x)>>_vars => <<Next>>_vars
-    BY DTestParkImpl DEF Next, ThreadStep, DTestPark
-  <1>5 (ENABLED <<DTestPark(x)>>_vars) => ENABLED <<Next>>_vars
+  <1>4 <<DTestClosed(x)>>_vars => <<Next>>_vars
+    BY DTestClosedImpl DEF Next, ThreadStep, DTestClosed
+  <1>5 (ENABLED <<DTestClosed(x)>>_vars) => ENABLED <<Next>>_vars
     BY <1>2, <1>3, <1>4, ENABLEDaxioms
   <1> QED
     BY <1>1, <1>5
@@ -635,6 +669,66 @@ LEMMA En25 == ASSUME NEW c \in Closers, TypeOK, cpc[c] = "siglock" /\ parked # {
   <1> QED
     BY <1>1, <1>5
 
+\* ThreadFastClosed: from the guard of DFastClosed, a step of Next
+LEMMA En26 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "fastclosed" PROVE ENABLED <<Next>>_vars
+  <1>1 ENABLED <<DFastClosed(x)>>_vars
+    BY ConstAssump, ExpandENABLED, AutoUSE DEF DFastClosed, TypeOK, Go, vars
+  <1>2 <<DFastClosed(x)>>_vars \in BOOLEAN
+    OBVIOUS
+  <1>3 <<Next>>_vars \in BOOLEAN
+    OBVIOUS
+  <1>4 <<DFastClosed(x)>>_vars => <<Next>>_vars
+    BY DFastClosedImpl DEF Next, ThreadStep, DFastClosed
+  <1>5 (ENABLED <<DFastClosed(x)>>_vars) => ENABLED <<Next>>_vars
+    BY <1>2, <1>3, <1>4, ENABLEDaxioms
+  <1> QED
+    BY <1>1, <1>5
+
+\* ThreadWaitClosed: from the guard of DWCWret, a step of Next
+LEMMA En27 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "waitclosed" /\ wl = x /\ closed /\ op[x] = "wait" PROVE ENABLED <<Next>>_vars
+  <1>1 ENABLED <<DWCWret(x)>>_vars
+    BY ConstAssump, ExpandENABLED, AutoUSE DEF DWCWret, TypeOK, Go, vars
+  <1>2 <<DWCWret(x)>>_vars \in BOOLEAN
+    OBVIOUS
+  <1>3 <<Next>>_vars \in BOOLEAN
+    OBVIOUS
+  <1>4 <<DWCWret(x)>>_vars => <<Next>>_vars
+    BY DWCWretImpl DEF Next, ThreadStep, DWCWret
+  <1>5 (ENABLED <<DWCWret(x)>>_vars) => ENABLED <<Next>>_vars
+    BY <1>2, <1>3, <1>4, ENABLEDaxioms
+  <1> QED
+    BY <1>1, <1>5
+
+\* ThreadWaitClosed: from the guard of DWCRead, a step of Next
+LEMMA En28 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "waitclosed" /\ wl = x /\ closed /\ op[x] # "wait" PROVE ENABLED <<Next>>_vars
+  <1>1 ENABLED <<DWCRead(x)>>_vars
+    BY ConstAssump, ExpandENABLED, AutoUSE DEF DWCRead, TypeOK, Go, vars
+  <1>2 <<DWCRead(x)>>_vars \in BOOLEAN
+    OBVIOUS
+  <1>3 <<Next>>_vars \in BOOLEAN
+    OBVIOUS
+  <1>4 <<DWCRead(x)>>_vars => <<Next>>_vars
+    BY DWCReadImpl DEF Next, ThreadStep, DWCRead
+  <1>5 (ENABLED <<DWCRead(x)>>_vars) => ENABLED <<Next>>_vars
+    BY <1>2, <1>3, <1>4, ENABLEDaxioms
+  <1> QED
+    BY <1>1, <1>5
+
+\* ThreadWaitClosed: from the guard of DWCPark, a step of Next
+LEMMA En29 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "waitclosed" /\ wl = x /\ ~closed PROVE ENABLED <<Next>>_vars
+  <1>1 ENABLED <<DWCPark(x)>>_vars
+    BY ConstAssump, ExpandENABLED, AutoUSE DEF DWCPark, TypeOK, Go, vars
+  <1>2 <<DWCPark(x)>>_vars \in BOOLEAN
+    OBVIOUS
+  <1>3 <<Next>>_vars \in BOOLEAN
+    OBVIOUS
+  <1>4 <<DWCPark(x)>>_vars => <<Next>>_vars
+    BY DWCParkImpl DEF Next, ThreadStep, DWCPark
+  <1>5 (ENABLED <<DWCPark(x)>>_vars) => ENABLED <<Next>>_vars
+    BY <1>2, <1>3, <1>4, ENABLEDaxioms
+  <1> QED
+    BY <1>1, <1>5
+
 \* one of the guards holds until all are done
 THEOREM Progress ==
   ASSUME SafeInv, (\E c \in Closers : cpc[c] = "done") => parked = {}, NC >= 1,
@@ -667,7 +761,7 @@ THEOREM Progress ==
     <2> QED
       BY <2>1, <2>2, <2>3, <2>4
   <1>2 CASE bl = None /\ wl # None
-    <2>1 wl \in Threads /\ rpc[wl] \in {"inc", "test", "wret"}
+    <2>1 wl \in Threads /\ rpc[wl] \in {"inc", "test", "waitclosed", "wret"}
       BY <1>2 DEF TypeOK, WaitLockInv
     <2>2 CASE rpc[wl] = "inc"
       BY <2>1, <2>2, <1>0, En16
@@ -675,8 +769,10 @@ THEOREM Progress ==
       BY <2>1, <2>3, <1>0, ConstAssump, En5, En6, En7, En8
     <2>4 CASE rpc[wl] = "wret"
       BY <2>1, <2>4, <1>0, En9
+    <2>5 CASE rpc[wl] = "waitclosed"
+      BY <2>1, <2>5, <1>0, En27, En28, En29
     <2> QED
-      BY <2>1, <2>2, <2>3, <2>4
+      BY <2>1, <2>2, <2>3, <2>4, <2>5
   <1>3 CASE bl = None /\ wl = None
     <2>1 CASE \E i \in Writers : wpc[i] \notin {"done", "failed"}
       <3> PICK i \in Writers : wpc[i] \notin {"done", "failed"}
@@ -725,10 +821,12 @@ THEOREM Progress ==
       <3>6 CASE rpc[x] = "lock"
         BY <3>6, <1>3, <1>0, En17
       \* the states that hold a lock cannot occur with both locks free
-      <3>7 CASE rpc[x] \in {"inc", "test", "wret", "decide", "copy", "finish"}
+      <3>8 CASE rpc[x] = "fastclosed"
+        BY <3>8, <1>3, <1>0, En26
+      <3>7 CASE rpc[x] \in {"inc", "test", "waitclosed", "wret", "decide", "copy", "finish"}
         BY <3>7, <1>3 DEF WaitLockInv, BufLock
       <3> QED
-        BY <3>a, <3>1, <3>2, <3>3, <3>4, <3>5, <3>6, <3>7 DEF States
+        BY <3>a, <3>1, <3>2, <3>3, <3>4, <3>5, <3>6, <3>7, <3>8 DEF States
     <2> QED
       BY <2>1, <2>2, <2>3
   <1> QED
