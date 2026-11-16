@@ -177,7 +177,8 @@ LEMMA StepSafe == SafeInv /\ [Next]_vars => SafeInv'
     \* a step of the protocol keeps the budget of spurious wake-ups
     <2>0 spurious' = spurious
       BY DEF ThreadStep, ThreadStart, ThreadReread, ThreadWaitLock, ThreadInc, ThreadTest,
-             ThreadWaitReturn, ThreadLock, ThreadDecide, ThreadCopy, ThreadFinish, ThreadRet0
+             ThreadWaitReturn, ThreadLock, ThreadDecide, ThreadCopy, ThreadFinish, ThreadRet0,
+             ThreadFastClosed, ThreadWaitClosed
     <2> USE <2>0
     <2>1 CASE ThreadStart(r)
       <3> USE <2>1 DEF ThreadStart, Go, Return, EndCall
@@ -231,6 +232,51 @@ LEMMA StepSafe == SafeInv /\ [Next]_vars => SafeInv'
         BY <3>1, <3>2, <3>3, <3>4, <3>5, <3>6, <3>7, <3>8, <3>9, <3>10, <3>11, <3>12, <3>13 DEF SafeInv
     <2>2 CASE ThreadReread(r)
       <3> USE <2>2 DEF ThreadReread, Go, Return, EndCall
+      <3>1 TypeOK'
+        <4>1 rpc' \in [Threads -> States] /\ op' \in [Threads -> Ops] /\ calls' \in Nat
+          OBVIOUS
+        <4>2 wres' \in [Threads -> Int] /\ wclosed' \in [Threads -> BOOLEAN]
+          OBVIOUS
+        <4>3 parked' \subseteq Threads /\ wl' \in Threads \cup {None} /\ bl' \in Threads \cup {None}
+          OBVIOUS
+        <4>4 /\ w' \in Nat /\ w' <= Bytes /\ t' \in Nat /\ t' <= w'
+             /\ avail' \in Nat /\ closed' \in BOOLEAN
+             /\ wpc' \in [Writers -> {"write", "siglock", "done", "failed"}]
+             /\ cpc' \in [Closers -> {"close", "siglock", "done"}]
+             /\ hold' \in [Threads -> Nat] /\ left' \in [Threads -> Nat]
+             /\ off' \in Nat
+             /\ eofAt' \in Int /\ eofAt' >= -1 /\ eofAt' <= Bytes
+          OBVIOUS
+        <4> QED
+          BY <4>1, <4>2, <4>3, <4>4
+      <3>2 Safety'
+        OBVIOUS
+      <3>3 BufLock'
+        OBVIOUS
+      <3>4 HoldLeft'
+        OBVIOUS
+      <3>5 BufNonNeg'
+        OBVIOUS
+      <3>6 CopyHasBytes'
+        OBVIOUS
+      <3>7 OpStates'
+        OBVIOUS
+      <3>8 WaitLockInv'
+        OBVIOUS
+      <3>9 ParkedInv'
+        OBVIOUS
+      <3>10 RereadClosed'
+        OBVIOUS
+      <3>11 Ret0Empty'
+        OBVIOUS
+      <3>12 CloserInv'
+        OBVIOUS
+      <3>13 WriterInv'
+        OBVIOUS
+      <3> QED
+        BY <3>1, <3>2, <3>3, <3>4, <3>5, <3>6, <3>7, <3>8, <3>9, <3>10, <3>11, <3>12, <3>13 DEF SafeInv
+    <2>12 CASE ThreadFastClosed(r)
+      <3> USE <2>12 DEF ThreadFastClosed, Go, Return, EndCall
       <3>1 TypeOK'
         <4>1 rpc' \in [Threads -> States] /\ op' \in [Threads -> Ops] /\ calls' \in Nat
           OBVIOUS
@@ -338,6 +384,65 @@ LEMMA StepSafe == SafeInv /\ [Next]_vars => SafeInv'
       <3> USE <2>5 DEF ThreadTest, Go, Return, EndCall
       <3>1 TypeOK'
         <4>1 rpc' \in [Threads -> States] /\ op' \in [Threads -> Ops] /\ calls' \in Nat
+          <5>1 CASE avail >= Want(r) /\ op[r] = "wait"
+            <6>1 PICK n \in 0..calls, o \in Ops, s \in {"start", "done"} :
+                      calls' = n /\ op' = [op EXCEPT ![r] = o] /\ rpc' = [rpc EXCEPT ![r] = s]
+              BY <5>1 DEF ThreadTest, Return, EndCall, Go
+            <6>2 s \in States /\ o \in Ops /\ n \in Nat
+              BY <6>1
+            <6> QED
+              BY <6>1, <6>2
+          <5>2 CASE ~(avail >= Want(r) /\ op[r] = "wait")
+            <6>1 PICK s \in {"wret", "lock", "waitclosed"} : rpc' = [rpc EXCEPT ![r] = s] /\ op' = op /\ calls' = calls
+              BY <5>2 DEF ThreadTest, Go
+            <6> QED
+              BY <6>1
+          <5> QED
+            BY <5>1, <5>2
+        <4>2 wres' \in [Threads -> Int] /\ wclosed' \in [Threads -> BOOLEAN]
+          OBVIOUS
+        <4>3 parked' \subseteq Threads /\ wl' \in Threads \cup {None} /\ bl' \in Threads \cup {None}
+          OBVIOUS
+        <4>4 /\ w' \in Nat /\ w' <= Bytes /\ t' \in Nat /\ t' <= w'
+             /\ avail' \in Nat /\ closed' \in BOOLEAN
+             /\ wpc' \in [Writers -> {"write", "siglock", "done", "failed"}]
+             /\ cpc' \in [Closers -> {"close", "siglock", "done"}]
+             /\ hold' \in [Threads -> Nat] /\ left' \in [Threads -> Nat]
+             /\ off' \in Nat
+             /\ eofAt' \in Int /\ eofAt' >= -1 /\ eofAt' <= Bytes
+          OBVIOUS
+        <4> QED
+          BY <4>1, <4>2, <4>3, <4>4
+      <3>2 Safety'
+        OBVIOUS
+      <3>3 BufLock'
+        OBVIOUS
+      <3>4 HoldLeft'
+        OBVIOUS
+      <3>5 BufNonNeg'
+        OBVIOUS
+      <3>6 CopyHasBytes'
+        OBVIOUS
+      <3>7 OpStates'
+        OBVIOUS
+      <3>8 WaitLockInv'
+        OBVIOUS
+      <3>9 ParkedInv'
+        OBVIOUS
+      <3>10 RereadClosed'
+        OBVIOUS
+      <3>11 Ret0Empty'
+        OBVIOUS
+      <3>12 CloserInv'
+        OBVIOUS
+      <3>13 WriterInv'
+        OBVIOUS
+      <3> QED
+        BY <3>1, <3>2, <3>3, <3>4, <3>5, <3>6, <3>7, <3>8, <3>9, <3>10, <3>11, <3>12, <3>13 DEF SafeInv
+    <2>13 CASE ThreadWaitClosed(r)
+      <3> USE <2>13 DEF ThreadWaitClosed, Go, Return, EndCall
+      <3>1 TypeOK'
+        <4>1 rpc' \in [Threads -> States] /\ op' \in [Threads -> Ops] /\ calls' \in Nat
           OBVIOUS
         <4>2 wres' \in [Threads -> Int] /\ wclosed' \in [Threads -> BOOLEAN]
           OBVIOUS
@@ -383,7 +488,13 @@ LEMMA StepSafe == SafeInv /\ [Next]_vars => SafeInv'
       <3> USE <2>6 DEF ThreadWaitReturn, Go, Return, EndCall
       <3>1 TypeOK'
         <4>1 rpc' \in [Threads -> States] /\ op' \in [Threads -> Ops] /\ calls' \in Nat
-          OBVIOUS
+          <5>1 PICK n \in 0..calls, o \in Ops, s \in {"start", "done"} :
+                    calls' = n /\ op' = [op EXCEPT ![r] = o] /\ rpc' = [rpc EXCEPT ![r] = s]
+            BY DEF ThreadWaitReturn, Return, EndCall, Go
+          <5>2 s \in States /\ o \in Ops /\ n \in Nat
+            BY <5>1
+          <5> QED
+            BY <5>1, <5>2
         <4>2 wres' \in [Threads -> Int] /\ wclosed' \in [Threads -> BOOLEAN]
           OBVIOUS
         <4>3 parked' \subseteq Threads /\ wl' \in Threads \cup {None} /\ bl' \in Threads \cup {None}
@@ -668,7 +779,8 @@ LEMMA StepSafe == SafeInv /\ [Next]_vars => SafeInv'
       <3> QED
         BY <3>1, <3>2, <3>3, <3>4, <3>5, <3>6, <3>7, <3>8, <3>9, <3>10, <3>11, <3>12, <3>13 DEF SafeInv
     <2> QED
-      BY <2>1, <2>2, <2>3, <2>4, <2>5, <2>6, <2>7, <2>8, <2>9, <2>10, <2>11 DEF ThreadStep
+      BY <2>1, <2>2, <2>3, <2>4, <2>5, <2>6, <2>7, <2>8, <2>9, <2>10, <2>11, <2>12, <2>13
+         DEF ThreadStep
   <1>4 CASE UNCHANGED vars
     BY <1>4 DEF vars
   \* a spurious wake-up: a parked thread is woken, as by a signal

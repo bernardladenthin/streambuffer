@@ -30,7 +30,36 @@ LEMMA StepSafe == SafeInv /\ [Next]_vars => SafeInv'
 <1>2 CASE WriterSigRead
   BY <1>2 DEF WriterSigRead, WriterNext
 <1>3 CASE WriterSigLock
-  BY <1>3 DEF WriterSigLock, WakeAll, WriterNext
+  \* each part of SafeInv on its own: in one obligation the larger set of states was too much
+  <2> USE <1>3 DEF WriterSigLock, WakeAll, WriterNext
+  <2>1 TypeOK'
+    OBVIOUS
+  <2>2 Safety'
+    OBVIOUS
+  <2>3 BufLock'
+    OBVIOUS
+  <2>4 HoldInv'
+    OBVIOUS
+  <2>5 BufNonNeg'
+    OBVIOUS
+  <2>6 CopyHasByte'
+    OBVIOUS
+  <2>7 WaitLockInv'
+    OBVIOUS
+  <2>8 ParkedInv'
+    OBVIOUS
+  <2>9 RereadClosed'
+    OBVIOUS
+  <2>10 Ret0Empty'
+    OBVIOUS
+  <2>11 DoneEof'
+    OBVIOUS
+  <2>12 CloserInv'
+    OBVIOUS
+  <2>13 WriterInv'
+    OBVIOUS
+  <2> QED
+    BY <2>1, <2>2, <2>3, <2>4, <2>5, <2>6, <2>7, <2>8, <2>9, <2>10, <2>11, <2>12, <2>13 DEF SafeInv
 <1>4 CASE CloserClose
   BY <1>4 DEF CloserClose
 <1>5 CASE CloserSigRead
@@ -42,6 +71,10 @@ LEMMA StepSafe == SafeInv /\ [Next]_vars => SafeInv'
       BY <1>7
   <2>1 CASE ReaderStart(r)
     BY <2>1 DEF ReaderStart, Go
+  <2>11 CASE ReaderFastClosed(r)
+    BY <2>11 DEF ReaderFastClosed, Go
+  <2>12 CASE ReaderWaitClosed(r)
+    BY <2>12 DEF ReaderWaitClosed, Go
   <2>2 CASE ReaderReread(r)
     BY <2>2 DEF ReaderReread, Go
   <2>3 CASE ReaderWaitLock(r)
@@ -192,7 +225,12 @@ LEMMA StepSafe == SafeInv /\ [Next]_vars => SafeInv'
       <4> QED
         BY <4>1, <4>2 DEF BufNonNeg, AvailLinearizable, Buffered
     <3>1 TypeOK'
-      OBVIOUS
+      <4>1 rpc' = [rpc EXCEPT ![r] = "done"] /\ "done" \in States
+        OBVIOUS
+      <4>2 rpc' \in [Readers -> States]
+        BY <4>1
+      <4> QED
+        BY <4>2
     <3>2 Safety'
       BY <3>0
     <3>3 BufLock'
@@ -220,7 +258,7 @@ LEMMA StepSafe == SafeInv /\ [Next]_vars => SafeInv'
     <3> QED
       BY <3>1, <3>2, <3>3, <3>4, <3>5, <3>6, <3>7, <3>8, <3>9, <3>10, <3>11, <3>12, <3>13 DEF SafeInv
     <2> QED
-      BY <2>1, <2>2, <2>3, <2>4, <2>5, <2>6, <2>7, <2>8, <2>9, <2>10 DEF ReaderStep
+      BY <2>1, <2>2, <2>3, <2>4, <2>5, <2>6, <2>7, <2>8, <2>9, <2>10, <2>11, <2>12 DEF ReaderStep
   <1>8 CASE UNCHANGED vars
     BY <1>8 DEF vars
   <1> QED

@@ -41,8 +41,9 @@ Ok(r) == avail >= K[r] \/ (closed /\ avail > 0)
 Rank(r) ==
     CASE rpc[r] = "finish" -> 1
       [] rpc[r] = "copy" -> 2
-      [] rpc[r] = "decide" -> IF Ok(r) THEN 3 ELSE 9
-      [] rpc[r] = "lock" -> IF Ok(r) THEN 4 ELSE 10
+      \* a re-check that fails starts over: above start (A18: start is above the second read)
+      [] rpc[r] = "decide" -> IF Ok(r) THEN 3 ELSE 11
+      [] rpc[r] = "lock" -> IF Ok(r) THEN 4 ELSE 12
       [] rpc[r] \in {"ret0", "wret", "parked"} -> 1
       [] rpc[r] \in {"reread", "waitclosed"} -> 5
       [] rpc[r] = "test" -> 6
@@ -55,14 +56,14 @@ Rank(r) ==
 RankF == [r \in Threads |-> Rank(r)]
 Layer(k) == {r \in Threads : RankF[r] >= k}
 ThreadPot ==
-    (Cardinality(Layer(1)) + Cardinality(Layer(2)) + Cardinality(Layer(3)) + Cardinality(Layer(4))
-     + Cardinality(Layer(5)))
-    + (Cardinality(Layer(6)) + Cardinality(Layer(7)) + Cardinality(Layer(8)) + Cardinality(Layer(9))
-       + Cardinality(Layer(10)))
+    (Cardinality(Layer(1)) + Cardinality(Layer(2)) + Cardinality(Layer(3)) + Cardinality(Layer(4)))
+    + (Cardinality(Layer(5)) + Cardinality(Layer(6)) + Cardinality(Layer(7)) + Cardinality(Layer(8)))
+    + (Cardinality(Layer(9)) + Cardinality(Layer(10)) + Cardinality(Layer(11))
+       + Cardinality(Layer(12)))
 
 NT == Cardinality(Threads)
-\* a signal pays for any change of the thread ranks, which the 10 layers bound by 10 * NT
-Wake == 10 * NT + 2
+\* a signal pays for any change of the thread ranks, which the 12 layers bound by 12 * NT
+Wake == 12 * NT + 2
 WriterPot ==
     Cardinality({i \in Writers : wpc[i] = "write"})
     + Wake * Cardinality({i \in Writers : wpc[i] = "siglock"})
@@ -71,13 +72,13 @@ CloserPot ==
     + Wake * Cardinality({c \in Closers : cpc[c] = "siglock"})
 
 \* the bytes to write and to commit, the bytes buffered, the calls left, the spurious wake-ups
-\* still to come (one lifts a parked thread's rank from 1 to 6)
-GlobalPot == (Wake + 2) * (Bytes - w) + Buffered + (10 * NT + 1) * (Bytes - t) + 10 * calls
+\* still to come (one lifts a parked thread's rank from 1 to 7)
+GlobalPot == (Wake + 2) * (Bytes - w) + Buffered + (12 * NT + 1) * (Bytes - t) + 10 * calls
              + 10 * spurious
 Pot == ThreadPot + WriterPot + CloserPot + GlobalPot
 
 \* Pot in the initial state
-Pot0 == 10 * NT + NW + (Wake + 1) * NC + (Wake + 2) * Bytes + (10 * NT + 1) * Bytes + 10 * Calls0
+Pot0 == 10 * NT + NW + (Wake + 1) * NC + (Wake + 2) * Bytes + (12 * NT + 1) * Bytes + 10 * Calls0
         + 10 * Spurious
 
 -----------------------------------------------------------------------------

@@ -49,11 +49,14 @@ apt-get update -q
 # shellcheck disable=SC2086
 apt-get install -y -q $pkgs
 j11="$(ls -d /usr/lib/jvm/java-11-openjdk-*/bin/java | head -1)"
+# a later call (setup.sh tlapm after setup.sh tlc ...) keeps the tools of the earlier ones
+prev="$(grep -E '^export (TLA2TOOLS|APALACHE|JPF_CORE|TLAPM)=' "$tools/env.sh" 2>/dev/null || true)"
 {
   echo "# written by setup.sh"
   echo "export PAYLOAD=$payload"
   echo "export JAVA_JPF=$j11 JAVA_TLC=$j11"
   echo "export TRACED=$payload/traced TRACED_MUTANT=$payload/traced-mutant LIB=$payload/lib"
+  [ -z "$prev" ] || echo "$prev"
 } > "$tools/env.sh"
 
 case "$args" in *" tlc "*)

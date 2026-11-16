@@ -9,7 +9,7 @@
 (* needs them: a thread r that waits for no lock, the holder of a lock, a  *)
 (* signaler while a thread is parked and waitLock is free, a closer while  *)
 (* bufferLock is free. The witnesses and guards are those of               *)
-(* StreamBufferWaitEnabled.tla (lemmas En1 to En25), with the target       *)
+(* StreamBufferWaitEnabled.tla (lemmas En1 to En29), with the target       *)
 (* action changed (generated: T, B, W, S and C before the En name). Kept   *)
 (* apart from the proof that uses it, since expanding ENABLED in a context *)
 (* that extends StreamBufferWaitLive.tla crashes tlapm 1.6.0-pre.          *)
@@ -103,7 +103,7 @@ LEMMA TEn5 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "test" /\ wl = x /\ op[
   <1> QED
     BY <1>1, <1>5
 
-LEMMA TEn6 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "test" /\ wl = x /\ op[x] = "wait" /\ ~(avail >= Want(x)) /\ closed PROVE ENABLED <<ThreadStep(x)>>_vars
+LEMMA TEn6 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "test" /\ wl = x /\ op[x] = "wait" /\ avail >= Want(x) /\ ~CheckedReturn PROVE ENABLED <<ThreadStep(x)>>_vars
   <1>1 ENABLED <<DTestWret(x)>>_vars
     BY ConstAssump, ExpandENABLED, AutoUSE DEF DTestWret, TypeOK, Go, Want, vars
   <1>2 <<DTestWret(x)>>_vars \in BOOLEAN
@@ -117,7 +117,7 @@ LEMMA TEn6 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "test" /\ wl = x /\ op[
   <1> QED
     BY <1>1, <1>5
 
-LEMMA TEn7 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "test" /\ wl = x /\ op[x] # "wait" /\ (avail >= Want(x) \/ closed) PROVE ENABLED <<ThreadStep(x)>>_vars
+LEMMA TEn7 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "test" /\ wl = x /\ op[x] # "wait" /\ avail >= Want(x) PROVE ENABLED <<ThreadStep(x)>>_vars
   <1>1 ENABLED <<DTestRead(x)>>_vars
     BY ConstAssump, ExpandENABLED, AutoUSE DEF DTestRead, TypeOK, Go, Want, vars
   <1>2 <<DTestRead(x)>>_vars \in BOOLEAN
@@ -131,16 +131,16 @@ LEMMA TEn7 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "test" /\ wl = x /\ op[
   <1> QED
     BY <1>1, <1>5
 
-LEMMA TEn8 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "test" /\ wl = x /\ ~(avail >= Want(x) \/ closed) PROVE ENABLED <<ThreadStep(x)>>_vars
-  <1>1 ENABLED <<DTestPark(x)>>_vars
-    BY ConstAssump, ExpandENABLED, AutoUSE DEF DTestPark, TypeOK, Go, Want, vars
-  <1>2 <<DTestPark(x)>>_vars \in BOOLEAN
+LEMMA TEn8 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "test" /\ wl = x /\ ~(avail >= Want(x)) PROVE ENABLED <<ThreadStep(x)>>_vars
+  <1>1 ENABLED <<DTestClosed(x)>>_vars
+    BY ConstAssump, ExpandENABLED, AutoUSE DEF DTestClosed, TypeOK, Go, Want, vars
+  <1>2 <<DTestClosed(x)>>_vars \in BOOLEAN
     OBVIOUS
   <1>3 <<ThreadStep(x)>>_vars \in BOOLEAN
     OBVIOUS
-  <1>4 <<DTestPark(x)>>_vars => <<ThreadStep(x)>>_vars
-    BY DTestParkImpl DEF ThreadStep
-  <1>5 (ENABLED <<DTestPark(x)>>_vars) => ENABLED <<ThreadStep(x)>>_vars
+  <1>4 <<DTestClosed(x)>>_vars => <<ThreadStep(x)>>_vars
+    BY DTestClosedImpl DEF ThreadStep
+  <1>5 (ENABLED <<DTestClosed(x)>>_vars) => ENABLED <<ThreadStep(x)>>_vars
     BY <1>2, <1>3, <1>4, ENABLEDaxioms
   <1> QED
     BY <1>1, <1>5
@@ -341,7 +341,7 @@ LEMMA WEn5 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "test" /\ wl = x /\ op[
   <1> QED
     BY <1>1, <1>5
 
-LEMMA WEn6 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "test" /\ wl = x /\ op[x] = "wait" /\ ~(avail >= Want(x)) /\ closed PROVE ENABLED <<WLHolder>>_vars
+LEMMA WEn6 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "test" /\ wl = x /\ op[x] = "wait" /\ avail >= Want(x) /\ ~CheckedReturn PROVE ENABLED <<WLHolder>>_vars
   <1>1 ENABLED <<DTestWret(x)>>_vars
     BY ConstAssump, ExpandENABLED, AutoUSE DEF DTestWret, TypeOK, Go, Want, vars
   <1>2 <<DTestWret(x)>>_vars \in BOOLEAN
@@ -355,7 +355,7 @@ LEMMA WEn6 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "test" /\ wl = x /\ op[
   <1> QED
     BY <1>1, <1>5
 
-LEMMA WEn7 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "test" /\ wl = x /\ op[x] # "wait" /\ (avail >= Want(x) \/ closed) PROVE ENABLED <<WLHolder>>_vars
+LEMMA WEn7 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "test" /\ wl = x /\ op[x] # "wait" /\ avail >= Want(x) PROVE ENABLED <<WLHolder>>_vars
   <1>1 ENABLED <<DTestRead(x)>>_vars
     BY ConstAssump, ExpandENABLED, AutoUSE DEF DTestRead, TypeOK, Go, Want, vars
   <1>2 <<DTestRead(x)>>_vars \in BOOLEAN
@@ -369,16 +369,16 @@ LEMMA WEn7 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "test" /\ wl = x /\ op[
   <1> QED
     BY <1>1, <1>5
 
-LEMMA WEn8 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "test" /\ wl = x /\ ~(avail >= Want(x) \/ closed) PROVE ENABLED <<WLHolder>>_vars
-  <1>1 ENABLED <<DTestPark(x)>>_vars
-    BY ConstAssump, ExpandENABLED, AutoUSE DEF DTestPark, TypeOK, Go, Want, vars
-  <1>2 <<DTestPark(x)>>_vars \in BOOLEAN
+LEMMA WEn8 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "test" /\ wl = x /\ ~(avail >= Want(x)) PROVE ENABLED <<WLHolder>>_vars
+  <1>1 ENABLED <<DTestClosed(x)>>_vars
+    BY ConstAssump, ExpandENABLED, AutoUSE DEF DTestClosed, TypeOK, Go, Want, vars
+  <1>2 <<DTestClosed(x)>>_vars \in BOOLEAN
     OBVIOUS
   <1>3 <<WLHolder>>_vars \in BOOLEAN
     OBVIOUS
-  <1>4 <<DTestPark(x)>>_vars => <<WLHolder>>_vars
-    BY DTestParkImpl DEF WLHolder, ThreadStep, DTestPark
-  <1>5 (ENABLED <<DTestPark(x)>>_vars) => ENABLED <<WLHolder>>_vars
+  <1>4 <<DTestClosed(x)>>_vars => <<WLHolder>>_vars
+    BY DTestClosedImpl DEF WLHolder, ThreadStep, DTestClosed
+  <1>5 (ENABLED <<DTestClosed(x)>>_vars) => ENABLED <<WLHolder>>_vars
     BY <1>2, <1>3, <1>4, ENABLEDaxioms
   <1> QED
     BY <1>1, <1>5
@@ -439,9 +439,108 @@ LEMMA CEn23 == ASSUME NEW c \in Closers, TypeOK, cpc[c] = "close" /\ bl = None P
   <1> QED
     BY <1>1, <1>5
 
+LEMMA TEn26 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "fastclosed" PROVE ENABLED <<ThreadStep(x)>>_vars
+  <1>1 ENABLED <<DFastClosed(x)>>_vars
+    BY ConstAssump, ExpandENABLED, AutoUSE DEF DFastClosed, TypeOK, Go, vars
+  <1>2 <<DFastClosed(x)>>_vars \in BOOLEAN
+    OBVIOUS
+  <1>3 <<ThreadStep(x)>>_vars \in BOOLEAN
+    OBVIOUS
+  <1>4 <<DFastClosed(x)>>_vars => <<ThreadStep(x)>>_vars
+    BY DFastClosedImpl DEF ThreadStep
+  <1>5 (ENABLED <<DFastClosed(x)>>_vars) => ENABLED <<ThreadStep(x)>>_vars
+    BY <1>2, <1>3, <1>4, ENABLEDaxioms
+  <1> QED
+    BY <1>1, <1>5
+
+LEMMA TEn27 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "waitclosed" /\ wl = x /\ closed /\ op[x] = "wait" PROVE ENABLED <<ThreadStep(x)>>_vars
+  <1>1 ENABLED <<DWCWret(x)>>_vars
+    BY ConstAssump, ExpandENABLED, AutoUSE DEF DWCWret, TypeOK, Go, vars
+  <1>2 <<DWCWret(x)>>_vars \in BOOLEAN
+    OBVIOUS
+  <1>3 <<ThreadStep(x)>>_vars \in BOOLEAN
+    OBVIOUS
+  <1>4 <<DWCWret(x)>>_vars => <<ThreadStep(x)>>_vars
+    BY DWCWretImpl DEF ThreadStep
+  <1>5 (ENABLED <<DWCWret(x)>>_vars) => ENABLED <<ThreadStep(x)>>_vars
+    BY <1>2, <1>3, <1>4, ENABLEDaxioms
+  <1> QED
+    BY <1>1, <1>5
+
+LEMMA TEn28 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "waitclosed" /\ wl = x /\ closed /\ op[x] # "wait" PROVE ENABLED <<ThreadStep(x)>>_vars
+  <1>1 ENABLED <<DWCRead(x)>>_vars
+    BY ConstAssump, ExpandENABLED, AutoUSE DEF DWCRead, TypeOK, Go, vars
+  <1>2 <<DWCRead(x)>>_vars \in BOOLEAN
+    OBVIOUS
+  <1>3 <<ThreadStep(x)>>_vars \in BOOLEAN
+    OBVIOUS
+  <1>4 <<DWCRead(x)>>_vars => <<ThreadStep(x)>>_vars
+    BY DWCReadImpl DEF ThreadStep
+  <1>5 (ENABLED <<DWCRead(x)>>_vars) => ENABLED <<ThreadStep(x)>>_vars
+    BY <1>2, <1>3, <1>4, ENABLEDaxioms
+  <1> QED
+    BY <1>1, <1>5
+
+LEMMA TEn29 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "waitclosed" /\ wl = x /\ ~closed PROVE ENABLED <<ThreadStep(x)>>_vars
+  <1>1 ENABLED <<DWCPark(x)>>_vars
+    BY ConstAssump, ExpandENABLED, AutoUSE DEF DWCPark, TypeOK, Go, vars
+  <1>2 <<DWCPark(x)>>_vars \in BOOLEAN
+    OBVIOUS
+  <1>3 <<ThreadStep(x)>>_vars \in BOOLEAN
+    OBVIOUS
+  <1>4 <<DWCPark(x)>>_vars => <<ThreadStep(x)>>_vars
+    BY DWCParkImpl DEF ThreadStep
+  <1>5 (ENABLED <<DWCPark(x)>>_vars) => ENABLED <<ThreadStep(x)>>_vars
+    BY <1>2, <1>3, <1>4, ENABLEDaxioms
+  <1> QED
+    BY <1>1, <1>5
+
+LEMMA WEn27 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "waitclosed" /\ wl = x /\ closed /\ op[x] = "wait" PROVE ENABLED <<WLHolder>>_vars
+  <1>1 ENABLED <<DWCWret(x)>>_vars
+    BY ConstAssump, ExpandENABLED, AutoUSE DEF DWCWret, TypeOK, Go, vars
+  <1>2 <<DWCWret(x)>>_vars \in BOOLEAN
+    OBVIOUS
+  <1>3 <<WLHolder>>_vars \in BOOLEAN
+    OBVIOUS
+  <1>4 <<DWCWret(x)>>_vars => <<WLHolder>>_vars
+    BY DWCWretImpl DEF WLHolder, ThreadStep, DWCWret
+  <1>5 (ENABLED <<DWCWret(x)>>_vars) => ENABLED <<WLHolder>>_vars
+    BY <1>2, <1>3, <1>4, ENABLEDaxioms
+  <1> QED
+    BY <1>1, <1>5
+
+LEMMA WEn28 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "waitclosed" /\ wl = x /\ closed /\ op[x] # "wait" PROVE ENABLED <<WLHolder>>_vars
+  <1>1 ENABLED <<DWCRead(x)>>_vars
+    BY ConstAssump, ExpandENABLED, AutoUSE DEF DWCRead, TypeOK, Go, vars
+  <1>2 <<DWCRead(x)>>_vars \in BOOLEAN
+    OBVIOUS
+  <1>3 <<WLHolder>>_vars \in BOOLEAN
+    OBVIOUS
+  <1>4 <<DWCRead(x)>>_vars => <<WLHolder>>_vars
+    BY DWCReadImpl DEF WLHolder, ThreadStep, DWCRead
+  <1>5 (ENABLED <<DWCRead(x)>>_vars) => ENABLED <<WLHolder>>_vars
+    BY <1>2, <1>3, <1>4, ENABLEDaxioms
+  <1> QED
+    BY <1>1, <1>5
+
+LEMMA WEn29 == ASSUME NEW x \in Threads, TypeOK, rpc[x] = "waitclosed" /\ wl = x /\ ~closed PROVE ENABLED <<WLHolder>>_vars
+  <1>1 ENABLED <<DWCPark(x)>>_vars
+    BY ConstAssump, ExpandENABLED, AutoUSE DEF DWCPark, TypeOK, Go, vars
+  <1>2 <<DWCPark(x)>>_vars \in BOOLEAN
+    OBVIOUS
+  <1>3 <<WLHolder>>_vars \in BOOLEAN
+    OBVIOUS
+  <1>4 <<DWCPark(x)>>_vars => <<WLHolder>>_vars
+    BY DWCParkImpl DEF WLHolder, ThreadStep, DWCPark
+  <1>5 (ENABLED <<DWCPark(x)>>_vars) => ENABLED <<WLHolder>>_vars
+    BY <1>2, <1>3, <1>4, ENABLEDaxioms
+  <1> QED
+    BY <1>1, <1>5
+
 \* the stages in which r waits for no lock
 RFree(x) ==
-    \/ rpc[x] \in {"start", "reread", "ret0", "inc", "test", "wret", "decide", "copy", "finish"}
+    \/ rpc[x] \in {"start", "fastclosed", "reread", "ret0", "inc", "test", "waitclosed", "wret",
+                   "decide", "copy", "finish"}
     \/ rpc[x] = "lock" /\ bl = None
     \/ rpc[x] \in {"lockwait", "woken"} /\ wl = None
 
@@ -490,8 +589,16 @@ THEOREM EnThread ==
     BY <1>10, <1>0, TEn17
   <1>11 CASE rpc[x] \in {"lockwait", "woken"} /\ wl = None
     BY <1>11, <1>0, TEn15
+  <1>12 CASE rpc[x] = "fastclosed"
+    BY <1>12, <1>0, TEn26
+  <1>13 CASE rpc[x] = "waitclosed"
+    <2>1 wl = x
+      BY <1>13 DEF WaitLockInv
+    <2> QED
+      BY <1>13, <2>1, <1>0, TEn27, TEn28, TEn29
   <1> QED
-    BY <1>1, <1>2, <1>3, <1>4, <1>5, <1>6, <1>7, <1>8, <1>9, <1>10, <1>11 DEF RFree
+    BY <1>1, <1>2, <1>3, <1>4, <1>5, <1>6, <1>7, <1>8, <1>9, <1>10, <1>11, <1>12, <1>13
+       DEF RFree
 
 \* the same with the ENABLED term behind an operator: tlapm does not instantiate a lemma at a
 \* term inside ENABLED, but it does expand a definition applied to one
@@ -529,7 +636,7 @@ THEOREM EnWL ==
   <1> USE DEF SafeInv
   <1>0 TypeOK /\ CheckedReturn
     BY ConstAssump
-  <1>1 wl \in Threads /\ rpc[wl] \in {"inc", "test", "wret"}
+  <1>1 wl \in Threads /\ rpc[wl] \in {"inc", "test", "waitclosed", "wret"}
     BY DEF TypeOK, WaitLockInv
   <1>2 CASE rpc[wl] = "inc"
     BY <1>1, <1>2, <1>0, WEn16
@@ -537,8 +644,10 @@ THEOREM EnWL ==
     BY <1>1, <1>3, <1>0, WEn5, WEn6, WEn7, WEn8
   <1>4 CASE rpc[wl] = "wret"
     BY <1>1, <1>4, <1>0, WEn9
+  <1>5 CASE rpc[wl] = "waitclosed"
+    BY <1>1, <1>5, <1>0, WEn27, WEn28, WEn29
   <1> QED
-    BY <1>1, <1>2, <1>3, <1>4
+    BY <1>1, <1>2, <1>3, <1>4, <1>5
 
 THEOREM EnSignal ==
   ASSUME SafeInv, parked # {}, wl = None,
