@@ -457,6 +457,14 @@ annotated, so everything below is genuinely still open.
       reused, `REUSE_GRAPH=1`; S8A anew, S3N once its JPF is done).
     - [ ] Docs: the numbers of the reruns in the READMEs, `VERIFICATION-ASSUMPTIONS.md` (V19),
       CHANGELOG.
+    - [ ] The next long run (S3A, S6N, S8A, S3N; figures of the 2026-11-16 run in the owner's
+      local result folder, `runinfo-*.txt`): a cheap marketplace machine by the day (one large,
+      e.g. 44 vCPU / 252 GB / 2.6 TB at ~4 USD/day, or one small machine per scenario, ~1.3-2
+      USD/day each), not a cloud VM at ~22 USD/day; reuse the saved JPF graphs (`REUSE_GRAPH=1`);
+      **raise the heaps**: S3N's JPF ran at `-Xmx7g` with its old generation 89 % full after 48 h
+      (131,700 concurrent GC cycles), so `JPF_HEAP` 32g there; give TLC an explicit `-Xmx`
+      (16g) instead of the JVM default; graphmin needs ~0.7 GB RAM per GB of graph (S3N's graph
+      was 23.6 GB and growing); sync finished graphs and logs off the machine as they appear.
   - **A19 — Liveness of the detailed model for any number of readers (optional, weeks).** TLAPS,
     on the pattern of `StreamBufferWaitForeverLiveProof.tla` (a measure per thread, fairness by
     role), for `StreamBuffer.tla` directly, or a refinement that carries fairness. Done when the
