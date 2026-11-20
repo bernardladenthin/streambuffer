@@ -18,7 +18,7 @@ annotated, so everything below is genuinely still open.
   | # | Item | Work | Odds of success | Timeline | Why / risk |
   |---|---|---|---|---|---|
   | 1 | **First scheduled formal run after #233** (Monday 04:17 UTC): the eight manifest steps run, rows V1-V18 get a run with a SHA, `check.sh`'s 4-core time is measured | ~½ h to check | ~85 % | Monday | the steps never ran in CI (the TLA+, TLAPS and JPF jobs run on the schedule only); a failure there is a CI error of mine (cancel, fix, push) |
-  | 2 | **A18** Every interleaving of the code is a run of the model. **In progress, branch `feat/a18-jpf-traces`**: the exact graph check works (JPF's state graph -> minimal automaton -> TLC product -> subset check, with three controls); open: the controls for every scenario, docs, a `V19` row, CI with the smallest scenario, PR | 2–4 days left | ~80 % for the small scenarios; larger ones bounded by JPF and TLC's dump | 1 week | two `read()` readers did not finish JPF in 4 h; automata above ~2,500 states did not finish TLC's dump in 4 h (one thread writes it). Speeding up the product (fewer controls per scenario, a dump written in parallel, or the subset check without a dump) decides how far it reaches |
+  | 2 | **A18** Every interleaving of the code is a run of the model. **In progress, branch `feat/a18-jpf-traces`**: the exact graph check works (JPF's state graph -> minimal automaton -> TLC product -> subset check, with three controls); open: the controls for every scenario, docs, a `V19` row, CI with the smallest scenario, PR | 2–4 days left | ~80 % for the small scenarios; larger ones bounded by JPF and TLC's dump | 1 week | two `read()` readers did not finish JPF in 4 h; automata above ~2,500 states did not finish TLC in 4 h. The cause (2026-11-20): TLC 1.7.4 evaluated the automaton's table at every step (a constant substituted in the cfg, tlaplus issue 648); through definitions of their own the S6A automaton runs ~36 times faster. Whether TLC's dump (one thread writes it) limits next decides how far it reaches |
   | 3 | `@VisibleForTesting` decision (15 package-private methods; below) | ½ day | ~95 % | a few days | only the decision (an own marker annotation, or the convention does not apply here), then act |
   | 4 | Naming review (below, `code-quality-todos.md`) | ~1 day | ~90 % | ~1 week | mechanical; renaming private methods is cheap, a public API rename is a breaking change for the CHANGELOG |
   | 5 | A14 follow-up: a trim threshold that grows with the backlog | 1–2 days | ~70 % | ~1 week | with a backlog of 179 MiB the default threshold costs 10-20x against no trim (A14, below); it changes how many entries the buffer keeps |
@@ -457,6 +457,16 @@ annotated, so everything below is genuinely still open.
       reused, `REUSE_GRAPH=1`; S8A anew, S3N once its JPF is done).
     - [ ] Docs: the numbers of the reruns in the READMEs, `VERIFICATION-ASSUMPTIONS.md` (V19),
       CHANGELOG.
+    - [x] The product's speed (2026-11-20): TLC 1.7.4 evaluates a constant substituted in the cfg
+      anew at every use (tlaplus issue 648), so each step rebuilt the automaton's whole table
+      (`GEdge <- TEdge`, 5.7 MB for S3A), and A6's trace (`TraceLog <- TTrace`) too.
+      `TraceGraph.tla` and `TraceStreamBuffer.tla` read them through definitions of their own
+      (`Edges`, `Out`, `Log`), which TLC evaluates once; `check.sh` counts the evaluations
+      (`ConstCacheGraph`, `ConstCacheTrace`: 3 each, the old modules 44 and 345). Locally, 4
+      workers: S1A 30 -> 23 s with the same 93,190 states and verdict; the S6A automaton (5,102
+      states, 12,271 edges) 7,180 -> 259,886 distinct states a minute.
+    - [ ] The runs of 2026-11-16 on the rented machine (S3A, S6N, S8A, S3N) use the old modules,
+      at ~1,000 distinct states a minute each: restart them with the fix (the owner decides).
     - [ ] The next long run (S3A, S6N, S8A, S3N; figures of the 2026-11-16 run in the owner's
       local result folder, `runinfo-*.txt`): a machine rented by the day (one large, or one small
       per scenario); reuse the saved JPF graphs (`REUSE_GRAPH=1`);

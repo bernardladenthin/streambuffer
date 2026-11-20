@@ -116,19 +116,25 @@ Obs(e) ==
     /\ IsReader(e.t) => WaitPc(e)
 
 -----------------------------------------------------------------------------
+(* The trace through a definition of its own: TLC 1.7.4 evaluates a       *)
+(* constant substituted in the cfg (TraceLog <- TTrace) anew at every use, *)
+(* the whole trace at each step, but a definition of constant level once   *)
+(* (tlaplus issue 648). check.sh counts the evaluations (ConstCacheTrace). *)
+Log == TraceLog
+
 TraceInit == Init /\ l = 1 /\ k = 0 /\ TLCSet(1, 0)
 
 Silent ==
-    /\ l <= Len(TraceLog) /\ k < K
-    /\ StepOf(TraceLog[l].t)
+    /\ l <= Len(Log) /\ k < K
+    /\ StepOf(Log[l].t)
     /\ k' = k + 1
     /\ UNCHANGED l
 
 (* A rejected trace: the last "line" TLC prints is the first line no     *)
 (* placement could consume.                                                *)
 Consume ==
-    /\ l <= Len(TraceLog)
-    /\ Obs(TraceLog[l])
+    /\ l <= Len(Log)
+    /\ Obs(Log[l])
     /\ l + 1 > TLCGet(1) => TLCSet(1, l + 1) /\ PrintT(<<"line", l + 1>>)
     /\ l' = l + 1
     /\ k' = 0
@@ -139,6 +145,6 @@ TraceNext == Silent \/ Consume
 TraceSpec == TraceInit /\ [][TraceNext]_tvars
 
 (* Violated exactly when every line has been consumed: the trace is accepted. *)
-TraceNotDone == l <= Len(TraceLog)
+TraceNotDone == l <= Len(Log)
 
 =============================================================================

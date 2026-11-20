@@ -188,7 +188,10 @@ deliberately not part of the synchronous Publish pipeline and never a required c
    writes the state graph, `graphmin.py` the minimal automaton as a module of `TraceGraph.tla`, and
    `graphcheck.py` runs a subset construction over TLC's dump of the product; `check-graph.sh` does
    it per scenario with its controls. A change of `TraceStreamBuffer.tla`'s `StepOf` or `Obs`
-   changes this check too (it uses them as they are).
+   changes this check too (it uses them as they are). A table that comes from the cfg
+   (`GEdge <- TEdge`, `TraceLog <- TTrace`) is read only through a definition of its own (`Edges`,
+   `Out`, `Log`): TLC 1.7.4 evaluates a substituted constant anew at every use (tlaplus issue 648),
+   which made the products ~36 times slower; `check.sh` counts the evaluations (`ConstCache*`).
    **Long runs on a rented machine** (`src/test/remote/`, README there): `pack.sh` builds the
    payload locally, `setup.sh` installs the tools at the workflow's pins, `run-a18.sh` and
    `run-formal.sh` run without a time limit, `detach.sh` starts them past the ssh session,
