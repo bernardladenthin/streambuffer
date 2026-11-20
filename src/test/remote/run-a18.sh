@@ -14,7 +14,7 @@
 #                   <wait callers> <after|any>" (default: a18-scenarios.txt next to this script)
 #   parallel        scenarios at once (default: memory / (JPF_HEAP + 3 GB), at most cores / 4)
 # Environment: JPF_HEAP (default 7g; JPF is single-threaded and needs the heap), TLC_WORKERS
-#   (default 4: the product's TLC run, single-threaded in its dump anyway). The scenarios'
+#   (default 4: the product's TLC run; its dump is written by one thread). The scenarios'
 #   graphmin.py take turns (GRAPHMIN_LOCK): each holds its whole graph in memory (flat arrays,
 #   about 0.7 GB per GB of graph; the graphs of two readers have 9 GB), so not several at once;
 #   setup.sh swap adds swap as a further guard.
