@@ -29,5 +29,5 @@ TEdge == Print("ConstCache: TEdge evaluated", <<
     [i |-> 1, f |-> 0, d |-> 1, e |-> [t |-> "r1", m |-> "waitForAtLeast", a |-> "getAvail", n |-> 0, v |-> 0, b |-> <<>>]],
     [i |-> 2, f |-> 0, d |-> 2, e |-> [t |-> "w", m |-> "writeFromArray", a |-> "enter", n |-> 0, v |-> 0, b |-> <<>>]]
   >>)
-TOut == Print("ConstCache: TOut evaluated", [s \in 0..2 |-> IF s = 0 THEN {1, 2} ELSE {}])
+TOut == Print("ConstCache: TOut evaluated", <<{1, 2}, {}, {}>>)
 =============================================================================

@@ -225,12 +225,13 @@ if len(sys.argv) > 2:
     out_of = defaultdict(list)
     for i, ((f, e), d) in enumerate(ordered):
         out_of[f].append(i + 1)
-    # the edges out of each state: a sequence of sets (state s is element s + 1), as a function
-    lines.append("TOutSeq == <<")
+    # the edges out of each state: a sequence of sets, state s is element s + 1 (TraceGraph.tla reads
+    # Out[g + 1]). Not a function [s \in 0..n |-> TOutSeq[s + 1]]: TLC builds that at its start with
+    # TOutSeq evaluated anew for every state, quadratic (S6N, 20,392 states: 43 minutes)
+    lines.append("TOut == <<")
     for s in range(nblocks):
         lines.append(("  " if s == 0 else ", ") + "{%s}" % ", ".join(map(str, out_of[s])))
     lines.append(">>")
-    lines.append("TOut == [s \\in 0..%d |-> TOutSeq[s + 1]]" % (nblocks - 1))
     lines += ["===="]
     with open(os.path.join(outdir, module + ".tla"), "w", encoding="utf-8", newline="\n") as out:
         out.write("\n".join(lines) + "\n")
