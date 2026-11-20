@@ -464,7 +464,11 @@ annotated, so everything below is genuinely still open.
       (`Edges`, `Out`, `Log`), which TLC evaluates once; `check.sh` counts the evaluations
       (`ConstCacheGraph`, `ConstCacheTrace`: 3 each, the old modules 44 and 345). Locally, 4
       workers: S1A 30 -> 23 s with the same 93,190 states and verdict; the S6A automaton (5,102
-      states, 12,271 edges) 7,180 -> 259,886 distinct states a minute.
+      states, 12,271 edges) 7,180 -> 259,886 distinct states a minute. TLC's start: `graphmin.py`
+      wrote the edges out of each state as a function over a sequence (`[s \in 0..n |->
+      TOutSeq[s + 1]]`), which TLC builds at its start with the sequence evaluated anew for every
+      state, quadratic (S6N: 43 min, twice that with `Out == GOut`); now the sequence itself
+      (`Out[g + 1]`): the S6A automaton starts in 1 s instead of 19, same states and verdict.
     - [ ] The runs of 2026-11-16 on the rented machine (S3A, S6N, S8A, S3N) use the old modules,
       at ~1,000 distinct states a minute each: restart them with the fix (the owner decides).
     - [ ] The next long run (S3A, S6N, S8A, S3N; figures of the 2026-11-16 run in the owner's

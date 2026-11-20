@@ -27,7 +27,7 @@ EXTENDS TraceStreamBuffer
 CONSTANTS
     GInit,      \* the automaton's initial state
     GEdge,      \* its edges, by id: [f: from, d: to, e: the event, a line of A6]
-    GOut        \* for each of its states, the ids of the edges out of it
+    GOut        \* the ids of the edges out of each of its states, state s at s + 1
 
 VARIABLES
     g,          \* the automaton's state
@@ -49,7 +49,7 @@ GraphInit == Init /\ l = 1 /\ k = 0 /\ g = GInit /\ pend = -1
 (* an edge out of the automaton's state *)
 Choose ==
     /\ pend = -1
-    /\ \E i \in Out[g] : pend' = i
+    /\ \E i \in Out[g + 1] : pend' = i
     /\ UNCHANGED <<vars, l, k, g>>
 
 (* a step of the model by the thread of the chosen edge's event *)
