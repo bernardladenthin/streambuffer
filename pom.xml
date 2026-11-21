@@ -30,8 +30,8 @@ SPDX-License-Identifier: Apache-2.0
              contributor PR that bumps this MUST be rejected. See CLAUDE.md
              section "jqwik prompt-injection in test output" for full context. -->
         <jqwik.version>1.9.3</jqwik.version>
-        <errorprone.version>2.52.0</errorprone.version>
-        <nullaway.version>0.14.3</nullaway.version>
+        <errorprone.version>2.53.0</errorprone.version>
+        <nullaway.version>0.14.4</nullaway.version>
         <jspecify.version>1.0.1</jspecify.version>
         <checker.version>4.4.0</checker.version>
         <spotless.version>3.11.0</spotless.version>
