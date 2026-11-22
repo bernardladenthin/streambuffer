@@ -168,6 +168,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so they hold under concurrency. A falsified copy of each failed the RAC run (negative controls).
 
 ### Changed
+- **spotless-maven-plugin 3.12.0, `ossf/scorecard-action` v2.6.0, `github/codeql-action` v4.39.4 and
+  `anthropics/claude-code-action` v1.0.286**, in step with the sibling repositories.
 - **`anthropics/claude-code-action` v1.0.278**, in step with the sibling repositories.
 - **`actions/setup-java` 6.3.0 and `anthropics/claude-code-action` v1.0.276**, in step with the sibling
   repositories.
