@@ -147,6 +147,20 @@ product() {  # product <label> <graph> <model dir> [sed for the cfg]: TLC's dump
   return "$e"
 }
 
+product_fed() {  # product_fed <writer pid> <label> <graph fifo> <model dir>: the product of a
+  # graph a writer feeds through a fifo; no result unless the writer wrote it whole
+  local w="$1" e=0
+  shift
+  product "$@" || e=$?
+  # a product that stopped before it opened the fifo leaves the writer waiting in its open
+  if [ "$e" != 0 ] && [ "$e" != 3 ]; then kill "$w" 2> /dev/null || true; fi
+  if ! wait "$w"; then
+    echo "  the graph through the fifo was not written whole; no result"
+    return 2
+  fi
+  return "$e"
+}
+
 expect() {  # expect <label> <0 accepted | 1 rejected> <command...>
   local label="$1" want="$2"
   shift 2
@@ -173,11 +187,16 @@ if [ "$controls" = controls ]; then
   # no spurious wake-ups here: they could explain the wake-ups the missing signal leaves out
   expect "control: the model's writer never signals" 1 \
     product "$name-nosignal" "$WORK/$name.graph" "$mutant" 's/    Spurious = [0-9]*/    Spurious = 0/'
+  # the corrupted graph goes through a fifo into graphmin.py, which reads it once from the start:
+  # a copy on disk would be as large as the graph (S3N: ~75 GB). Without mkfifo, a file.
   corrupt="$WORK/$name-byte.graph"
-  "$py" -I - "$WORK/$name.graph" "$corrupt" <<'EOF'
+  rm -f "$corrupt"
+  cat > "$WORK/corrupt.py" <<'EOF'
 import re, sys
 # the first byte a read returned; in a scenario without reads, the count a waitForAtLeast returned.
-# Line by line (a graph of two readers is 9 GB): first the line to change, then the copy.
+# Line by line (a graph of two readers is 9 GB): first the line to change, then the copy. The
+# output is opened first, so a reader of the fifo never waits for a writer that failed before it.
+out = open(sys.argv[2], "w", encoding="utf-8", newline="\n")
 ret, wfa = re.compile(r"\tret\t\d+\t\d+\t(\d+)"), re.compile(r"\twfa\t\d+\t(-?\d+)\t")
 target = None
 first_wfa = None
@@ -190,14 +209,21 @@ with open(sys.argv[1], encoding="utf-8") as f:
             first_wfa = k
 if target is None:
     target = (first_wfa, wfa)
-with open(sys.argv[1], encoding="utf-8") as f, open(sys.argv[2], "w", encoding="utf-8", newline="\n") as out:
+with open(sys.argv[1], encoding="utf-8") as f, out:
     for k, line in enumerate(f):
         if k == target[0]:
             m = target[1].search(line)
             line = line[:m.start(1)] + str(int(m.group(1)) + 1) + line[m.end(1):]
         out.write(line)
 EOF
-  expect "control: a returned byte (or count) + 1 in the graph" 1 product "$name-byte" "$corrupt" "$tla"
+  if mkfifo "$corrupt" 2> /dev/null; then
+    "$py" -I "$WORK/corrupt.py" "$WORK/$name.graph" "$corrupt" &
+    expect "control: a returned byte (or count) + 1 in the graph" 1 product_fed "$!" "$name-byte" "$corrupt" "$tla"
+    rm -f "$corrupt"
+  else
+    "$py" -I "$WORK/corrupt.py" "$WORK/$name.graph" "$corrupt" || { echo "FAIL  the corrupted graph"; failed=1; }
+    expect "control: a returned byte (or count) + 1 in the graph" 1 product "$name-byte" "$corrupt" "$tla"
+  fi
   if [ $((nbyte + nrecord)) -gt 0 ]; then
     jpf_graph "$name-mutant" "$TRACED_MUTANT" mutant || failed=1
     expect "control: the reads do not lower the count" 1 product "$name-mutant" "$WORK/$name-mutant.graph" "$tla"

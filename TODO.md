@@ -481,8 +481,13 @@ annotated, so everything below is genuinely still open.
       `GRAPHCHECK_REFERENCE=1` compares them on real ones (CI: S1A and its controls). Found on
       the way: `graphcheck.py` accepted a dump cut off after an edge (it never checked an edge's
       target), now no result as in the Java check.
-    - [ ] S3N with the new check: the chain running there is the old `check-graph.sh` (plain dump,
-      `graphcheck.py`), which would fill the disk after JPF; the owner decides how it switches.
+    - [x] The byte control without a copy of the graph (2026-11-22): the corrupted graph goes
+      through a fifo into `graphmin.py`, which reads it once (S3N's copy would be ~75 GB); a
+      writer that stops midway gives no result, never a rejection (tested on S1A by injection).
+    - [ ] S3N with the new check: the chain started there on 2026-11-16 is the old
+      `check-graph.sh` (plain dump, `graphcheck.py`, the graph copied), which would fill the disk
+      after JPF. Its shell is stopped; a watcher on the machine runs the new chain on the same
+      graph once JPF ends (`REUSE_GRAPH=1`).
     - [ ] The next long run (S3A, S6N, S8A, S3N; figures of the 2026-11-16 run in the owner's
       local result folder, `runinfo-*.txt`): a machine rented by the day (one large, or one small
       per scenario); reuse the saved JPF graphs (`REUSE_GRAPH=1`);
