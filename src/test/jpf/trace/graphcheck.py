@@ -3,17 +3,22 @@
 # SPDX-License-Identifier: Apache-2.0
 """A18: is every word of the automaton (every interleaving JPF explored) a run of the model?
 
+The reference of GraphCheck.java, which check-graph.sh runs (the same check in at most about 70
+bytes per product state instead of about 700 here); with GRAPHCHECK_REFERENCE=1 both run and must
+print the same.
+
 Reads the state graph TLC dumped of TraceGraph.tla's product (`-dump dot,actionlabels`) and the
 automaton's module (its edges: id, from, to), and runs a subset construction over the words: for a
 word w, X(w) is the set of product states with no edge chosen that some run reaches by consuming
 w; X(w e) is reached from X(w) by Choose of e, any number of GSilent (at most K, as TraceGraph.tla
 allows), and GConsume. Every word is accepted exactly when no reachable X(w e) is empty for an edge
 e of the automaton's state after w; an empty one is a counterexample, printed as its word.
-Usage: python graphcheck.py <product.dot> <automaton module .tla>
+Usage: python graphcheck.py <product.dot[.zst]> <automaton module .tla>
 Exit codes: 0 every word accepted, 3 a word rejected, anything else the check could not run
 (a missing or malformed input), so a negative control never mistakes a crash for a rejection.
 """
 import re
+import subprocess
 import sys
 import time
 from collections import defaultdict, deque
@@ -24,10 +29,22 @@ EDGE = re.compile(r'^(-?\d+) -> (-?\d+) \[label="(\w+)"')
 G = re.compile(r'/\\\\ g = (-?\d+)')
 PEND = re.compile(r'/\\\\ pend = (-?\d+)')
 
+def dump_lines(path):
+    """The lines of the dump, plain or zstd-compressed (.zst, through the zstd command)."""
+    if not path.endswith(".zst"):
+        with open(path, encoding="utf-8") as f:
+            yield from f
+        return
+    with subprocess.Popen(["zstd", "-dcq", path], stdout=subprocess.PIPE, encoding="utf-8") as p:
+        yield from p.stdout
+    if p.returncode != 0:
+        sys.exit("FAIL: zstd could not decompress %s (exit %d)" % (path, p.returncode))
+
+
 info = {}
 initial = []
 succ = defaultdict(list)
-for line in open(sys.argv[1], encoding="utf-8"):
+for line in dump_lines(sys.argv[1]):
     m = EDGE.match(line)
     if m:
         succ[int(m.group(1))].append((m.group(3), int(m.group(2))))
@@ -61,6 +78,11 @@ if ginit is None or not event or sorted(event) != list(range(1, len(event) + 1))
     sys.exit("FAIL: the automaton module was not read whole (%d edges parsed, %d edge lines)" % (len(event), tedge_lines))
 if not info or len(info) < len(succ):
     sys.exit("FAIL: the product dump was not read whole (%d states parsed)" % len(info))
+# TLC writes a new state's line after the edge to it: a dump cut off ends at an edge to no state
+if any(p not in info for p in succ):
+    sys.exit("FAIL: the product dump was not read whole (an edge from an unknown state)")
+if any(r not in info for out in succ.values() for _, r in out):
+    sys.exit("FAIL: the product dump was not read whole (an edge to an unknown state)")
 if not initial or any(info[n] != (ginit, -1) for n in initial):
     sys.exit("FAIL: the product's initial states are not at the automaton's initial state")
 

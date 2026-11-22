@@ -10,8 +10,11 @@
 #   2. graphmin.py reduces it to the minimal deterministic automaton over those events, a module of
 #      TraceGraph.tla;
 #   3. TLC dumps the product of that automaton and the trace acceptance of TraceStreamBuffer.tla;
-#   4. graphcheck.py decides, by a subset construction, whether every word of the automaton is
-#      accepted; an empty set of model states is a counterexample, printed as its word.
+#   4. GraphCheck.java decides, by a subset construction, whether every word of the automaton is
+#      accepted; an empty set of model states is a counterexample, printed as its word. It is
+#      graphcheck.py (the reference) in at most about 70 bytes per product state instead of
+#      about 700; with zstd on the path TLC's dump goes through it into product.dot.zst (S6A:
+#      3.32 GB to 0.22 GB, 15:1).
 # With "controls" it also checks that the chain fails where it must: a model whose writer never
 # signals, a corrupted returned byte, and a class whose reads (readSingleByte, readIntoArray) do not
 # lower the count.
@@ -27,7 +30,9 @@
 #   that the graphmin.py of scenarios run at once take turns; each holds its whole graph in
 #   memory, about 0.7 GB per GB of graph), REUSE_GRAPH (1: take the graph and JPF log of an earlier run
 #   in the same WORK instead of running JPF again, checked as a new one is: to finish a scenario
-#   whose later steps were cut off, without repeating a day of JPF).
+#   whose later steps were cut off, without repeating a day of JPF), GRAPHCHECK_HEAP (optional:
+#   GraphCheck's -Xmx), GRAPHCHECK_REFERENCE (1: run graphcheck.py too and fail unless both print
+#   the same; for small scenarios, it needs about 700 bytes per product state).
 set -euo pipefail
 name="$1" bytes="$2" chunk="$3" readlen="$4" nbyte="$5" nrecord="$6" nwait="$7" close="$8"
 controls="${9:-}"
@@ -96,20 +101,49 @@ product() {  # product <label> <graph> <model dir> [sed for the cfg]: TLC's dump
     "$bytes" "$chunk" "$readlen" > "$d/graphmin.log" 2>&1 || { sed 's/^/  /' "$d/graphmin.log"; return 2; }
   sed 's/^/  /' "$d/graphmin.log"
   if [ -n "${4:-}" ]; then sed -i "$4" "$d/Graph_$name.cfg" || return 2; fi
-  local s
+  local s dump="$d/product.dot" zpid=""
   s=$(date +%s)
+  # with zstd, TLC writes its dump into a pipe that zstd compresses (about 6:1; the plain dump of
+  # S3A was 29 GB): TLC opens product.dot as a file, and the fifo there is zstd's input
+  if command -v zstd > /dev/null && mkfifo "$d/product.dot"; then
+    dump="$d/product.dot.zst"
+    zstd -q -T2 -f -o "$dump" < "$d/product.dot" &
+    zpid=$!
+  fi
   (cd "$d" && "$JAVA_TLC" -XX:+UseParallelGC ${TLC_HEAP:+"-Xmx$TLC_HEAP"} -cp "$TLA2TOOLS" tlc2.TLC -workers "${TLC_WORKERS:-auto}" \
      -dump dot,actionlabels product.dot -config "Graph_$name.cfg" "Graph_$name.tla" > tlc.log 2>&1) || true
+  local ze=0
+  if [ -n "$zpid" ]; then
+    # a TLC that stopped before it opened the dump leaves zstd waiting for a writer
+    if kill -0 "$zpid" 2> /dev/null; then timeout 10 sh -c ': > "$1"' _ "$d/product.dot" || true; fi
+    wait "$zpid" || ze=$?
+    rm -f "$d/product.dot"
+  fi
   echo "  TLC $1: $(grep -oE '[0-9]+ distinct states found' "$d/tlc.log" | tail -1), $(( $(date +%s) - s )) s"
-  if ! grep -q 'Model checking completed. No error has been found.' "$d/tlc.log" || [ ! -s "$d/product.dot" ]; then
+  if ! grep -q 'Model checking completed. No error has been found.' "$d/tlc.log" || [ ! -s "$dump" ] || [ "$ze" != 0 ]; then
     echo "  TLC $1 did not complete; no result"
     grep -E 'Error' "$d/tlc.log" | head -3 | sed 's/^/    /'
+    [ "$ze" = 0 ] || echo "    zstd exit $ze"
     return 2
   fi
   local e=0
-  "$py" -I "$here/graphcheck.py" "$d/product.dot" "$d/Graph_$name.tla" > "$d/check.log" 2>&1 || e=$?
+  "$JAVA_TLC" ${GRAPHCHECK_HEAP:+"-Xmx$GRAPHCHECK_HEAP"} "$here/GraphCheck.java" "$dump" "$d/Graph_$name.tla" \
+    > "$d/check.log" 2>&1 || e=$?
   grep -E '^OK|^REJECTED|^FAIL' "$d/check.log" | head -1 | sed 's/^/  /'
-  rm -f "$d/product.dot"
+  if [ "${GRAPHCHECK_REFERENCE:-}" = 1 ]; then
+    # the reference: graphcheck.py must print the same (timings aside) and exit the same
+    local re=0
+    "$py" -I "$here/graphcheck.py" "$dump" "$d/Graph_$name.tla" > "$d/check-reference.log" 2>&1 || re=$?
+    if [ "$re" != "$e" ] || ! diff <(sed -E 's/ \([0-9.]+s\)//' "$d/check-reference.log") \
+        <(sed -E 's/ \([0-9.]+s\)//' "$d/check.log") > "$d/check-diff.log"; then
+      echo "  FAIL  GraphCheck.java (exit $e) and graphcheck.py (exit $re) differ:"
+      head -10 "$d/check-diff.log" | sed 's/^/    /'
+      rm -f "$dump"
+      return 2
+    fi
+    echo "  GraphCheck.java and graphcheck.py agree (exit $e)"
+  fi
+  rm -f "$dump"
   return "$e"
 }
 

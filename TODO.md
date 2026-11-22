@@ -471,6 +471,18 @@ annotated, so everything below is genuinely still open.
       (`Out[g + 1]`): the S6A automaton starts in 1 s instead of 19, same states and verdict.
     - [ ] The runs of 2026-11-16 on the rented machine (S3A, S6N, S8A, S3N) use the old modules,
       at ~1,000 distinct states a minute each: restart them with the fix (the owner decides).
+    - [x] The subset check's memory and TLC's dump (2026-11-22): S3N's product, estimated from
+      the A/N ratios at ~240 million states, would need ~230 GB of RAM in `graphcheck.py` (about
+      700 bytes a state: S6A, 3,837,985 states, 2.73 GB) and ~200 GB of disk for the dump. Now
+      `GraphCheck.java` (at most about 70 bytes a state: S6A with a 256 MB heap, 0.38 GB resident,
+      25 s instead of 128) and the dump through zstd (S6A 3.32 GB -> 0.22 GB). The reference
+      `graphcheck.py` stays; `graphcheck-test.sh` tests both on hand-written products (accepted,
+      rejected, an edge to no state, a missing state line, compressed, broken), and
+      `GRAPHCHECK_REFERENCE=1` compares them on real ones (CI: S1A and its controls). Found on
+      the way: `graphcheck.py` accepted a dump cut off after an edge (it never checked an edge's
+      target), now no result as in the Java check.
+    - [ ] S3N with the new check: the chain running there is the old `check-graph.sh` (plain dump,
+      `graphcheck.py`), which would fill the disk after JPF; the owner decides how it switches.
     - [ ] The next long run (S3A, S6N, S8A, S3N; figures of the 2026-11-16 run in the owner's
       local result folder, `runinfo-*.txt`): a machine rented by the day (one large, or one small
       per scenario); reuse the saved JPF graphs (`REUSE_GRAPH=1`);

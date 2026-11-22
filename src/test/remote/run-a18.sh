@@ -48,7 +48,7 @@ one() { # one <name> <args...>
   e=$?
   log "$name ($*): exit $e in $(( $(date +%s) - s )) s; $(grep -cE '^OK' "$out/$name.log") OK, $(grep -cE '^FAIL' "$out/$name.log") FAIL, $(grep -cE '^SKIP' "$out/$name.log") SKIP"
   # TLC's dump of the product is the big file (GBs); the logs keep the numbers
-  rm -f "$payload/work/a18/$name"/*/product.dot
+  rm -f "$payload/work/a18/$name"/*/product.dot "$payload/work/a18/$name"/*/product.dot.zst
 }
 export -f one log
 export payload out heap

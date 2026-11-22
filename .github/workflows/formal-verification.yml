@@ -412,7 +412,8 @@ jobs:
           if-no-files-found: ignore
       - name: Every interleaving JPF explores is a run of the model, smallest scenario (A18)
         # check-graph.sh: JPF's state graph of the A6-instrumented class -> the minimal automaton ->
-        # TLC's product with the trace model -> a subset check over its words; with its three
+        # TLC's product with the trace model -> a subset check over its words (GraphCheck.java, and
+        # GRAPHCHECK_REFERENCE=1: graphcheck.py must print the same on every product); with its three
         # negative controls (a model whose writer never signals, a corrupted byte, a defect in the
         # class). About 2 minutes locally. The larger scenarios run on a rented machine (TODO.md, A18).
         run: |
@@ -426,9 +427,12 @@ jobs:
           curl --fail --location --retry 3 -o "$RUNNER_TEMP/tla2tools.jar" \
             "https://github.com/tlaplus/tlaplus/releases/download/$TLA_TOOLS_VERSION/tla2tools.jar"
           echo "$TLA_TOOLS_SHA256  $RUNNER_TEMP/tla2tools.jar" | sha256sum --check --strict
+          # the subset check and its reference on hand-written products (also compressed, a cut dump)
+          JAVA="$JAVA_HOME_11_X64/bin/java" bash src/test/jpf/trace/graphcheck-test.sh
           JPF_CORE="$PWD/jpf-core" JAVA_JPF="$JAVA_HOME_11_X64/bin/java" JAVA_TLC="$JAVA_HOME_11_X64/bin/java" \
           TLA2TOOLS="$RUNNER_TEMP/tla2tools.jar" TRACED="$PWD/target/a18/traced" \
           TRACED_MUTANT="$PWD/target/a18/traced-mutant" LIB="$PWD/src/test/jpf/lib" WORK="$RUNNER_TEMP/a18" \
+          GRAPHCHECK_REFERENCE=1 \
             bash src/test/jpf/trace/check-graph.sh S1A 1 1 1 1 0 0 after controls > jpf-a18.log 2>&1             || status=$?
           cat jpf-a18.log
           {
