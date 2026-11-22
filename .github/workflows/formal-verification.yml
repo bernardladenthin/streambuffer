@@ -429,6 +429,8 @@ jobs:
           echo "$TLA_TOOLS_SHA256  $RUNNER_TEMP/tla2tools.jar" | sha256sum --check --strict
           # the subset check and its reference on hand-written products (also compressed, a cut dump)
           JAVA="$JAVA_HOME_11_X64/bin/java" bash src/test/jpf/trace/graphcheck-test.sh
+          # the minimal automaton on hand-written graphs, worked out by hand
+          bash src/test/jpf/trace/graphmin-test.sh
           JPF_CORE="$PWD/jpf-core" JAVA_JPF="$JAVA_HOME_11_X64/bin/java" JAVA_TLC="$JAVA_HOME_11_X64/bin/java" \
           TLA2TOOLS="$RUNNER_TEMP/tla2tools.jar" TRACED="$PWD/target/a18/traced" \
           TRACED_MUTANT="$PWD/target/a18/traced-mutant" LIB="$PWD/src/test/jpf/lib" WORK="$RUNNER_TEMP/a18" \

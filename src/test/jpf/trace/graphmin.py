@@ -9,13 +9,21 @@ Memory: the graphs of two readers have 400 million edges and more (9 GB of text)
 are kept in flat arrays of 32-bit integers (compressed sparse rows, events as small integers),
 about 16 bytes per edge at the peak, not as Python objects (about 150 bytes per edge: the first
 version needed more than RAM and swap of a 62 GB machine for one such graph). The subset
-construction visits states and events in sorted order, so the numbering is deterministic; any
+construction keeps its sets packed (pack: the sorted differences, zlib-compressed, exact); it
+visits states and events in sorted order, so the numbering is deterministic; any
 numbering gives the same automaton up to isomorphism, which is all TLC and graphcheck.py use.
 """
+import operator
 import sys
 import time
+import zlib
 from array import array
 from collections import defaultdict
+from itertools import accumulate
+
+# an unsigned type of 32 bits for the offsets ("I" is 4 bytes on the platforms Python runs on;
+# checked, since a narrower one would wrap)
+OFFSET = "I" if array("I").itemsize == 4 else "q"
 
 t0 = time.time()
 init = None
@@ -78,12 +86,14 @@ nstates = njpf + nfresh
 
 def csr(src, dst, lab=None):
     """The edges as compressed sparse rows over the dense ids: (offsets, targets[, labels])."""
-    off = array("q", [0]) * (nstates + 1)
+    # offsets of 32 bits while the edges fit (S3N: 2.6 billion edges, ~700 million states: 5.6 GB
+    # less than 64 bits for the two tables and their cursors)
+    off = array(OFFSET if len(src) < 2 ** 32 else "q", [0]) * (nstates + 1)
     for v in src:
         off[(v + 1 if v >= -1 else njpf - 2 - v) + 1] += 1
     for k in range(nstates):
         off[k + 1] += off[k]
-    pos = array("q", off)
+    pos = array(off.typecode, off)
     tgt = array("i", [0]) * len(src)
     lbl = array("H", [0]) * len(src) if lab is not None else None
     for k in range(len(src)):
@@ -130,30 +140,49 @@ def closure(states):
     return array("i", sorted(seen))
 
 
-start = closure([init + 1])
-index = {start.tobytes(): 0}  # a dfa state (its sorted closure) -> its number
-via = {}  # a set of targets before the closure -> the dfa state its closure is
-order = [start]
+def pack(sorted_ids):
+    """A set of dense ids (a sorted array) as a short key: its differences, zlib-compressed.
+
+    Exact: equal sets give equal keys and different sets different ones (the differences of a
+    sorted set determine it, and zlib is lossless), so the automaton is the same as with the sets
+    themselves. The sets are the memory of the subset construction: S6A's closures took 3.1 KB a
+    dfa state, packed 0.2 KB; S3N's took ~10 KB, and its graphmin.py was killed at ~40 GB.
+    """
+    d = array("i", sorted_ids[:1])
+    d.extend(map(operator.sub, sorted_ids[1:], sorted_ids[:-1]))
+    return zlib.compress(d.tobytes(), 1)
+
+
+def unpack(key):
+    """The sorted array of dense ids a key of pack stands for."""
+    d = array("i")
+    d.frombytes(zlib.decompress(key))
+    return array("i", accumulate(d))
+
+
+start = pack(closure([init + 1]))
+index = {start: 0}  # a dfa state (its sorted closure, packed) -> its number
+via = {}  # a set of targets before the closure (packed) -> the dfa state its closure is
+order = [start]  # the dfa states by number, packed; each dropped once its moves are known
 trans = []  # dfa state -> {event: dfa state}
 i = 0
 while i < len(order):
-    S = order[i]
-    order[i] = None  # done with it once its moves are known
+    S = unpack(order[i])
+    order[i] = None
     moves = defaultdict(set)
     for s in S:
         for k in range(loff[s], loff[s + 1]):
             moves[llab[k]].add(ltgt[k])
     row = {}
     for e in sorted(moves, key=events.__getitem__):
-        key = array("i", sorted(moves[e])).tobytes()
+        key = pack(array("i", sorted(moves[e])))
         t = via.get(key)
         if t is None:
-            T = closure(moves[e])
-            tk = T.tobytes()
+            tk = pack(closure(moves[e]))
             t = index.get(tk)
             if t is None:
                 t = index[tk] = len(order)
-                order.append(T)
+                order.append(tk)
             via[key] = t
         row[e] = t
     trans.append(row)

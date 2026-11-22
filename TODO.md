@@ -484,10 +484,19 @@ annotated, so everything below is genuinely still open.
     - [x] The byte control without a copy of the graph (2026-11-22): the corrupted graph goes
       through a fifo into `graphmin.py`, which reads it once (S3N's copy would be ~75 GB); a
       writer that stops midway gives no result, never a rejection (tested on S1A by injection).
-    - [ ] S3N with the new check: the chain started there on 2026-11-16 is the old
-      `check-graph.sh` (plain dump, `graphcheck.py`, the graph copied), which would fill the disk
-      after JPF. Its shell is stopped; a watcher on the machine runs the new chain on the same
-      graph once JPF ends (`REUSE_GRAPH=1`).
+    - [x] S3N's JPF finished 2026-11-22 12:40 UTC (5 d 15 h, 617,868,299 states, 2,623,916,856
+      edges, no errors, graph 70.6 GB; zstd copy and sha256 in the owner's local result folder).
+      The new chain's `graphmin.py` was killed at ~40 GB during the subset construction (1.39
+      million dfa states found, with other runs next to it on the machine): the
+      closures, kept whole as dict keys, took ~10 KB a dfa state.
+    - [x] `graphmin.py` lighter (2026-11-22): the subset construction keeps its sets packed (the
+      sorted differences, zlib; exact), offsets of 32 bits. S3A: the subset construction 0.57
+      GB instead of 3.68 (1.1 KB a dfa state instead of 6.8), after reading 2.75 GB instead of
+      3.53, peak 5.45 instead of 7.21, 2,461 s instead of 2,578; the module byte-identical (S2N,
+      S6A, S3A). `graphmin-test.sh` checks the automaton of hand-written graphs (a key that
+      confuses two sets fails it).
+    - [ ] S3N again with the lighter `graphmin.py` on the same graph (`REUSE_GRAPH=1`), with
+      its controls.
     - [ ] The next long run (S3A, S6N, S8A, S3N; figures of the 2026-11-16 run in the owner's
       local result folder, `runinfo-*.txt`): a machine rented by the day (one large, or one small
       per scenario); reuse the saved JPF graphs (`REUSE_GRAPH=1`);
