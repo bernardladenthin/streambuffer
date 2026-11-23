@@ -495,8 +495,17 @@ annotated, so everything below is genuinely still open.
       3.53, peak 5.45 instead of 7.21, 2,461 s instead of 2,578; the module byte-identical (S2N,
       S6A, S3A). `graphmin-test.sh` checks the automaton of hand-written graphs (a key that
       confuses two sets fails it).
+    - [x] S3N's `graphmin.py` with packed sets (2026-11-22 18:46 to 23:32 UTC): 3,376,776 dfa
+      states, minimal **85,450 states, 254,318 edges** (S3A: 17,319); peak 35.3 GB while reading,
+      the subset construction ~1 KB a dfa state. TLC then filled its 16 GB heap (937 full GCs,
+      19 % of the time, the rate from 310,000 to 143,000 states a minute at 67.7 million):
+      stopped, TLC again with 64 GB.
+    - [x] `check-graph.sh` `GRAPHMIN_CACHE=1` (2026-11-23): the module of a graph file is kept and
+      taken again while the graph (size, time), the arguments and `graphmin.py` are the same; the
+      control without the writer's signal has the main product's graph. CI sets it (the control
+      takes the cached module); tested on S1A: a second run takes it, a touched graph does not.
     - [ ] S3N again with the lighter `graphmin.py` on the same graph (`REUSE_GRAPH=1`), with
-      its controls.
+      its controls: run 3 since 2026-11-23 05:53 UTC, TLC with 64 GB on the cached module.
     - [ ] The next long run (S3A, S6N, S8A, S3N; figures of the 2026-11-16 run in the owner's
       local result folder, `runinfo-*.txt`): a machine rented by the day (one large, or one small
       per scenario); reuse the saved JPF graphs (`REUSE_GRAPH=1`);

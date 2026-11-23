@@ -32,7 +32,9 @@
 #   in the same WORK instead of running JPF again, checked as a new one is: to finish a scenario
 #   whose later steps were cut off, without repeating a day of JPF), GRAPHCHECK_HEAP (optional:
 #   GraphCheck's -Xmx), GRAPHCHECK_REFERENCE (1: run graphcheck.py too and fail unless both print
-#   the same; for small scenarios, it needs about 700 bytes per product state).
+#   the same; for small scenarios, it needs about 700 bytes per product state), GRAPHMIN_CACHE (1:
+#   keep graphmin.py's module per graph file and take it again for the same graph, arguments and
+#   graphmin.py, in $WORK/graphmin-cache).
 set -euo pipefail
 name="$1" bytes="$2" chunk="$3" readlen="$4" nbyte="$5" nrecord="$6" nwait="$7" close="$8"
 controls="${9:-}"
@@ -95,10 +97,27 @@ product() {  # product <label> <graph> <model dir> [sed for the cfg]: TLC's dump
   local d="$WORK/$1"
   rm -rf "$d" && mkdir -p "$d"
   cp "$3/StreamBuffer.tla" "$3/TraceStreamBuffer.tla" "$3/TraceGraph.tla" "$d/"
-  local lock=()
-  [ -z "${GRAPHMIN_LOCK:-}" ] || lock=(flock "$GRAPHMIN_LOCK")
-  "${lock[@]}" "$py" -I "$here/graphmin.py" "$2" "Graph_$name" "$d" "$readers" "$byte_readers" "$wait_callers" \
-    "$bytes" "$chunk" "$readlen" > "$d/graphmin.log" 2>&1 || { sed 's/^/  /' "$d/graphmin.log"; return 2; }
+  # GRAPHMIN_CACHE=1: the module of a graph file is kept and taken again while the graph (size and
+  # time), the arguments and graphmin.py are the same (S3N's graphmin.py took 4 h 46 min; the
+  # control without the writer's signal has the same graph). Not for a fifo (the byte control).
+  local key="" cache=""
+  if [ "${GRAPHMIN_CACHE:-}" = 1 ] && [ -f "$2" ]; then
+    key="$(stat -c '%s %Y' "$2") $name $readers/$byte_readers/$wait_callers $bytes $chunk $readlen $(sha256sum "$here/graphmin.py" | cut -c1-16)"
+    cache="$WORK/graphmin-cache/$(basename "$2")"
+  fi
+  if [ -n "$cache" ] && [ -f "$cache/key" ] && [ "$(cat "$cache/key")" = "$key" ]; then
+    cp "$cache/Graph_$name.tla" "$cache/Graph_$name.cfg" "$cache/graphmin.log" "$d/" || return 2
+    echo "  graphmin: the module of an earlier run of the same graph ($cache)"
+  else
+    local lock=()
+    [ -z "${GRAPHMIN_LOCK:-}" ] || lock=(flock "$GRAPHMIN_LOCK")
+    "${lock[@]}" "$py" -I "$here/graphmin.py" "$2" "Graph_$name" "$d" "$readers" "$byte_readers" "$wait_callers" \
+      "$bytes" "$chunk" "$readlen" > "$d/graphmin.log" 2>&1 || { sed 's/^/  /' "$d/graphmin.log"; return 2; }
+    if [ -n "$cache" ]; then
+      rm -rf "$cache" && mkdir -p "$cache" \
+        && cp "$d/Graph_$name.tla" "$d/Graph_$name.cfg" "$d/graphmin.log" "$cache/" && echo "$key" > "$cache/key"
+    fi
+  fi
   sed 's/^/  /' "$d/graphmin.log"
   if [ -n "${4:-}" ]; then sed -i "$4" "$d/Graph_$name.cfg" || return 2; fi
   local s dump="$d/product.dot" zpid=""
