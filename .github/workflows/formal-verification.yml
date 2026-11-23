@@ -113,7 +113,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Display CPU Info
-        uses: bernardladenthin/actions/common/print-host-info@379fb9448915b8ce7153f6ec5fa65544205196db # v1.2.2
+        uses: bernardladenthin/actions/common/print-host-info@e7554f8d2e3f2e59dac55c5f6a7cb5be7b6d8606 # v1.2.3
       - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           java-version-file: .java-version
@@ -195,7 +195,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Display CPU Info
-        uses: bernardladenthin/actions/common/print-host-info@379fb9448915b8ce7153f6ec5fa65544205196db # v1.2.2
+        uses: bernardladenthin/actions/common/print-host-info@e7554f8d2e3f2e59dac55c5f6a7cb5be7b6d8606 # v1.2.3
       - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           java-version-file: .java-version
@@ -292,7 +292,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Display CPU Info
-        uses: bernardladenthin/actions/common/print-host-info@379fb9448915b8ce7153f6ec5fa65544205196db # v1.2.2
+        uses: bernardladenthin/actions/common/print-host-info@e7554f8d2e3f2e59dac55c5f6a7cb5be7b6d8606 # v1.2.3
       - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           # 25 builds the repo's Java-8 production classes (matching the shipped bytecode);
@@ -441,7 +441,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Display CPU Info
-        uses: bernardladenthin/actions/common/print-host-info@379fb9448915b8ce7153f6ec5fa65544205196db # v1.2.2
+        uses: bernardladenthin/actions/common/print-host-info@e7554f8d2e3f2e59dac55c5f6a7cb5be7b6d8606 # v1.2.3
       - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           java-version-file: .java-version
@@ -610,7 +610,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Display CPU Info
-        uses: bernardladenthin/actions/common/print-host-info@379fb9448915b8ce7153f6ec5fa65544205196db # v1.2.2
+        uses: bernardladenthin/actions/common/print-host-info@e7554f8d2e3f2e59dac55c5f6a7cb5be7b6d8606 # v1.2.3
       - name: Cache the tlapm release
         id: tlapm-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -686,7 +686,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Display CPU Info
-        uses: bernardladenthin/actions/common/print-host-info@379fb9448915b8ce7153f6ec5fa65544205196db # v1.2.2
+        uses: bernardladenthin/actions/common/print-host-info@e7554f8d2e3f2e59dac55c5f6a7cb5be7b6d8606 # v1.2.3
       - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           java-version-file: .java-version
@@ -733,7 +733,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Display CPU Info
-        uses: bernardladenthin/actions/common/print-host-info@379fb9448915b8ce7153f6ec5fa65544205196db # v1.2.2
+        uses: bernardladenthin/actions/common/print-host-info@e7554f8d2e3f2e59dac55c5f6a7cb5be7b6d8606 # v1.2.3
       - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           java-version-file: .java-version
