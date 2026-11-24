@@ -111,7 +111,7 @@ deliberately not part of the synchronous Publish pipeline and never a required c
 
 4. **TLA+ model** (`src/test/tla/`, scheduled/dispatch CI job `tla-model`): `StreamBuffer.tla` models
    the wait/wake-up/close protocol, the writes (one FIFO entry each) and the reads; TLC checks safety
-   and liveness (weak fairness per thread, no lock fairness). `check.sh` compares 54 models (and a mutant) with
+   and liveness (weak fairness per thread, no lock fairness). `check.sh` compares 55 models (and two mutants) with
    their expected outcomes: the current code checks
    clean (`read()` with 1, 2, 3 readers, `read(b, 0, 2)` records, records across entries, a `read()`
    reader next to a record reader, `waitForAtLeast` next to a reader, also next to a 2-byte write),
