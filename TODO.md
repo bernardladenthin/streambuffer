@@ -18,11 +18,11 @@ annotated, so everything below is genuinely still open.
   | # | Item | Work | Odds of success | Timeline | Why / risk |
   |---|---|---|---|---|---|
   | 1 | **First scheduled formal run after #233** (Monday 04:17 UTC): the eight manifest steps run, rows V1-V18 get a run with a SHA, `check.sh`'s 4-core time is measured | ~½ h to check | ~85 % | Monday | the steps never ran in CI (the TLA+, TLAPS and JPF jobs run on the schedule only); a failure there is a CI error of mine (cancel, fix, push) |
-  | 2 | **A18** Every interleaving of the code is a run of the model. **In progress, branch `feat/a18-jpf-traces`**: the exact graph check works (JPF's state graph -> minimal automaton -> TLC product -> subset check, with three controls); open: the controls for every scenario, docs, a `V19` row, CI with the smallest scenario, PR | 2–4 days left | ~80 % for the small scenarios; larger ones bounded by JPF and TLC's dump | 1 week | two `read()` readers did not finish JPF in 4 h; automata above ~2,500 states did not finish TLC in 4 h. The cause (2026-11-20): TLC 1.7.4 evaluated the automaton's table at every step (a constant substituted in the cfg, tlaplus issue 648); through definitions of their own the S6A automaton runs ~36 times faster. Whether TLC's dump (one thread writes it) limits next decides how far it reaches |
+  | 2 | **A18** Every interleaving of the code is a run of the model. **Done on branch `fix/stale-reads`** (with `feat/a18-jpf-traces` and A6's commits; 2026-11-24): 13 scenarios (one writer and one closer, up to two readers of `read()`, records or `waitForAtLeast`, up to two bytes) accepted with the final model and no spurious wake-ups, every control rejected; the largest, S3N, from 617.9 million JPF states; docs, `V19`, CI with S1A; open: the PR | — | — | the PR | it found two places where the model was coarser than the code (the two reads of the wait, its finally block), both repaired in the models and proofs |
   | 3 | `@VisibleForTesting` decision (15 package-private methods; below) | ½ day | ~95 % | a few days | only the decision (an own marker annotation, or the convention does not apply here), then act |
   | 4 | Naming review (below, `code-quality-todos.md`) | ~1 day | ~90 % | ~1 week | mechanical; renaming private methods is cheap, a public API rename is a breaking change for the CHANGELOG |
   | 5 | A14 follow-up: a trim threshold that grows with the backlog | 1–2 days | ~70 % | ~1 week | with a backlog of 179 MiB the default threshold costs 10-20x against no trim (A14, below); it changes how many entries the buffer keeps |
-  | 6 | A6: several writers and closers in the detailed model. **Done on branch `feat/a6-writers-closers`** (on top of A18, PR after A18's): models, TLAPS refinement (2,826 obligations), traces with several writers; open only A18 with two writers (below) | — | — | with A18's PR | the branch carries A18's commits, so its PR follows A18's merge |
+  | 6 | A6: several writers and closers in the detailed model. **Done, in `fix/stale-reads`** (A18's PR): models, TLAPS refinement (3,345 obligations), traces with several writers; open only A18 with two writers (below) | — | — | with A18's PR | the branch carries A18's commits |
   | 7 | A6: trim in the model | 1–2 weeks | ~60 % | 2–4 weeks | the merge of the entries touches the FIFO invariant and the refinement; the geometric merge is hard to state compactly |
   | 8 | **A19** Liveness of the detailed model for any number of readers | 2–4 weeks | medium, ~50 % | 3–6 weeks | the pattern of `StreamBufferWaitForeverLiveProof.tla` carries over, but the detailed model is much larger (the FIFO as a sequence, more stages, the copy per entry), and the assumption of the row below stays |
   | 9 | Prove that fairness per thread gives the fairness by role (`FairRole`, A13 follow-up; today argued and checked by TLC in bounded models) | 1–2 weeks | low, ~30 % | 2–3 weeks | tlapm cannot swap a quantifier over threads with a temporal operator (`\A q : P(q) ~> Q` to `(\E q : P(q)) ~> Q`), which is where it failed; another prover (e.g. Isabelle with a TLA embedding) would be the way out |
@@ -317,7 +317,7 @@ annotated, so everything below is genuinely still open.
   - **The gaps left:** no formal job gates a release (they run scheduled only); code and model are
     linked by 990 recorded runs (A6), not by every interleaving; liveness of the detailed model and
     the instance methods for any number of threads.
-  Order: A18 (branch `feat/a18-jpf-traces`); A19 and A9 only if wanted afterwards. A15 last, once
+  Order: A18 (done, its PR from `fix/stale-reads`); A19 and A9 only if wanted afterwards. A15 last, once
   every other item of the table above is done (owner, 2026-11-13). Run with `/loop` and the prompt
   in "Run prompts" below.
 
@@ -418,7 +418,8 @@ annotated, so everything below is genuinely still open.
       accepted. A mutated class (`TracedClassDump ... no-decrement`: `readSingleByte` no longer
       lowers `availableBytes`): rejected after 22 events (JPF itself also reports the
       `NoSuchElementException` that follows).
-    - [ ] Scenarios: the smallest in CI (minutes), the larger ones on a rented machine; README,
+    - [x] (all 13 accepted with the final model 2026-11-24, below) Scenarios: the smallest in CI
+      (minutes), the larger ones on a rented machine; README,
       CHANGELOG, CLAUDE.md, `VERIFICATION-ASSUMPTIONS.md` (a row for A18). CI: the step in the
       `jpf-interleavings` job runs S1A with its controls (about 2 minutes locally). The rented run
       (2026-11-14, a rented 32-core machine, `check-graph.sh` with controls, 4 h per scenario), so far:
@@ -432,16 +433,18 @@ annotated, so everything below is genuinely still open.
       The class control first missed S4N: it changed `readSingleByte` only, which a record reader
       does not run; now it changes both read paths, and it rejects on a record scenario (S4A, a
       2-byte write, close after: all three controls rejected, 147 s locally).
-    - [ ] If the count fits: an importer writes each distinct trace as an A6 module
+    - [x] (not taken: the count of paths did not fit, the graph check below replaced it) If the
+      count fits: an importer writes each distinct trace as an A6 module
       (`TraceGenerator.write`), `trace.sh` checks all of them, `trace-controls.sh` still rejects;
       then the next larger scenarios, as far as the time-box allows.
-    - [ ] If it does not fit: the alternative is to check JPF's state graph (with state matching,
+    - [x] (taken: `check-graph.sh`, the subset construction of `GraphCheck.java`) If it does not
+      fit: the alternative is to check JPF's state graph (with state matching,
       each edge labelled with its logged access) against the model as a whole, a simulation
       (every edge of the graph, some placement of the model's steps), not trace by trace; that
       needs a subset construction over the model's states and is a larger package. Then the owner
       decides whether it is worth it; the spike's numbers go into the table.
-    - [ ] CI (if it fits): in the `jpf-interleavings` job (JDK 11, jpf-core already built), plus
-      TLC; README, CHANGELOG, CLAUDE.md, `VERIFICATION-ASSUMPTIONS.md` (a row for A18).
+    - [x] CI: the `jpf-interleavings` job runs S1A with its controls (`GRAPHCHECK_REFERENCE=1`,
+      both subset checks); README, CHANGELOG, CLAUDE.md, `VERIFICATION-ASSUMPTIONS.md` (V19).
   - **A18 found a gap in the model (2026-11-15), repaired on branch `fix/stale-reads`.** The
     fast path of `waitForAtLeast` and the loop of `awaitAtLeast` read `availableBytes`, then
     `streamClosed`; the models read both in one step. S6A (a waiter next to a reader, close after)
@@ -450,13 +453,19 @@ annotated, so everything below is genuinely still open.
     steps now (`fastclosed`, `waitclosed`) in `StreamBuffer.tla` and the three abstractions.
     - [x] Models and measures (`b8524ba`): `check.sh` 54/54, `trace.sh` (51/51) and
       `trace-controls.sh` clean on the rented machine; the 5 S6A words accepted.
-    - [ ] `inductive.sh` (Apalache: the inductive invariants, `PotDecreases`, the refinements).
-    - [ ] TLAPS: the action lemmas of the new steps in every proof (`*Proof.tla`,
-      `StreamBufferWaitEnabled.tla`, `StreamBufferWaitForeverEnabled.tla`), all modules at once.
-    - [ ] A18 again for every scenario with the repaired model (the JPF graphs of the earlier runs
-      reused, `REUSE_GRAPH=1`; S8A anew, S3N once its JPF is done).
-    - [ ] Docs: the numbers of the reruns in the READMEs, `VERIFICATION-ASSUMPTIONS.md` (V19),
-      CHANGELOG.
+    - [x] `inductive.sh` (Apalache: the inductive invariants, `PotDecreases`, the refinements):
+      64 OK with both repairs (2026-11-24).
+    - [x] TLAPS: the action lemmas of the new steps in every proof (`3d26f08`, all modules proved
+      on the rented machine; the finally step 2026-11-24, below).
+    - [x] A18 again for every scenario with the final model (2026-11-24, results in the owner's
+      local result folder): the twelve small
+      scenarios at once on the rented machine in 3 h (`REUSE_GRAPH=1` for S2N, S3A, S6A, S6N, S8A,
+      JPF anew for the others), every one accepted, every control rejected; S5N, out of reach
+      before, too. One control (S6A's class control) first had no result: two TLCs started in the
+      same second read each other's half-written `/tmp/TLC.tla`; each TLC run has a temporary
+      directory of its own since (`8c6ede5`), and S6A was run again (4 of 4).
+    - [x] Docs: the results table and its limits in `src/test/tla/README.md`,
+      `VERIFICATION-ASSUMPTIONS.md` (V19), CHANGELOG (2026-11-25).
     - [x] The product's speed (2026-11-20): TLC 1.7.4 evaluates a constant substituted in the cfg
       anew at every use (tlaplus issue 648), so each step rebuilt the automaton's whole table
       (`GEdge <- TEdge`, 5.7 MB for S3A), and A6's trace (`TraceLog <- TTrace`) too.
@@ -469,8 +478,6 @@ annotated, so everything below is genuinely still open.
       TOutSeq[s + 1]]`), which TLC builds at its start with the sequence evaluated anew for every
       state, quadratic (S6N: 43 min, twice that with `Out == GOut`); now the sequence itself
       (`Out[g + 1]`): the S6A automaton starts in 1 s instead of 19, same states and verdict.
-    - [ ] The runs of 2026-11-16 on the rented machine (S3A, S6N, S8A, S3N) use the old modules,
-      at ~1,000 distinct states a minute each: restart them with the fix (the owner decides).
     - [x] The subset check's memory and TLC's dump (2026-11-22): S3N's product, estimated from
       the A/N ratios at ~240 million states, would need ~230 GB of RAM in `graphcheck.py` (about
       700 bytes a state: S6A, 3,837,985 states, 2.73 GB) and ~200 GB of disk for the dump. Now
@@ -526,7 +533,7 @@ annotated, so everything below is genuinely still open.
       closed and open branch of `ReaderWaitClosed` apart), `RefineWaitProof.tla` 3,345 (the
       mapping: `WaitPcs`, `NotDone` by `MapPc`, `EndExit`, `SReaderWaitExit` as a stuttering step,
       `MapWl` in every abstract step by `MapWlGo`); `LEMMA Bad == FALSE` appended fails alone.
-    - [x] (2026-11-24, results in the owner's local result folder, `S3N-full.tgz`) S3N again
+    - [x] (2026-11-24, results in the owner's local result folder) S3N again
       with the lighter `graphmin.py` on the same graph (`REUSE_GRAPH=1`), `Spurious = 0` and the
       finally step, with its controls -- **OK**: every word of the minimal automaton (85,450
       states, 254,318 edges, from 617,868,300 JPF states) is a run of the model. TLC 100,225,198
@@ -537,13 +544,10 @@ annotated, so everything below is genuinely still open.
       automaton, 100,344,588 states, a word of 30 events), the reads do not lower the count (the
       small mutant). graphmin on the 70.6 GB graph: 4.7 h at up to ~35 GB (cached for the main
       product and the nosignal control, again on the fifo for the byte control: 4.2 h).
-    - [ ] The next long run (S3A, S6N, S8A, S3N; figures of the 2026-11-16 run in the owner's
-      local result folder, `runinfo-*.txt`): a machine rented by the day (one large, or one small
-      per scenario); reuse the saved JPF graphs (`REUSE_GRAPH=1`);
-      **raise the heaps**: S3N's JPF ran at `-Xmx7g` with its old generation 89 % full after 48 h
-      (131,700 concurrent GC cycles), so `JPF_HEAP` 32g there; give TLC an explicit `-Xmx`
-      (16g) instead of the JVM default; graphmin needs ~0.7 GB RAM per GB of graph (S3N's graph
-      was 23.6 GB and growing); sync finished graphs and logs off the machine as they appear.
+    - [x] The long runs on a rented machine by the day (until 2026-11-24, 32 cores, 125 GB, shared
+      with other runs): TLC with an explicit `TLC_HEAP` (64g for S3N, 8g for
+      the others), the graphs kept for `REUSE_GRAPH=1`, results synced off the machine as they
+      appeared.
   - **A19 — Liveness of the detailed model for any number of readers (optional, weeks).** TLAPS,
     on the pattern of `StreamBufferWaitForeverLiveProof.tla` (a measure per thread, fairness by
     role), for `StreamBuffer.tla` directly, or a refinement that carries fairness. Done when the

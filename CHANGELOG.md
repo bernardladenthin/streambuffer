@@ -21,6 +21,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of the fast path ranks a write that came between the reads. TLC (`check.sh`), Apalache
   (`inductive.sh`), the traces and their controls, and every TLAPS proof hold for the repaired
   models.
+- **The finally block of the wait is a step of its own in the TLA+ models (found by A18).** The
+  models lowered `waitingReaders` with the return of `awaitAtLeast`; the code lowers it in the
+  finally block after. A writer that reads the count 1 in between signals, and the reader that
+  parked after is woken by that signal; the model had skipped the signal (the trace acceptance
+  allowed a lower count) and accepted the run only with a spurious wake-up (`S6A`, a word of 40
+  events). The code was right. `StreamBuffer.tla` and `StreamBufferCounters.tla` take the finally
+  block as a step (`ReaderWaitExit`), `TraceStreamBuffer.tla` checks the count exactly, and the
+  refinements map a thread in it to where it goes next (`MapPc`, `MapWl`). The word is a
+  regression trace (`TraceSignalBeforeExit` in `check.sh`). TLAPS: `StreamBufferCountersProof.tla`
+  349 and `RefineWaitProof.tla` 3,345 obligations; `check.sh`, `inductive.sh`, the traces and
+  their controls hold.
+- **The A18 products run without spurious wake-ups** (`PRODUCT_SPURIOUS`, default 0): JPF's
+  `await()` returns only after a signal, and with a budget a missing signal of the code could
+  pass as a spurious wake-up; a word accepted without one is accepted with any budget. The
+  products are about a quarter the size. Each product's TLC has a temporary directory of its
+  own: two started in the same second read each other's half-written `/tmp/TLC.tla`.
 
 ### Added
 - **Several writers and closers in the detailed TLA+ model (roadmap A6 follow-up).**
@@ -47,9 +63,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   corrupted byte or count, a class whose reads do not lower the count. Accepted: one write with a
   `read()` reader and with a record reader, each with the close after the writes or at any point,
   and a `waitForAtLeast(2)` caller after one 2-byte write (close after) and after two 1-byte
-  writes (close at any point) (README of `src/test/tla`). Two readers, and automata
-  above about 2,500 states, are out of reach so far. CI: the `jpf-interleavings` job runs the
-  smallest scenario with its controls.
+  writes (close at any point) (README of `src/test/tla`). With the final model and no
+  spurious wake-ups, 13 scenarios are accepted with every control rejected (2026-11-24), up
+  to two readers (`read()`, records, `waitForAtLeast`) and two bytes; the largest, S3N, from
+  617,868,299 JPF states (an automaton of 85,450 states, a product of 100,225,198).
+  `GraphCheck.java` does the subset check in at most about 70 bytes a product state
+  (`graphcheck.py` is its reference) and TLC's dump goes through zstd. CI: the
+  `jpf-interleavings` job runs the smallest scenario with its controls.
 - **Verification assumptions and run manifests (roadmap A16).** `VERIFICATION-ASSUMPTIONS.md`
   lists every verification result as a row (`V1` to `V18`: property, tool, scope, assumptions, CI
   job), the trusted base, the caller contracts and what no result covers; the READMEs name the row

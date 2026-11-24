@@ -679,12 +679,13 @@ the same trace acceptance as A6 and without a sampling step.
    transition is labelled with the events the tracer reported during it.
 3. **The minimal automaton.** `graphmin.py` removes the edges without an event, determinizes and
    minimizes. Only the language of the event sequences matters, and it is small: in the smallest
-   scenario 104,712 JPF states become 373; the automata checked have 188 to 1,555 states.
+   scenario 104,712 JPF states become 373; the automata checked have 188 to 85,450 states.
 4. **The product.** `TraceGraph.tla` extends `TraceStreamBuffer.tla` and uses its `StepOf` and
    `Obs` as they are. An edge of the automaton is chosen, the thread of its event takes up to K
    steps of the model, and the event must agree with the model's state. TLC dumps the product's
    state graph.
-5. **The subset check.** `graphcheck.py` follows each word of the automaton. For each word it
+5. **The subset check.** `GraphCheck.java` (its reference `graphcheck.py`; both tested by
+   `graphcheck-test.sh`) follows each word of the automaton. For each word it
    keeps the set of the product's states that consume it. If that set is ever empty, the word is a
    counterexample. The check is exact: the model's choices (how many silent steps, which ones) are
    existential, so a single product state that cannot go on is no counterexample. Checking that
@@ -700,27 +701,36 @@ where it must:
 - **a class whose reads do not lower the count** (`TracedClassDump ... no-decrement`, on both read
   paths; skipped where nothing reads).
 
-**Results** (2026-11-14; locally and on a rented 32-core machine, 4 h per scenario; "close
-after" means the closer closes once the writer is done, "any" means at any point):
+**Results** (2026-11-24; the final model: both reads of the wait and its finally block steps of
+their own, the products without spurious wake-ups; a rented 32-core machine, the twelve small
+scenarios at once in 3 h, S3N alone in 20 h; "close after" means the closer closes once the
+writer is done, "any" means at any point; the controls are those above):
 
 | Scenario | JPF states | Minimal automaton | Product states | Every word a run of the model | Controls |
 |---|---|---|---|---|---|
-| `S1A`: one 1-byte write, a `read()` reader, close after | 104,712 | 373 | 82,944 | yes | 3 of 3 rejected |
-| `S1N`: the same, close any | 617,544 | 1,451 | 542,666 | yes | 3 of 3 rejected |
-| `S4A`: one 2-byte write, a record reader of 2, close after | 102,132 | 373 | 82,944 | yes | 3 of 3 rejected |
-| `S4N`: the same, close any | 601,656 | 1,451 | 542,666 | yes | 2 of 3 rejected (the class control missed this path, below) |
-| `S7A`: one 2-byte write, a `waitForAtLeast(2)` caller, close after | 41,211 | 188 | 10,813 | yes | 2 of 2 rejected (no class control: nothing reads) |
-| `S7N`: two 1-byte writes, a `waitForAtLeast(2)` caller, close any | 1,036,384 | 1,555 | 251,529 | yes | 1 of 1 rejected |
+| `S1A`: one 1-byte write, a `read()` reader, close after | 104,712 | 373 | 24,217 | yes | 3 of 3 rejected |
+| `S1N`: the same, close any | 617,544 | 1,451 | 162,370 | yes | 3 of 3 rejected |
+| `S2N`: two 1-byte writes, a `read()` reader, close any | 2,368,384 | 3,790 | 708,483 | yes | 3 of 3 rejected |
+| `S3A`: two 1-byte writes, two `read()` readers, close after | 97,263,920 | 17,319 | 8,236,620 | yes | 3 of 3 rejected |
+| `S3N`: the same, close any | 617,868,299 | 85,450 | 100,225,198 | yes | 3 of 3 rejected |
+| `S4A`: one 2-byte write, a record reader of 2, close after | 102,132 | 373 | 24,217 | yes | 3 of 3 rejected |
+| `S4N`: the same, close any | 601,656 | 1,451 | 162,370 | yes | 3 of 3 rejected |
+| `S5N`: two 1-byte writes, a record reader of 2, close any | 1,794,264 | 2,674 | 382,224 | yes | 3 of 3 rejected |
+| `S6A`: one 2-byte write, a `read()` reader and a `waitForAtLeast(2)` caller, close after | 15,081,689 | 5,102 | 1,042,046 | yes | 3 of 3 rejected |
+| `S6N`: the same, close any | 96,051,027 | 20,392 | 7,979,672 | yes | 3 of 3 rejected |
+| `S7A`: one 2-byte write, a `waitForAtLeast(2)` caller, close after | 41,211 | 188 | 4,879 | yes | 2 of 2 rejected (no class control: nothing reads) |
+| `S7N`: two 1-byte writes, a `waitForAtLeast(2)` caller, close any | 1,036,384 | 1,555 | 106,555 | yes | 2 of 2 rejected (no class control: nothing reads) |
+| `S8A`: two 1-byte writes, a `read()` reader and a record reader of 2, close after | 76,675,897 | 11,237 | 4,090,019 | yes | 3 of 3 rejected |
 
-`S4N` ran before the class control mutated both read paths, so its class control missed the
-record reader's path; on `S4A` the fixed control is rejected. `S7N` ran before the byte control
-could corrupt a count (it has no reads); on `S7A` that variant is rejected.
+What the runs cost: S3N, the largest, took JPF 5 d 15 h (a 70.6 GB graph), `graphmin.py` 4.7 h
+at up to 35 GB, TLC 6 h for the product with a 64 GB heap (old generation at most ~27 GB) and
+`GraphCheck.java` 30 min; the next largest (S3A, S6N, S8A, graphs of 7 to 10 GB) took under an
+hour each after JPF. When the twelve ran at once, two products started in the same second read
+each other's half-written `/tmp/TLC.tla` and one control had no result; each TLC run has a
+temporary directory of its own since, and that scenario was run again.
 
-**Out of reach so far:**
-- Two `read()` readers: JPF did not finish in 4 h.
-- Automata of 2,500 states and more (two 1-byte writes with a `read()` reader or a record reader;
-  a waiter next to a reader, 15 million JPF states): TLC's dump of the product did not finish in
-  4 h. One thread writes the dump.
+**Beyond these scenarios:** three readers, two writers or two closers, and more than two bytes
+have not been tried; S3N's JPF graph is near what one machine holds today.
 
 **CI:** the `jpf-interleavings` job runs `S1A` with its controls, about 3 minutes. The larger
 scenarios run on a rented machine.
@@ -730,8 +740,8 @@ scenarios run on a rented machine.
   each shared access and synchronization; they are sequentially consistent, which the data-race
   freedom of the code (README, "Data-Race Freedom") makes sufficient.
 - The tracer adds one scheduling point per logged access.
-- Two small tools, `graphmin.py` (partition refinement) and `graphcheck.py` (the subset
-  construction).
+- Two small tools, `graphmin.py` (partition refinement) and `GraphCheck.java` (the subset
+  construction, with `graphcheck.py` as its reference).
 - The check is about the sequences of events, every prefix of a run (the end states play no
   role). A deadlock or an uncaught exception on some interleaving is JPF's own finding: the
   scenario's run must end with "no errors detected", or `check-graph.sh` fails, since JPF stops
