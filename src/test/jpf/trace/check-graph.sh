@@ -135,8 +135,14 @@ product() {  # product <label> <graph> <model dir> [sed for the cfg]: TLC's dump
     zstd -q -T2 -f -o "$dump" < "$d/product.dot" &
     zpid=$!
   fi
-  (cd "$d" && "$JAVA_TLC" -XX:+UseParallelGC ${TLC_HEAP:+"-Xmx$TLC_HEAP"} -cp "$TLA2TOOLS" tlc2.TLC -workers "${TLC_WORKERS:-auto}" \
+  # a temporary directory of its own: TLC writes its standard modules (TLC.tla, ...) into
+  # java.io.tmpdir, and two products started at once in the shared /tmp read each other's
+  # half-written copy (a run of 12 scenarios: "Could not parse module TLC", no result)
+  rm -rf "$d/tmp" && mkdir -p "$d/tmp" || return 2
+  (cd "$d" && "$JAVA_TLC" -XX:+UseParallelGC ${TLC_HEAP:+"-Xmx$TLC_HEAP"} -Djava.io.tmpdir="$d/tmp" \
+     -cp "$TLA2TOOLS" tlc2.TLC -workers "${TLC_WORKERS:-auto}" \
      -dump dot,actionlabels product.dot -config "Graph_$name.cfg" "Graph_$name.tla" > tlc.log 2>&1) || true
+  rm -rf "$d/tmp"
   local ze=0
   if [ -n "$zpid" ]; then
     # a TLC that stopped before it opened the dump leaves zstd waiting for a writer
