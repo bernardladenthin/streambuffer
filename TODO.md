@@ -526,9 +526,17 @@ annotated, so everything below is genuinely still open.
       closed and open branch of `ReaderWaitClosed` apart), `RefineWaitProof.tla` 3,345 (the
       mapping: `WaitPcs`, `NotDone` by `MapPc`, `EndExit`, `SReaderWaitExit` as a stuttering step,
       `MapWl` in every abstract step by `MapWlGo`); `LEMMA Bad == FALSE` appended fails alone.
-    - [ ] S3N again with the lighter `graphmin.py` on the same graph (`REUSE_GRAPH=1`), with
-      its controls: run 3 since 2026-11-23 05:53 UTC, TLC with 64 GB on the cached module; to be
-      replaced by a run with `Spurious = 0` and the finally step once the checks above pass.
+    - [x] (2026-11-24, results in the owner's local result folder, `S3N-full.tgz`) S3N again
+      with the lighter `graphmin.py` on the same graph (`REUSE_GRAPH=1`), `Spurious = 0` and the
+      finally step, with its controls -- **OK**: every word of the minimal automaton (85,450
+      states, 254,318 edges, from 617,868,300 JPF states) is a run of the model. TLC 100,225,198
+      product states in 5 h 56 min (`-Xmx64g`, old generation at most ~27 of 44.7 GB; run 3 with
+      `Spurious = 3` and the merged finally block had passed 303.7 M with its heap full), GraphCheck
+      4,628,966 subsets in 30 min. Controls, each rejected as it must be: the writer never signals
+      (64,068,019 states, a word of 19 events), a returned byte + 1 in the graph (85,782-state
+      automaton, 100,344,588 states, a word of 30 events), the reads do not lower the count (the
+      small mutant). graphmin on the 70.6 GB graph: 4.7 h at up to ~35 GB (cached for the main
+      product and the nosignal control, again on the fifo for the byte control: 4.2 h).
     - [ ] The next long run (S3A, S6N, S8A, S3N; figures of the 2026-11-16 run in the owner's
       local result folder, `runinfo-*.txt`): a machine rented by the day (one large, or one small
       per scenario); reuse the saved JPF graphs (`REUSE_GRAPH=1`);
