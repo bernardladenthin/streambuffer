@@ -68,7 +68,7 @@ ConstInit12 == N = 12 /\ Bytes \in Nat /\ Bytes >= 1 /\ ReCheck = TRUE
 ConstInitNoReCheck == N = 2 /\ Bytes \in Nat /\ Bytes >= 1 /\ ReCheck = FALSE
 
 States == {"start", "fastclosed", "reread", "lockwait", "inc", "test", "waitclosed", "parked",
-           "woken", "lock",
+           "woken", "wexitlock", "wexitret0", "lock",
            "decide", "copy", "finish", "ret0", "done", "nsee"}
 
 InFlight == IF bl = None THEN 0 ELSE hold[bl]
@@ -144,21 +144,26 @@ ReaderInc(r) ==
     /\ rpc[r] = "inc" /\ waiters' = waiters + 1 /\ Go(r, "test")
     /\ UNCHANGED <<w, t, avail, closed, wpc, cpc, hold, eofAt, parked, wl, bl>>
 
+\* A18: leaving the loop, the finally block (waitingReaders.decrementAndGet(), unlock) is a step
+\* of its own after the return value is taken (ReaderWaitExit), as in StreamBuffer.tla.
 ReaderTest(r) ==
     /\ rpc[r] = "test" /\ wl = r
-    /\ IF avail >= 1
-          THEN /\ waiters' = waiters - 1 /\ Go(r, "lock") /\ wl' = None
-          ELSE /\ Go(r, "waitclosed") /\ UNCHANGED <<waiters, wl>>
-    /\ UNCHANGED <<w, t, avail, closed, wpc, cpc, hold, eofAt, parked, bl>>
+    /\ Go(r, IF avail >= 1 THEN "wexitlock" ELSE "waitclosed")
+    /\ UNCHANGED <<w, t, avail, closed, wpc, cpc, hold, eofAt, waiters, parked, wl, bl>>
 
 ReaderWaitClosed(r) ==
     /\ rpc[r] = "waitclosed" /\ wl = r
     /\ IF closed
-          THEN /\ waiters' = waiters - 1 /\ Go(r, IF avail >= 1 THEN "lock" ELSE "ret0")
-               /\ UNCHANGED parked
-          ELSE /\ parked' = parked \cup {r} /\ Go(r, "parked") /\ UNCHANGED waiters
-    /\ wl' = None
-    /\ UNCHANGED <<w, t, avail, closed, wpc, cpc, hold, eofAt, bl>>
+          THEN /\ Go(r, IF avail >= 1 THEN "wexitlock" ELSE "wexitret0")
+               /\ UNCHANGED <<parked, wl>>
+          ELSE /\ parked' = parked \cup {r} /\ Go(r, "parked") /\ wl' = None
+    /\ UNCHANGED <<w, t, avail, closed, wpc, cpc, hold, eofAt, waiters, bl>>
+
+ReaderWaitExit(r) ==
+    /\ rpc[r] \in {"wexitlock", "wexitret0"} /\ wl = r
+    /\ waiters' = waiters - 1 /\ wl' = None
+    /\ Go(r, IF rpc[r] = "wexitlock" THEN "lock" ELSE "ret0")
+    /\ UNCHANGED <<w, t, avail, closed, wpc, cpc, hold, eofAt, parked, bl>>
 
 ReaderLock(r) ==
     /\ rpc[r] = "lock" /\ bl = None /\ bl' = r /\ Go(r, "decide")
@@ -194,8 +199,8 @@ ReaderRet0(r) ==
 
 ReaderStep(r) ==
     \/ ReaderStart(r) \/ ReaderFastClosed(r) \/ ReaderReread(r) \/ ReaderWaitLock(r)
-    \/ ReaderInc(r) \/ ReaderTest(r) \/ ReaderWaitClosed(r) \/ ReaderLock(r) \/ ReaderDecide(r)
-    \/ ReaderCopy(r) \/ ReaderFinish(r) \/ ReaderRet0(r)
+    \/ ReaderInc(r) \/ ReaderTest(r) \/ ReaderWaitClosed(r) \/ ReaderWaitExit(r) \/ ReaderLock(r)
+    \/ ReaderDecide(r) \/ ReaderCopy(r) \/ ReaderFinish(r) \/ ReaderRet0(r)
 
 Next ==
     \/ WriterWrite \/ WriterSigRead \/ WriterSigLock
@@ -233,11 +238,11 @@ BufNonNeg == Buffered >= 0
 \* a reader copying has a byte to copy (the re-check under the lock)
 CopyHasByte == \A r \in Readers : rpc[r] = "copy" => Buffered >= 1
 \* waitLock and the parked readers
-WaitLockInv == \A r \in Readers : (rpc[r] \in {"inc", "test", "waitclosed"}) <=> wl = r
+WaitLockInv == \A r \in Readers : (rpc[r] \in {"inc", "test", "waitclosed", "wexitlock", "wexitret0"}) <=> wl = r
 ParkedInv == parked = {r \in Readers : rpc[r] = "parked"}
 \* the end of the stream: only seen closed and empty, and no write follows a close
 RereadClosed == \A r \in Readers : rpc[r] = "reread" => closed
-Ret0Empty == \A r \in Readers : rpc[r] = "ret0" => closed /\ avail = 0
+Ret0Empty == \A r \in Readers : rpc[r] \in {"ret0", "wexitret0"} => closed /\ avail = 0
 DoneEof == \A r \in Readers : rpc[r] = "done" => eofAt # -1
 CloserInv == (cpc = "close") <=> ~closed
 WriterInv == /\ (wpc = "write" => w < Bytes)
@@ -253,7 +258,8 @@ SafeInv ==
 (* The full inductive invariant: SafeInv and the waitingReaders count. *)
 IndInv ==
     /\ SafeInv
-    /\ waiters = Cardinality({r \in Readers : rpc[r] \in {"test", "waitclosed", "parked", "woken"}})
+    /\ waiters = Cardinality({r \in Readers : rpc[r] \in {"test", "waitclosed", "parked", "woken",
+                                                         "wexitlock", "wexitret0"}})
 
 (* Apalache: the initial predicate of an inductive step -- every variable assigned over its  *)
 (* domain first, then the invariant as the constraint                                       *)

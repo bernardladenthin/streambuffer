@@ -27,14 +27,14 @@ WP == INSTANCE StreamBufferWaitProof WITH
         wpc <- [i \in Writers |-> MapSig(wpc[i])], cpc <- [c \in Closers |-> MapSig(cpc[c])],
         rpc <- [r \in Readers |-> MapPc(rpc[r])],
         op <- [r \in Readers |-> IF r \in WaitCallers THEN "wait" ELSE "read"],
-        calls <- (Bytes - Len(taken)) + Cardinality({r \in Readers : rpc[r] # "done"}),
+        calls <- (Bytes - Len(taken)) + Cardinality({r \in Readers : MapPc(rpc[r]) # "done"}),
         hold <- [r \in Readers |-> Len(hold[r])],
         left <- left,
         off <- toff,
         wres <- wres, wclosed <- wclosed,
         eofAt <- eofAt,
         parked <- parked,
-        wl <- wl, bl <- bl,
+        wl <- MapWl, bl <- bl,
         spurious <- spurious
 
 \* the configuration of the current code; a finite set of readers, none of them None
@@ -43,13 +43,17 @@ ASSUME Current == Protocol = "condition" /\ ReCheck = TRUE /\ AtomicRead = TRUE
 ASSUME Extra == Bytes >= 1 /\ IsFiniteSet(Readers) /\ None \notin Readers
 
 LEMMA CA == WP!ConstAssump
-  BY SBAssump, Extra, Current, FS_CardinalityType DEF WP!ConstAssump, LenOf
+  BY SBAssump, Extra, Current, FS_CardinalityType DEF WP!ConstAssump, LenOf, MapWl, WaitExits
 
 -----------------------------------------------------------------------------
 (* The detailed invariant *)
 InLen == IF bl \in Readers THEN Len(hold[bl]) ELSE 0
-WSet == {r \in Readers : rpc[r] \in {"test", "waitclosed", "parked", "woken", "wret"}}
-NotDone == {r \in Readers : rpc[r] # "done"}
+\* the threads waitingReaders counts: from the increment to the finally block of the wait
+WaitPcs == {"test", "waitclosed", "parked", "woken", "wret"} \cup WaitExits
+WSet == {r \in Readers : rpc[r] \in WaitPcs}
+\* the threads the abstraction does not see done (a thread in the finally block of a wait that
+\* returns is done there)
+NotDone == {r \in Readers : MapPc(rpc[r]) # "done"}
 
 \* the types, in parts that the actions change one by one
 WStates == {"write", "sigread", "siglock", "done", "failed"}
@@ -96,9 +100,9 @@ LEMMA InitD == Init => DInv
   <1> SUFFICES ASSUME Init PROVE DInv
     OBVIOUS
   <1>1 WSet = {}
-    BY DEF Init, WSet
+    BY DEF Init, WSet, MapPc, WaitPcs, WaitExits
   <1>2 DWait
-    BY <1>1, FS_EmptySet DEF Init, DWait
+    BY <1>1, FS_EmptySet DEF Init, DWait, MapPc, WaitPcs, WaitExits
   <1> QED
     BY <1>2, SBAssump, Extra DEF Init, DInv, DType, DTBuf, DTSeq, DTSca, DTThr, DWriter, DBuf, DHold, DWant, InLen, ReaderStates, None, WStates, CStates
 
@@ -106,16 +110,22 @@ LEMMA InitW == Init => WP!Init
   <1> SUFFICES ASSUME Init PROVE WP!Init
     OBVIOUS
   <1>1 NotDone = Readers
-    BY DEF Init, NotDone
+    BY DEF Init, NotDone, MapPc, WaitPcs, WaitExits
   <1>2 Len(taken) = 0 /\ Len(written) = 0
     BY DEF Init
   <1>3 [r \in Readers |-> IF r \in WaitCallers THEN "wait" ELSE "read"] \in [Readers -> WP!Ops]
-    BY DEF WP!Ops
+    BY DEF WP!Ops, MapWl, WaitExits
   <1>4 /\ [i \in Writers |-> MapSig(wpc[i])] = [i \in WP!Writers |-> "write"]
        /\ [c \in Closers |-> MapSig(cpc[c])] = [c \in WP!Closers |-> "close"]
-    BY DEF Init, MapSig, WP!Writers, WP!Closers, Writers, Closers
+    BY DEF Init, MapSig, WP!Writers, WP!Closers, Writers, Closers, MapWl, WaitExits
+  <1>5 {x \in Readers : MapPc(rpc[x]) # "done"} = Readers /\ MapWl = None
+    BY DEF Init, MapPc, MapWl
+  <1>6 [x \in Readers |-> MapPc(rpc[x])] = [x \in Readers |-> "start"]
+    BY DEF Init, MapPc
+  <1>7 (Bytes - Len(taken)) + Cardinality({x \in Readers : MapPc(rpc[x]) # "done"}) = Bytes + Cardinality(Readers)
+    BY <1>2, <1>5, FinReaders, SBAssump
   <1> QED
-    BY <1>1, <1>2, <1>3, <1>4, SBAssump, Extra DEF Init, WP!Init, MapPc, NotDone
+    BY <1>1, <1>2, <1>3, <1>4, <1>5, <1>6, <1>7, SBAssump, Extra DEF Init, WP!Init
 
 -----------------------------------------------------------------------------
 (* Helpers *)
@@ -148,7 +158,7 @@ LEMMA FrDBuf == ASSUME DBuf, buf' = buf, pos' = pos, taken' = taken, nextByte' =
   BY DEF DBuf, InLen
 
 LEMMA FrDWait == ASSUME DWait, waiters' = waiters, rpc' = rpc PROVE DWait'
-  BY DEF DWait, WSet
+  BY DEF DWait, WSet, MapPc, WaitPcs, WaitExits
 
 LEMMA FrDHold == ASSUME DHold, hold' = hold, bl' = bl PROVE DHold'
   BY DEF DHold
@@ -182,7 +192,7 @@ LEMMA CSame == ASSUME cpc \in [Closers -> CStates], NEW k \in Closers, NEW s, cp
 \* the size a thread waits for, in both models
 LEMMA WantSame == ASSUME NEW r \in Readers PROVE WP!Want(r) = LenOf(r) /\ WantNow(r) = LenOf(r) /\ LenOf(r) \in Nat
                                              /\ LenOf(r) >= 1 /\ LenOf(r) <= ReadLen
-  BY SBAssump, Current DEF WP!Want, WantNow, LenOf, MOp
+  BY SBAssump, Current DEF WP!Want, WantNow, LenOf, MOp, MapWl, WaitExits
 
 \* the chunk of a write
 LEMMA ChunkFacts ==
@@ -219,21 +229,43 @@ LEMMA MapGo ==
   PROVE MRpc' = [MRpc EXCEPT ![r] = MapPc(s)]
   BY DEF MRpc
 
+\* the mapped waitLock: a thread in the finally block of a wait holds it, and the abstraction sees
+\* it free; it stays as long as only a thread changes state that neither enters nor leaves the
+\* finally block, and waitLock stays
+LEMMA MapWlGo ==
+  ASSUME rpc \in [Readers -> ReaderStates], wl \in Readers \cup {None}, NEW r \in Readers, NEW s,
+         rpc' = [rpc EXCEPT ![r] = s], wl' = wl, (rpc[r] \in WaitExits) <=> (s \in WaitExits)
+  PROVE MapWl' = MapWl
+  <1>1 CASE wl = None
+    BY <1>1 DEF MapWl
+  <1>2 CASE wl = r
+    BY <1>2 DEF MapWl
+  <1>3 CASE wl \in Readers /\ wl # r
+    <2>1 rpc'[wl] = rpc[wl]
+      BY <1>3
+    <2> QED
+      BY <1>3, <2>1 DEF MapWl
+  <1> QED
+    BY <1>1, <1>2, <1>3
+
+LEMMA MapWlFree == ASSUME wl = None, wl' = None PROVE MapWl = None /\ MapWl' = None
+  BY DEF MapWl
+
 \* the waiting set and the threads not done, when only thread r changes its state
 LEMMA SetsGo ==
   ASSUME rpc \in [Readers -> ReaderStates], NEW r \in Readers, NEW s, rpc' = [rpc EXCEPT ![r] = s]
-  PROVE /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-                                + (IF s \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-        /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF rpc[r] # "done" THEN 1 ELSE 0)
-                                   + (IF s # "done" THEN 1 ELSE 0)
+  PROVE /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in WaitPcs THEN 1 ELSE 0)
+                                + (IF s \in WaitPcs THEN 1 ELSE 0)
+        /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF MapPc(rpc[r]) # "done" THEN 1 ELSE 0)
+                                   + (IF MapPc(s) # "done" THEN 1 ELSE 0)
         /\ Cardinality(WSet) \in Nat /\ Cardinality(NotDone) \in Nat
   <1>1 WSet \subseteq Readers /\ WSet' \subseteq Readers /\ WSet \ {r} = WSet' \ {r}
-       /\ (r \in WSet <=> rpc[r] \in {"test", "waitclosed", "parked", "woken", "wret"})
-       /\ (r \in WSet' <=> s \in {"test", "waitclosed", "parked", "woken", "wret"})
-    BY DEF WSet
+       /\ (r \in WSet <=> rpc[r] \in WaitPcs)
+       /\ (r \in WSet' <=> s \in WaitPcs)
+    BY DEF WSet, MapPc, WaitPcs, WaitExits
   <1>2 NotDone \subseteq Readers /\ NotDone' \subseteq Readers /\ NotDone \ {r} = NotDone' \ {r}
-       /\ (r \in NotDone <=> rpc[r] # "done") /\ (r \in NotDone' <=> s # "done")
-    BY DEF NotDone
+       /\ (r \in NotDone <=> MapPc(rpc[r]) # "done") /\ (r \in NotDone' <=> MapPc(s) # "done")
+    BY DEF NotDone, MapPc, WaitPcs, WaitExits
   <1>3 Cardinality(WSet') = Cardinality(WSet) - (IF r \in WSet THEN 1 ELSE 0) + (IF r \in WSet' THEN 1 ELSE 0)
     BY <1>1, FinReaders, SetExcept
   <1>4 Cardinality(NotDone') = Cardinality(NotDone) - (IF r \in NotDone THEN 1 ELSE 0) + (IF r \in NotDone' THEN 1 ELSE 0)
@@ -245,17 +277,17 @@ LEMMA SetsGo ==
 
 \* the writer's next state, in both models
 LEMMA NextSame == ASSUME DWriter, nextByte \in Nat PROVE MapSig(WriterDone) = WP!WriterNext
-  BY SBAssump DEF DWriter, WriterDone, WP!WriterNext, MapSig
+  BY SBAssump DEF DWriter, WriterDone, WP!WriterNext, MapSig, MapWl, WaitExits
 
 \* with waitingReaders 0, nobody is parked
 LEMMA NoWaiterNoParked ==
   ASSUME Inv, waiters = 0 PROVE parked = {}
   <1>1 WSet = {}
-    BY FinSub, FS_EmptySet DEF Inv, DInv, DWait, WSet
+    BY FinSub, FS_EmptySet DEF Inv, DInv, DWait, WSet, MapPc, WaitPcs, WaitExits
   <1>2 \A x \in parked : rpc[x] = "parked"
-    BY DEF Inv, WP!SafeInv, WP!ParkedInv, MapPc
+    BY DEF Inv, WP!SafeInv, WP!ParkedInv, MapPc, MapWl, WaitExits
   <1> QED
-    BY <1>1, <1>2 DEF WSet, Inv, DInv, DType, DTThr
+    BY <1>1, <1>2 DEF WSet, Inv, DInv, DType, DTThr, MapPc, WaitPcs, WaitExits
 
 \* facts of the mapped abstract invariant in a state of Inv
 LEMMA AbsFacts ==
@@ -263,48 +295,70 @@ LEMMA AbsFacts ==
   PROVE /\ Len(taken) \in Nat /\ Len(written) \in Nat /\ Len(taken) <= Len(written)
         /\ Len(written) <= Bytes /\ avail = Len(written) - Len(taken)
         /\ \A x \in Readers : Len(hold[x]) \in Nat /\ left[x] \in Nat
-  BY LenProperties DEF Inv, WP!SafeInv, WP!TypeOK, WP!Safety, WP!AvailLinearizable, DInv, DType,
+  BY LenProperties DEF Inv, WP!SafeInv, WP!TypeOK, WP!Safety, WP!AvailLinearizable, DInv, DType, MapWl, WaitExits,
      DTSeq, DTThr
 
 \* a call that ends with "done": the abstract EndCall, the budget down by one
 LEMMA EndDone ==
-  ASSUME Inv, NEW r \in Readers, rpc[r] # "done", rpc' = [rpc EXCEPT ![r] = "done"], taken' = taken
+  ASSUME Inv, NEW r \in Readers, MapPc(rpc[r]) # "done", rpc' = [rpc EXCEPT ![r] = "done"], taken' = taken
   PROVE WP!EndCall(r)
   <1>1 Cardinality(NotDone') = Cardinality(NotDone) - 1 /\ Cardinality(NotDone) \in Nat
-    BY SetsGo DEF Inv, DInv, DType, DTThr, ReaderStates
+    BY SetsGo DEF Inv, DInv, DType, DTThr, ReaderStates, MapPc, WaitPcs, WaitExits
   <1>2 Cardinality(NotDone) >= 1
     <2>1 r \in NotDone /\ IsFiniteSet(NotDone)
-      BY FinSub DEF NotDone
+      BY FinSub DEF NotDone, MapPc, WaitPcs, WaitExits
     <2> QED
       BY <2>1, CardPos
   <1>3 Len(taken) \in Nat /\ Len(taken) <= Bytes
     BY AbsFacts, SBAssump
   <1>4 MCalls' = MCalls - 1 /\ MCalls - 1 \in 0..MCalls
-    BY <1>1, <1>2, <1>3, SBAssump DEF MCalls
+    BY <1>1, <1>2, <1>3, SBAssump DEF MCalls, MapPc, WaitPcs, WaitExits
   <1>5 MOp[r] \in WP!Ops /\ MOp' = [MOp EXCEPT ![r] = MOp[r]]
-    BY DEF MOp, WP!Ops
+    BY DEF MOp, WP!Ops, MapWl, WaitExits
   <1>6 MRpc' = [MRpc EXCEPT ![r] = "done"]
     BY MapGo DEF Inv, DInv, DType, DTThr, MapPc
   <1> QED
-    BY <1>4, <1>5, <1>6 DEF WP!EndCall, WP!Go, MCalls, MOp, MRpc, NotDone
+    BY <1>4, <1>5, <1>6 DEF WP!EndCall, WP!Go, MCalls, MOp, MRpc, NotDone, MapWl, WaitExits, MapPc, WaitPcs
+
+\* a wait that returns into its finally block: the abstract EndCall, the budget down by one
+LEMMA EndExit ==
+  ASSUME Inv, NEW r \in Readers, MapPc(rpc[r]) # "done", rpc' = [rpc EXCEPT ![r] = "wexit"], taken' = taken
+  PROVE WP!EndCall(r)
+  <1>1 Cardinality(NotDone') = Cardinality(NotDone) - 1 /\ Cardinality(NotDone) \in Nat
+    BY SetsGo DEF Inv, DInv, DType, DTThr, ReaderStates, MapPc, WaitPcs, WaitExits
+  <1>2 Cardinality(NotDone) >= 1
+    <2>1 r \in NotDone /\ IsFiniteSet(NotDone)
+      BY FinSub DEF NotDone, MapPc, WaitPcs, WaitExits
+    <2> QED
+      BY <2>1, CardPos
+  <1>3 Len(taken) \in Nat /\ Len(taken) <= Bytes
+    BY AbsFacts, SBAssump
+  <1>4 MCalls' = MCalls - 1 /\ MCalls - 1 \in 0..MCalls
+    BY <1>1, <1>2, <1>3, SBAssump DEF MCalls, MapPc, WaitPcs, WaitExits
+  <1>5 MOp[r] \in WP!Ops /\ MOp' = [MOp EXCEPT ![r] = MOp[r]]
+    BY DEF MOp, WP!Ops, MapWl, WaitExits
+  <1>6 MRpc' = [MRpc EXCEPT ![r] = "done"]
+    BY MapGo DEF Inv, DInv, DType, DTThr, MapPc
+  <1> QED
+    BY <1>4, <1>5, <1>6 DEF WP!EndCall, WP!Go, MCalls, MOp, MRpc, NotDone, MapWl, WaitExits, MapPc, WaitPcs
 
 \* a call that ends and the next starts: the abstract EndCall, the budget down by the bytes taken
 LEMMA EndNext ==
-  ASSUME Inv, NEW r \in Readers, rpc[r] # "done", rpc' = [rpc EXCEPT ![r] = "start"],
+  ASSUME Inv, NEW r \in Readers, MapPc(rpc[r]) # "done", rpc' = [rpc EXCEPT ![r] = "start"],
          NEW h \in Nat, h >= 1, Len(taken') = Len(taken) + h, Len(taken') <= Bytes
   PROVE WP!EndCall(r)
   <1>1 Cardinality(NotDone') = Cardinality(NotDone) /\ Cardinality(NotDone) \in Nat
-    BY SetsGo DEF Inv, DInv, DType, DTThr, ReaderStates
+    BY SetsGo DEF Inv, DInv, DType, DTThr, ReaderStates, MapPc, WaitPcs, WaitExits
   <1>3 Len(taken) \in Nat
     BY AbsFacts
   <1>4 MCalls' = MCalls - h /\ MCalls - h \in 0..MCalls /\ MCalls - h < MCalls
-    BY <1>1, <1>3, SBAssump DEF MCalls
+    BY <1>1, <1>3, SBAssump DEF MCalls, MapPc, WaitPcs, WaitExits
   <1>5 MOp[r] \in WP!Ops /\ MOp' = [MOp EXCEPT ![r] = MOp[r]]
-    BY DEF MOp, WP!Ops
+    BY DEF MOp, WP!Ops, MapWl, WaitExits
   <1>6 MRpc' = [MRpc EXCEPT ![r] = "start"]
     BY MapGo DEF Inv, DInv, DType, DTThr, MapPc
   <1> QED
-    BY <1>4, <1>5, <1>6 DEF WP!EndCall, WP!Go, MCalls, MOp, MRpc, NotDone
+    BY <1>4, <1>5, <1>6 DEF WP!EndCall, WP!Go, MCalls, MOp, MRpc, NotDone, MapWl, WaitExits, MapPc, WaitPcs
 
 LEMMA SWriterWrite == ASSUME Inv, NEW i \in Writers, WriterWrite(i), UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
   <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
@@ -333,19 +387,19 @@ LEMMA SWriterWrite == ASSUME Inv, NEW i \in Writers, WriterWrite(i), UNCHANGED s
     <2>DWant DWant'
       BY <1>0, <2>1, FrDWant
     <2>D DInv'
-      BY <2>DTBuf, <2>DTSeq, <2>DTSca, <2>DTThr, <2>DWriter, <2>DBuf, <2>DWait, <2>DHold, <2>DWant DEF DInv, DType
+      BY <2>DTBuf, <2>DTSeq, <2>DTSca, <2>DTThr, <2>DWriter, <2>DBuf, <2>DWait, <2>DHold, <2>DWant DEF DInv, DType, MapPc, WaitPcs, WaitExits
     <2>3 WP!WriterWrite(i)
       <3>1 MWpc' = [MWpc EXCEPT ![i] = "failed"] /\ MWpc[i] = "write"
         BY <2>1, <1>g, <1>0, WExcept DEF MapSig, DTSca
       <3>2 MRpc' = MRpc /\ MHold' = MHold /\ MCalls' = MCalls /\ MCpc' = MCpc
-        BY <2>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+        BY <2>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, WaitPcs, WaitExits
       <3> QED
-        BY <1>a, <1>g, <2>1, <3>1, <3>2, MOpConst DEF WP!WriterWrite, WP!WGo, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+        BY <1>a, <1>g, <2>1, <3>1, <3>2, MOpConst DEF WP!WriterWrite, WP!WGo, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapWl, WaitExits, MapPc, WaitPcs
     <2> QED
-      BY <2>D, <2>3 DEF WP!Next, WP!Writers, Writers
+      BY <2>D, <2>3 DEF WP!Next, WP!Writers, Writers, MapWl, WaitExits
   <1>n CASE ~closed /\ nextByte > Bytes
     <2>1 wpc' = [wpc EXCEPT ![i] = "done"] /\ buf' = buf /\ pos' = pos /\ avail' = avail /\ written' = written /\ taken' = taken /\ toff' = toff /\ closed' = closed /\ nextByte' = nextByte /\ cpc' = cpc /\ rpc' = rpc /\ want' = want /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ wres' = wres /\ wclosed' = wclosed /\ eofAt' = eofAt /\ permits' = permits /\ waiters' = waiters /\ parked' = parked /\ wl' = wl /\ bl' = bl
-      BY <1>n DEF WriterWrite, WGo, ReaderVars, Sync
+      BY <1>n DEF WriterWrite, WGo, ReaderVars, Sync, MapPc, WaitPcs, WaitExits
     <2>DTBuf DTBuf'
       BY <1>0, <2>1, FrDTBuf
     <2>DTSeq DTSeq'
@@ -365,18 +419,18 @@ LEMMA SWriterWrite == ASSUME Inv, NEW i \in Writers, WriterWrite(i), UNCHANGED s
     <2>DWant DWant'
       BY <1>0, <2>1, FrDWant
     <2>D DInv'
-      BY <2>DTBuf, <2>DTSeq, <2>DTSca, <2>DTThr, <2>DWriter, <2>DBuf, <2>DWait, <2>DHold, <2>DWant DEF DInv, DType
+      BY <2>DTBuf, <2>DTSeq, <2>DTSca, <2>DTThr, <2>DWriter, <2>DBuf, <2>DWait, <2>DHold, <2>DWant DEF DInv, DType, MapPc, WaitPcs, WaitExits
     <2>3 WP!WriterWrite(i)
       <3>0 Len(written) >= Bytes
-        BY <1>0, <1>n, SBAssump DEF DWriter, DTSca
+        BY <1>0, <1>n, SBAssump DEF DWriter, DTSca, MapPc, WaitPcs, WaitExits
       <3>1 MWpc' = [MWpc EXCEPT ![i] = "done"] /\ MWpc[i] = "write"
         BY <2>1, <1>g, <1>0, WExcept DEF MapSig, DTSca
       <3>2 MRpc' = MRpc /\ MHold' = MHold /\ MCalls' = MCalls /\ MCpc' = MCpc
-        BY <2>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+        BY <2>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, WaitPcs, WaitExits
       <3> QED
-        BY <1>n, <1>g, <2>1, <3>0, <3>1, <3>2, MOpConst DEF WP!WriterWrite, WP!WGo, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+        BY <1>n, <1>g, <2>1, <3>0, <3>1, <3>2, MOpConst DEF WP!WriterWrite, WP!WGo, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapWl, WaitExits, MapPc, WaitPcs
     <2> QED
-      BY <2>D, <2>3 DEF WP!Next, WP!Writers, Writers
+      BY <2>D, <2>3 DEF WP!Next, WP!Writers, Writers, MapWl, WaitExits
   <1>b CASE ~closed /\ nextByte <= Bytes
     <2> DEFINE m == Min(ChunkLen, Bytes - nextByte + 1)
     <2>0 nextByte \in Nat /\ nextByte >= 1 /\ nextByte <= Bytes
@@ -466,7 +520,7 @@ LEMMA SWriterWrite == ASSUME Inv, NEW i \in Writers, WriterWrite(i), UNCHANGED s
     <2>DWant DWant'
       BY <1>0, <2>1, FrDWant
     <2>D DInv'
-      BY <2>DTBuf, <2>DTSeq, <2>DTSca, <2>DTThr, <2>DWriter, <2>DBuf, <2>DWait, <2>DHold, <2>DWant DEF DInv, DType
+      BY <2>DTBuf, <2>DTSeq, <2>DTSca, <2>DTThr, <2>DWriter, <2>DBuf, <2>DWait, <2>DHold, <2>DWant DEF DInv, DType, MapPc, WaitPcs, WaitExits
     <2>9 WP!WriterWrite(i)
       <3>1 Len(written) = nextByte - 1 /\ Len(written) \in Nat
         BY <1>0, <2>0 DEF DWriter
@@ -482,15 +536,15 @@ LEMMA SWriterWrite == ASSUME Inv, NEW i \in Writers, WriterWrite(i), UNCHANGED s
       <3>4 MWpc' = [MWpc EXCEPT ![i] = "siglock"] /\ MWpc[i] = "write"
         BY <2>1, <1>g, <1>0, WExcept DEF MapSig, DTSca
       <3>5 MRpc' = MRpc /\ MHold' = MHold /\ MCalls' = MCalls /\ MCpc' = MCpc
-        BY <2>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+        BY <2>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, WaitPcs, WaitExits
       <3> QED
-        BY <1>b, <1>g, <2>1, <3>2, <3>3, <3>4, <3>5, MOpConst DEF WP!WriterWrite, WP!WGo, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+        BY <1>b, <1>g, <2>1, <3>2, <3>3, <3>4, <3>5, MOpConst DEF WP!WriterWrite, WP!WGo, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapWl, WaitExits, MapPc, WaitPcs
     <2> QED
-      BY <2>D, <2>9 DEF WP!Next, WP!Writers, Writers
+      BY <2>D, <2>9 DEF WP!Next, WP!Writers, Writers, MapWl, WaitExits
   <1>z nextByte \in Nat /\ Bytes \in Nat
     BY <1>0, SBAssump DEF DTSca
   <1> QED
-    BY <1>a, <1>n, <1>b, <1>z
+    BY <1>a, <1>n, <1>b, <1>z DEF MapPc, WaitPcs, WaitExits
 
 LEMMA SWriterSigRead == ASSUME Inv, NEW i \in Writers, WriterSigRead(i), UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
   <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
@@ -518,14 +572,14 @@ LEMMA SWriterSigRead == ASSUME Inv, NEW i \in Writers, WriterSigRead(i), UNCHANG
   <1>DWant DWant'
     BY <1>0, <1>1, FrDWant
   <1>D DInv'
-    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType
+    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType, MapPc, WaitPcs, WaitExits
   <1>3 CASE waiters # 0
     <2>0 MWpc' = MWpc
       BY <1>1, <1>3, <1>g, <1>0, WSame DEF MapSig, DTSca
     <2>1 MWpc' = MWpc /\ MRpc' = MRpc /\ MHold' = MHold /\ MCalls' = MCalls /\ MCpc' = MCpc
-      BY <1>1, <2>0 DEF MRpc, MHold, MOp, MCpc, MCalls, NotDone
+      BY <1>1, <2>0 DEF MRpc, MHold, MOp, MCpc, MCalls, NotDone, MapPc, WaitPcs, WaitExits
     <2>2 WP!vars' = WP!vars
-      BY <1>1, <2>1, MOpConst DEF WP!vars, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+      BY <1>1, <2>1, MOpConst DEF WP!vars, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapWl, WaitExits, MapPc, WaitPcs
     <2> QED
       BY <1>D, <2>2
   <1>4 CASE waiters = 0
@@ -543,11 +597,11 @@ LEMMA SWriterSigRead == ASSUME Inv, NEW i \in Writers, WriterSigRead(i), UNCHANG
       <3> QED
         BY <2>0, <3>1, <1>0, WExcept DEF DTSca
     <2>c MHold' = MHold /\ MCalls' = MCalls /\ MCpc' = MCpc
-      BY <1>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+      BY <1>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, WaitPcs, WaitExits
     <2>d WP!WriterSigLock(i)
-      BY <1>1, <2>1, <2>a, <2>b, <2>c, <2>w, MOpConst DEF WP!WriterSigLock, WP!WGo, WP!WakeAll, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+      BY <1>1, <2>1, <2>a, <2>b, <2>c, <2>w, MOpConst DEF WP!WriterSigLock, WP!WGo, WP!WakeAll, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapWl, WaitExits, MapPc, WaitPcs
     <2> QED
-      BY <1>D, <2>d DEF WP!Next, WP!Writers, WP!Closers, Writers
+      BY <1>D, <2>d DEF WP!Next, WP!Writers, WP!Closers, Writers, MapWl, WaitExits
   <1> QED
     BY <1>3, <1>4
 
@@ -577,14 +631,14 @@ LEMMA SCloserSigRead == ASSUME Inv, NEW k \in Closers, CloserSigRead(k), UNCHANG
   <1>DWant DWant'
     BY <1>0, <1>1, FrDWant
   <1>D DInv'
-    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType
+    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType, MapPc, WaitPcs, WaitExits
   <1>3 CASE waiters # 0
     <2>0 MCpc' = MCpc
       BY <1>1, <1>3, <1>g, <1>0, CSame DEF MapSig, DTSca
     <2>1 MCpc' = MCpc /\ MRpc' = MRpc /\ MHold' = MHold /\ MCalls' = MCalls /\ MWpc' = MWpc
-      BY <1>1, <2>0 DEF MRpc, MHold, MOp, MWpc, MCalls, NotDone
+      BY <1>1, <2>0 DEF MRpc, MHold, MOp, MWpc, MCalls, NotDone, MapPc, WaitPcs, WaitExits
     <2>2 WP!vars' = WP!vars
-      BY <1>1, <2>1, MOpConst DEF WP!vars, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+      BY <1>1, <2>1, MOpConst DEF WP!vars, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapWl, WaitExits, MapPc, WaitPcs
     <2> QED
       BY <1>D, <2>2
   <1>4 CASE waiters = 0
@@ -599,11 +653,11 @@ LEMMA SCloserSigRead == ASSUME Inv, NEW k \in Closers, CloserSigRead(k), UNCHANG
     <2>b MCpc' = [MCpc EXCEPT ![k] = "done"]
       BY <2>0, <1>0, CExcept DEF MapSig, DTSca
     <2>c MHold' = MHold /\ MCalls' = MCalls /\ MWpc' = MWpc
-      BY <1>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+      BY <1>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, WaitPcs, WaitExits
     <2>d WP!CloserSigLock(k)
-      BY <1>1, <2>1, <2>a, <2>b, <2>c, <2>w, MOpConst DEF WP!CloserSigLock, WP!CGo, WP!WakeAll, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+      BY <1>1, <2>1, <2>a, <2>b, <2>c, <2>w, MOpConst DEF WP!CloserSigLock, WP!CGo, WP!WakeAll, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapWl, WaitExits, MapPc, WaitPcs
     <2> QED
-      BY <1>D, <2>d DEF WP!Next, WP!Writers, WP!Closers, Closers
+      BY <1>D, <2>d DEF WP!Next, WP!Writers, WP!Closers, Closers, MapWl, WaitExits
   <1> QED
     BY <1>3, <1>4
 
@@ -616,11 +670,11 @@ LEMMA SWriterSigLock == ASSUME Inv, NEW i \in Writers, WriterSigLock(i), UNCHANG
        /\ wpc' = [wpc EXCEPT ![i] = WriterDone] /\ buf' = buf /\ pos' = pos /\ avail' = avail /\ written' = written /\ taken' = taken /\ toff' = toff /\ closed' = closed /\ nextByte' = nextByte /\ cpc' = cpc /\ want' = want /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ wres' = wres /\ wclosed' = wclosed /\ eofAt' = eofAt /\ permits' = permits /\ waiters' = waiters /\ wl' = wl /\ bl' = bl
     BY DEF WriterSigLock, WGo, WakeAll
   <1>p \A x \in parked : rpc[x] = "parked"
-    BY DEF Inv, WP!SafeInv, WP!ParkedInv, MapPc
+    BY DEF Inv, WP!SafeInv, WP!ParkedInv, MapPc, MapWl, WaitExits
   <1>w WSet' = WSet
-    BY <1>1, <1>p DEF WSet
+    BY <1>1, <1>p DEF WSet, MapPc, WaitPcs, WaitExits
   <1>q NotDone' = NotDone
-    BY <1>1, <1>p DEF NotDone
+    BY <1>1, <1>p DEF NotDone, MapPc, WaitPcs, WaitExits
   <1>DTBuf DTBuf'
     BY <1>0, <1>1, FrDTBuf
   <1>DTSeq DTSeq'
@@ -634,24 +688,24 @@ LEMMA SWriterSigLock == ASSUME Inv, NEW i \in Writers, WriterSigLock(i), UNCHANG
   <1>DBuf DBuf'
     BY <1>0, <1>1, FrDBuf
   <1>DWait DWait'
-    BY <1>0, <1>1, <1>w DEF DWait
+    BY <1>0, <1>1, <1>w DEF DWait, MapPc, WaitPcs, WaitExits
   <1>DHold DHold'
     BY <1>0, <1>1, FrDHold
   <1>DWant DWant'
     BY <1>0, <1>1, <1>p DEF DWant
   <1>D DInv'
-    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType
+    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType, MapPc, WaitPcs, WaitExits
   <1>2 WP!WakeAll
     <2>1 CASE parked = {}
       <3>1 rpc' = rpc
         BY <1>1, <2>1, <1>0 DEF DTThr
       <3> QED
-        BY <2>1, <3>1, <1>1 DEF WP!WakeAll, MRpc
+        BY <2>1, <3>1, <1>1 DEF WP!WakeAll, MRpc, MapWl, WaitExits
     <2>2 CASE parked # {}
       <3>1 MRpc' = [x \in Readers |-> IF x \in parked THEN "woken" ELSE MRpc[x]]
         BY <1>1 DEF MRpc, MapPc
       <3> QED
-        BY <2>2, <3>1, <1>g, <1>1 DEF WP!WakeAll, MRpc
+        BY <2>2, <3>1, <1>g, <1>1 DEF WP!WakeAll, MRpc, MapWl, WaitExits
     <2> QED
       BY <2>1, <2>2
   <1>a MWpc[i] = "siglock"
@@ -662,11 +716,13 @@ LEMMA SWriterSigLock == ASSUME Inv, NEW i \in Writers, WriterSigLock(i), UNCHANG
     <2> QED
       BY <1>1, <2>1, <1>0, WExcept DEF DTSca
   <1>c MHold' = MHold /\ MCalls' = MCalls /\ MCpc' = MCpc
-    BY <1>1, <1>q DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+    BY <1>1, <1>q DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, WaitPcs, WaitExits
+  <1>wl MapWl' = MapWl
+    BY MapWlFree DEF WriterSigLock, WakeAll
   <1>d WP!WriterSigLock(i)
-    BY <1>1, <1>2, <1>a, <1>b, <1>c, MOpConst DEF WP!WriterSigLock, WP!WGo, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+    BY <1>wl, <1>1, <1>2, <1>a, <1>b, <1>c, MOpConst DEF WP!WriterSigLock, WP!WGo, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapWl, WaitExits, MapPc, WaitPcs
   <1> QED
-    BY <1>D, <1>d DEF WP!Next, WP!Writers, WP!Closers, Writers
+    BY <1>D, <1>d DEF WP!Next, WP!Writers, WP!Closers, Writers, MapWl, WaitExits
 
 LEMMA SCloserSigLock == ASSUME Inv, NEW k \in Closers, CloserSigLock(k), UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
   <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
@@ -677,11 +733,11 @@ LEMMA SCloserSigLock == ASSUME Inv, NEW k \in Closers, CloserSigLock(k), UNCHANG
        /\ cpc' = [cpc EXCEPT ![k] = "done"] /\ buf' = buf /\ pos' = pos /\ avail' = avail /\ written' = written /\ taken' = taken /\ toff' = toff /\ closed' = closed /\ nextByte' = nextByte /\ wpc' = wpc /\ want' = want /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ wres' = wres /\ wclosed' = wclosed /\ eofAt' = eofAt /\ permits' = permits /\ waiters' = waiters /\ wl' = wl /\ bl' = bl
     BY DEF CloserSigLock, CGo, WakeAll
   <1>p \A x \in parked : rpc[x] = "parked"
-    BY DEF Inv, WP!SafeInv, WP!ParkedInv, MapPc
+    BY DEF Inv, WP!SafeInv, WP!ParkedInv, MapPc, MapWl, WaitExits
   <1>w WSet' = WSet
-    BY <1>1, <1>p DEF WSet
+    BY <1>1, <1>p DEF WSet, MapPc, WaitPcs, WaitExits
   <1>q NotDone' = NotDone
-    BY <1>1, <1>p DEF NotDone
+    BY <1>1, <1>p DEF NotDone, MapPc, WaitPcs, WaitExits
   <1>DTBuf DTBuf'
     BY <1>0, <1>1, FrDTBuf
   <1>DTSeq DTSeq'
@@ -695,24 +751,24 @@ LEMMA SCloserSigLock == ASSUME Inv, NEW k \in Closers, CloserSigLock(k), UNCHANG
   <1>DBuf DBuf'
     BY <1>0, <1>1, FrDBuf
   <1>DWait DWait'
-    BY <1>0, <1>1, <1>w DEF DWait
+    BY <1>0, <1>1, <1>w DEF DWait, MapPc, WaitPcs, WaitExits
   <1>DHold DHold'
     BY <1>0, <1>1, FrDHold
   <1>DWant DWant'
     BY <1>0, <1>1, <1>p DEF DWant
   <1>D DInv'
-    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType
+    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType, MapPc, WaitPcs, WaitExits
   <1>2 WP!WakeAll
     <2>1 CASE parked = {}
       <3>1 rpc' = rpc
         BY <1>1, <2>1, <1>0 DEF DTThr
       <3> QED
-        BY <2>1, <3>1, <1>1 DEF WP!WakeAll, MRpc
+        BY <2>1, <3>1, <1>1 DEF WP!WakeAll, MRpc, MapWl, WaitExits
     <2>2 CASE parked # {}
       <3>1 MRpc' = [x \in Readers |-> IF x \in parked THEN "woken" ELSE MRpc[x]]
         BY <1>1 DEF MRpc, MapPc
       <3> QED
-        BY <2>2, <3>1, <1>g, <1>1 DEF WP!WakeAll, MRpc
+        BY <2>2, <3>1, <1>g, <1>1 DEF WP!WakeAll, MRpc, MapWl, WaitExits
     <2> QED
       BY <2>1, <2>2
   <1>a MCpc[k] = "siglock"
@@ -720,11 +776,13 @@ LEMMA SCloserSigLock == ASSUME Inv, NEW k \in Closers, CloserSigLock(k), UNCHANG
   <1>b MCpc' = [MCpc EXCEPT ![k] = "done"]
     BY <1>1, <1>0, CExcept DEF MapSig, DTSca
   <1>c MHold' = MHold /\ MCalls' = MCalls /\ MWpc' = MWpc
-    BY <1>1, <1>q DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+    BY <1>1, <1>q DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, WaitPcs, WaitExits
+  <1>wl MapWl' = MapWl
+    BY MapWlFree DEF CloserSigLock, WakeAll
   <1>d WP!CloserSigLock(k)
-    BY <1>1, <1>2, <1>a, <1>b, <1>c, MOpConst DEF WP!CloserSigLock, WP!CGo, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+    BY <1>wl, <1>1, <1>2, <1>a, <1>b, <1>c, MOpConst DEF WP!CloserSigLock, WP!CGo, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapWl, WaitExits, MapPc, WaitPcs
   <1> QED
-    BY <1>D, <1>d DEF WP!Next, WP!Writers, WP!Closers, Closers
+    BY <1>D, <1>d DEF WP!Next, WP!Writers, WP!Closers, Closers, MapWl, WaitExits
 
 LEMMA SCloserClose == ASSUME Inv, NEW k \in Closers, CloserClose(k), UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
   <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
@@ -752,15 +810,15 @@ LEMMA SCloserClose == ASSUME Inv, NEW k \in Closers, CloserClose(k), UNCHANGED s
   <1>DWant DWant'
     BY <1>0, <1>1, FrDWant
   <1>D DInv'
-    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType
+    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType, MapPc, WaitPcs, WaitExits
   <1>2 MCpc' = [MCpc EXCEPT ![k] = "siglock"] /\ MCpc[k] = "close"
     BY <1>1, <1>g, <1>0, CExcept DEF MapSig, DTSca
   <1>3 MRpc' = MRpc /\ MHold' = MHold /\ MCalls' = MCalls /\ MWpc' = MWpc
-    BY <1>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+    BY <1>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, WaitPcs, WaitExits
   <1>4 WP!CloserClose(k)
-    BY <1>g, <1>1, <1>2, <1>3, MOpConst DEF WP!CloserClose, WP!CGo, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+    BY <1>g, <1>1, <1>2, <1>3, MOpConst DEF WP!CloserClose, WP!CGo, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapWl, WaitExits, MapPc, WaitPcs
   <1> QED
-    BY <1>D, <1>4 DEF WP!Next, WP!Closers, Closers
+    BY <1>D, <1>4 DEF WP!Next, WP!Closers, Closers, MapWl, WaitExits
 
 LEMMA SReaderLock == ASSUME Inv, NEW r \in Readers, ReaderLock(r), UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
   <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
@@ -771,12 +829,12 @@ LEMMA SReaderLock == ASSUME Inv, NEW r \in Readers, ReaderLock(r), UNCHANGED spu
     BY Current DEF ReaderLock, Goto, Shared, ReaderVars, Sync
   <1>m MRpc' = [MRpc EXCEPT ![r] = "decide"]
     BY <1>0, <1>1, <1>g, MapGo DEF DTThr, ReaderStates, MapPc, MRpc
-  <1>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-                                + (IF "decide" \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-       /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF rpc[r] # "done" THEN 1 ELSE 0)
-                                   + (IF "decide" # "done" THEN 1 ELSE 0)
+  <1>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in WaitPcs THEN 1 ELSE 0)
+                                + (IF "decide" \in WaitPcs THEN 1 ELSE 0)
+       /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF MapPc(rpc[r]) # "done" THEN 1 ELSE 0)
+                                   + (IF MapPc("decide") # "done" THEN 1 ELSE 0)
        /\ Cardinality(WSet) \in Nat /\ Cardinality(NotDone) \in Nat
-    BY <1>0, <1>1, SetsGo DEF DTThr, ReaderStates
+    BY <1>0, <1>1, SetsGo DEF DTThr, ReaderStates, MapPc, WaitPcs, WaitExits
   <1>DTBuf DTBuf'
     BY <1>0, <1>1, FrDTBuf
   <1>DTSeq DTSeq'
@@ -795,24 +853,26 @@ LEMMA SReaderLock == ASSUME Inv, NEW r \in Readers, ReaderLock(r), UNCHANGED spu
     <2> QED
       BY <1>0, <1>1, <2>2 DEF DBuf
   <1>DWait DWait'
-    BY <1>0, <1>1, <1>n, <1>g DEF DWait
+    BY <1>0, <1>1, <1>n, <1>g DEF DWait, MapPc, WaitPcs, WaitExits
   <1>DHold DHold'
     BY <1>0, <1>1, <1>g, Extra DEF DHold
   <1>DWant DWant'
     BY <1>0, <1>1, <1>g DEF DWant, DTThr
   <1>D DInv'
-    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType
+    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType, MapPc, WaitPcs, WaitExits
   <1>c MHold' = MHold /\ MWpc' = MWpc /\ MCpc' = MCpc
-    BY <1>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+    BY <1>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, WaitPcs, WaitExits
   <1>cn Cardinality(NotDone') = Cardinality(NotDone)
-    BY <1>n, <1>g
+    BY <1>n, <1>g DEF MapPc, WaitPcs, WaitExits
   <1>cc MCalls' = MCalls
-    BY <1>1, <1>cn DEF MCalls
+    BY <1>1, <1>cn DEF MCalls, MapPc, WaitPcs, WaitExits
 
+  <1>wl MapWl' = MapWl
+    BY <1>0, <1>1, <1>g, MapWlGo DEF DTThr, ReaderStates, WaitExits
   <1>s WP!ThreadLock(r)
-    BY <1>g, <1>1, <1>m, <1>c, <1>cc, MOpConst, WantSame DEF WP!ThreadLock, WP!Go, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc
+    BY <1>wl, <1>g, <1>1, <1>m, <1>c, <1>cc, MOpConst, WantSame DEF WP!ThreadLock, WP!Go, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, MapWl, WaitExits, WaitPcs
   <1> QED
-    BY <1>D, <1>s DEF WP!Next, WP!ThreadStep
+    BY <1>D, <1>s DEF WP!Next, WP!ThreadStep, MapWl, WaitExits
 
 LEMMA SReaderInc == ASSUME Inv, NEW r \in Readers, ReaderInc(r), UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
   <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
@@ -823,12 +883,12 @@ LEMMA SReaderInc == ASSUME Inv, NEW r \in Readers, ReaderInc(r), UNCHANGED spuri
     BY Current DEF ReaderInc, Goto, Shared, ReaderVars, Sync
   <1>m MRpc' = [MRpc EXCEPT ![r] = "test"]
     BY <1>0, <1>1, <1>g, MapGo DEF DTThr, ReaderStates, MapPc, MRpc
-  <1>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-                                + (IF "test" \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-       /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF rpc[r] # "done" THEN 1 ELSE 0)
-                                   + (IF "test" # "done" THEN 1 ELSE 0)
+  <1>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in WaitPcs THEN 1 ELSE 0)
+                                + (IF "test" \in WaitPcs THEN 1 ELSE 0)
+       /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF MapPc(rpc[r]) # "done" THEN 1 ELSE 0)
+                                   + (IF MapPc("test") # "done" THEN 1 ELSE 0)
        /\ Cardinality(WSet) \in Nat /\ Cardinality(NotDone) \in Nat
-    BY <1>0, <1>1, SetsGo DEF DTThr, ReaderStates
+    BY <1>0, <1>1, SetsGo DEF DTThr, ReaderStates, MapPc, WaitPcs, WaitExits
   <1>DTBuf DTBuf'
     BY <1>0, <1>1, FrDTBuf
   <1>DTSeq DTSeq'
@@ -842,24 +902,26 @@ LEMMA SReaderInc == ASSUME Inv, NEW r \in Readers, ReaderInc(r), UNCHANGED spuri
   <1>DBuf DBuf'
     BY <1>0, <1>1, FrDBuf
   <1>DWait DWait'
-    BY <1>0, <1>1, <1>n, <1>g DEF DWait
+    BY <1>0, <1>1, <1>n, <1>g DEF DWait, MapPc, WaitPcs, WaitExits
   <1>DHold DHold'
     BY <1>0, <1>1, FrDHold
   <1>DWant DWant'
     BY <1>0, <1>1, <1>g DEF DWant, DTThr
   <1>D DInv'
-    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType
+    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType, MapPc, WaitPcs, WaitExits
   <1>c MHold' = MHold /\ MWpc' = MWpc /\ MCpc' = MCpc
-    BY <1>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+    BY <1>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, WaitPcs, WaitExits
   <1>cn Cardinality(NotDone') = Cardinality(NotDone)
-    BY <1>n, <1>g
+    BY <1>n, <1>g DEF MapPc, WaitPcs, WaitExits
   <1>cc MCalls' = MCalls
-    BY <1>1, <1>cn DEF MCalls
+    BY <1>1, <1>cn DEF MCalls, MapPc, WaitPcs, WaitExits
 
+  <1>wl MapWl' = MapWl
+    BY <1>0, <1>1, <1>g, MapWlGo DEF DTThr, ReaderStates, WaitExits
   <1>s WP!ThreadInc(r)
-    BY <1>g, <1>1, <1>m, <1>c, <1>cc, MOpConst, WantSame DEF WP!ThreadInc, WP!Go, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc
+    BY <1>wl, <1>g, <1>1, <1>m, <1>c, <1>cc, MOpConst, WantSame DEF WP!ThreadInc, WP!Go, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, MapWl, WaitExits, WaitPcs
   <1> QED
-    BY <1>D, <1>s DEF WP!Next, WP!ThreadStep
+    BY <1>D, <1>s DEF WP!Next, WP!ThreadStep, MapWl, WaitExits
 
 LEMMA SReaderWaitLock == ASSUME Inv, NEW r \in Readers, ReaderWaitLock(r), UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
   <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
@@ -870,12 +932,12 @@ LEMMA SReaderWaitLock == ASSUME Inv, NEW r \in Readers, ReaderWaitLock(r), UNCHA
     BY Current DEF ReaderWaitLock, Goto, Shared, ReaderVars, Sync
   <1>m MRpc' = [MRpc EXCEPT ![r] = (IF MRpc[r] = "lockwait" THEN "inc" ELSE "test")]
     BY <1>0, <1>1, <1>g, MapGo DEF DTThr, ReaderStates, MapPc, MRpc
-  <1>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-                                + (IF (IF rpc[r] = "lockwait" THEN "inc" ELSE "test") \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-       /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF rpc[r] # "done" THEN 1 ELSE 0)
-                                   + (IF (IF rpc[r] = "lockwait" THEN "inc" ELSE "test") # "done" THEN 1 ELSE 0)
+  <1>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in WaitPcs THEN 1 ELSE 0)
+                                + (IF (IF rpc[r] = "lockwait" THEN "inc" ELSE "test") \in WaitPcs THEN 1 ELSE 0)
+       /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF MapPc(rpc[r]) # "done" THEN 1 ELSE 0)
+                                   + (IF MapPc((IF rpc[r] = "lockwait" THEN "inc" ELSE "test")) # "done" THEN 1 ELSE 0)
        /\ Cardinality(WSet) \in Nat /\ Cardinality(NotDone) \in Nat
-    BY <1>0, <1>1, SetsGo DEF DTThr, ReaderStates
+    BY <1>0, <1>1, SetsGo DEF DTThr, ReaderStates, MapPc, WaitPcs, WaitExits
   <1>DTBuf DTBuf'
     BY <1>0, <1>1, FrDTBuf
   <1>DTSeq DTSeq'
@@ -889,24 +951,24 @@ LEMMA SReaderWaitLock == ASSUME Inv, NEW r \in Readers, ReaderWaitLock(r), UNCHA
   <1>DBuf DBuf'
     BY <1>0, <1>1, FrDBuf
   <1>DWait DWait'
-    BY <1>0, <1>1, <1>n, <1>g DEF DWait
+    BY <1>0, <1>1, <1>n, <1>g DEF DWait, MapPc, WaitPcs, WaitExits
   <1>DHold DHold'
     BY <1>0, <1>1, FrDHold
   <1>DWant DWant'
     BY <1>0, <1>1, <1>g DEF DWant, DTThr
   <1>D DInv'
-    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType
+    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType, MapPc, WaitPcs, WaitExits
   <1>c MHold' = MHold /\ MWpc' = MWpc /\ MCpc' = MCpc
-    BY <1>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+    BY <1>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, WaitPcs, WaitExits
   <1>cn Cardinality(NotDone') = Cardinality(NotDone)
-    BY <1>n, <1>g
+    BY <1>n, <1>g DEF MapPc, WaitPcs, WaitExits
   <1>cc MCalls' = MCalls
-    BY <1>1, <1>cn DEF MCalls
+    BY <1>1, <1>cn DEF MCalls, MapPc, WaitPcs, WaitExits
 
   <1>s WP!ThreadWaitLock(r)
-    BY <1>g, <1>1, <1>m, <1>c, <1>cc, MOpConst, WantSame DEF WP!ThreadWaitLock, WP!Go, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc
+    BY <1>g, <1>1, <1>m, <1>c, <1>cc, MOpConst, WantSame DEF WP!ThreadWaitLock, WP!Go, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, MapWl, WaitExits, WaitPcs
   <1> QED
-    BY <1>D, <1>s DEF WP!Next, WP!ThreadStep
+    BY <1>D, <1>s DEF WP!Next, WP!ThreadStep, MapWl, WaitExits
 
 LEMMA SReaderRet0 == ASSUME Inv, NEW r \in Readers, ReaderRet0(r), UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
   <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
@@ -917,12 +979,12 @@ LEMMA SReaderRet0 == ASSUME Inv, NEW r \in Readers, ReaderRet0(r), UNCHANGED spu
     BY <1>g DEF ReaderRet0, Goto, Shared, Sync
   <1>m MRpc' = [MRpc EXCEPT ![r] = "ret0"]
     BY <1>0, <1>1, <1>g, MapGo DEF DTThr, ReaderStates, MapPc, MRpc
-  <1>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-                                + (IF "eof" \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-       /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF rpc[r] # "done" THEN 1 ELSE 0)
-                                   + (IF "eof" # "done" THEN 1 ELSE 0)
+  <1>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in WaitPcs THEN 1 ELSE 0)
+                                + (IF "eof" \in WaitPcs THEN 1 ELSE 0)
+       /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF MapPc(rpc[r]) # "done" THEN 1 ELSE 0)
+                                   + (IF MapPc("eof") # "done" THEN 1 ELSE 0)
        /\ Cardinality(WSet) \in Nat /\ Cardinality(NotDone) \in Nat
-    BY <1>0, <1>1, SetsGo DEF DTThr, ReaderStates
+    BY <1>0, <1>1, SetsGo DEF DTThr, ReaderStates, MapPc, WaitPcs, WaitExits
   <1>DTBuf DTBuf'
     BY <1>0, <1>1, FrDTBuf
   <1>DTSeq DTSeq'
@@ -936,20 +998,22 @@ LEMMA SReaderRet0 == ASSUME Inv, NEW r \in Readers, ReaderRet0(r), UNCHANGED spu
   <1>DBuf DBuf'
     BY <1>0, <1>1, FrDBuf
   <1>DWait DWait'
-    BY <1>0, <1>1, <1>n, <1>g DEF DWait
+    BY <1>0, <1>1, <1>n, <1>g DEF DWait, MapPc, WaitPcs, WaitExits
   <1>DHold DHold'
     BY <1>0, <1>1, FrDHold
   <1>DWant DWant'
     BY <1>0, <1>1, <1>g DEF DWant, DTThr
   <1>D DInv'
-    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType
+    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType, MapPc, WaitPcs, WaitExits
   <1>s WP!vars' = WP!vars
     <2>1 MRpc' = MRpc
       BY <1>m, <1>g, <1>0 DEF MRpc, MapPc, DTThr
     <2>2 MHold' = MHold /\ MCalls' = MCalls /\ MWpc' = MWpc /\ MCpc' = MCpc
-      BY <1>1, <1>n, <1>g DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+      BY <1>1, <1>n, <1>g DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, WaitPcs, WaitExits
+    <2>wl MapWl' = MapWl
+      BY <1>0, <1>1, <1>g, MapWlGo DEF DTThr, ReaderStates, WaitExits
     <2> QED
-      BY <1>1, <2>1, <2>2, MOpConst DEF WP!vars, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+      BY <2>wl, <1>1, <2>1, <2>2, MOpConst DEF WP!vars, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapWl, WaitExits, MapPc, WaitPcs
   <1> QED
     BY <1>D, <1>s
 
@@ -963,12 +1027,12 @@ LEMMA SReaderEof == ASSUME Inv, NEW r \in Readers, ReaderEof(r), UNCHANGED spuri
     BY DEF ReaderEof, Goto, Shared, ReaderVars, Sync
   <1>m MRpc' = [MRpc EXCEPT ![r] = "done"]
     BY <1>0, <1>1, <1>g, MapGo DEF DTThr, ReaderStates, MapPc, MRpc
-  <1>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-                                + (IF "done" \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-       /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF rpc[r] # "done" THEN 1 ELSE 0)
-                                   + (IF "done" # "done" THEN 1 ELSE 0)
+  <1>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in WaitPcs THEN 1 ELSE 0)
+                                + (IF "done" \in WaitPcs THEN 1 ELSE 0)
+       /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF MapPc(rpc[r]) # "done" THEN 1 ELSE 0)
+                                   + (IF MapPc("done") # "done" THEN 1 ELSE 0)
        /\ Cardinality(WSet) \in Nat /\ Cardinality(NotDone) \in Nat
-    BY <1>0, <1>1, SetsGo DEF DTThr, ReaderStates
+    BY <1>0, <1>1, SetsGo DEF DTThr, ReaderStates, MapPc, WaitPcs, WaitExits
   <1>DTBuf DTBuf'
     BY <1>0, <1>1, FrDTBuf
   <1>DTSeq DTSeq'
@@ -982,50 +1046,52 @@ LEMMA SReaderEof == ASSUME Inv, NEW r \in Readers, ReaderEof(r), UNCHANGED spuri
   <1>DBuf DBuf'
     BY <1>0, <1>1, FrDBuf
   <1>DWait DWait'
-    BY <1>0, <1>1, <1>n, <1>g DEF DWait
+    BY <1>0, <1>1, <1>n, <1>g DEF DWait, MapPc, WaitPcs, WaitExits
   <1>DHold DHold'
     BY <1>0, <1>1, FrDHold
   <1>DWant DWant'
     BY <1>0, <1>1, <1>g DEF DWant, DTThr
   <1>D DInv'
-    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType
+    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType, MapPc, WaitPcs, WaitExits
   <1>e WP!EndCall(r)
-    BY <1>1, <1>g, EndDone
+    BY <1>1, <1>g, EndDone DEF MapPc, WaitPcs, WaitExits
   <1>c MHold' = MHold /\ MWpc' = MWpc /\ MCpc' = MCpc
-    BY <1>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+    BY <1>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, WaitPcs, WaitExits
+  <1>wl MapWl' = MapWl
+    BY <1>0, <1>1, <1>g, MapWlGo DEF DTThr, ReaderStates, WaitExits
   <1>s WP!ThreadRet0(r)
-    BY <1>g, <1>1, <1>c, <1>e, MOpConst DEF WP!ThreadRet0, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc
+    BY <1>wl, <1>g, <1>1, <1>c, <1>e, MOpConst DEF WP!ThreadRet0, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, MapWl, WaitExits, WaitPcs
   <1> QED
-    BY <1>D, <1>s DEF WP!Next, WP!ThreadStep
+    BY <1>D, <1>s DEF WP!Next, WP!ThreadStep, MapWl, WaitExits
 
 LEMMA SReaderWaitReturn == ASSUME Inv, NEW r \in Readers, ReaderWaitReturn(r), UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
   <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
     BY DEF Inv, DInv, DType
   <1>g rpc[r] = "wret" /\ wl = r
     BY DEF ReaderWaitReturn
-  <1>1 /\ rpc' = [rpc EXCEPT ![r] = "done"] /\ wres' = [wres EXCEPT ![r] = avail]
-       /\ wclosed' = [wclosed EXCEPT ![r] = closed] /\ waiters' = waiters - 1 /\ wl' = None
+  <1>1 /\ rpc' = [rpc EXCEPT ![r] = "wexit"] /\ wres' = [wres EXCEPT ![r] = avail]
+       /\ wclosed' = [wclosed EXCEPT ![r] = closed] /\ waiters' = waiters /\ wl' = wl
        /\ buf' = buf /\ pos' = pos /\ avail' = avail /\ written' = written /\ taken' = taken /\ toff' = toff /\ closed' = closed /\ nextByte' = nextByte /\ wpc' = wpc /\ cpc' = cpc /\ want' = want /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ eofAt' = eofAt /\ permits' = permits /\ parked' = parked /\ bl' = bl
-    BY DEF ReaderWaitReturn, Return, Goto, Shared
+    BY DEF ReaderWaitReturn, Record, Goto, Shared
   <1>m MRpc' = [MRpc EXCEPT ![r] = "done"]
     BY <1>0, <1>1, <1>g, MapGo DEF DTThr, ReaderStates, MapPc, MRpc
-  <1>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-                                + (IF "done" \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-       /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF rpc[r] # "done" THEN 1 ELSE 0)
-                                   + (IF "done" # "done" THEN 1 ELSE 0)
+  <1>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in WaitPcs THEN 1 ELSE 0)
+                                + (IF "wexit" \in WaitPcs THEN 1 ELSE 0)
+       /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF MapPc(rpc[r]) # "done" THEN 1 ELSE 0)
+                                   + (IF MapPc("wexit") # "done" THEN 1 ELSE 0)
        /\ Cardinality(WSet) \in Nat /\ Cardinality(NotDone) \in Nat
-    BY <1>0, <1>1, SetsGo DEF DTThr, ReaderStates
+    BY <1>0, <1>1, SetsGo DEF DTThr, ReaderStates, MapPc, WaitPcs, WaitExits
   <1>w waiters >= 1
     <2>1 r \in WSet /\ IsFiniteSet(WSet)
-      BY <1>g, FinSub DEF WSet
+      BY <1>g, FinSub DEF WSet, MapPc, WaitPcs, WaitExits
     <2> QED
-      BY <2>1, CardPos, <1>0 DEF DWait
+      BY <2>1, CardPos, <1>0 DEF DWait, MapPc, WaitPcs, WaitExits
   <1>DTBuf DTBuf'
     BY <1>0, <1>1, FrDTBuf
   <1>DTSeq DTSeq'
     BY <1>0, <1>1, FrDTSeq
   <1>DTSca DTSca'
-    BY <1>0, <1>1, <1>w DEF DTSca
+    BY <1>0, <1>1, FrDTSca
   <1>DTThr DTThr'
     BY <1>0, <1>1, Extra DEF DTThr, DTSca, ReaderStates
   <1>DWriter DWriter'
@@ -1033,21 +1099,81 @@ LEMMA SReaderWaitReturn == ASSUME Inv, NEW r \in Readers, ReaderWaitReturn(r), U
   <1>DBuf DBuf'
     BY <1>0, <1>1, FrDBuf
   <1>DWait DWait'
-    BY <1>0, <1>1, <1>n, <1>g DEF DWait
+    BY <1>0, <1>1, <1>n, <1>g DEF DWait, WaitPcs, WaitExits, MapPc
   <1>DHold DHold'
     BY <1>0, <1>1, FrDHold
   <1>DWant DWant'
     BY <1>0, <1>1, <1>g DEF DWant, DTThr
   <1>D DInv'
-    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType
+    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType, MapPc, WaitPcs, WaitExits
   <1>e WP!EndCall(r)
-    BY <1>1, <1>g, EndDone
+    BY <1>1, <1>g, EndExit DEF MapPc, WaitPcs, WaitExits
   <1>c MHold' = MHold /\ MWpc' = MWpc /\ MCpc' = MCpc
-    BY <1>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+    BY <1>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, WaitPcs, WaitExits
+  <1>wl MapWl = r /\ MapWl' = None
+    BY <1>0, <1>1, <1>g DEF MapWl, WaitExits, DTThr
   <1>s WP!ThreadWaitReturn(r)
-    BY <1>g, <1>1, <1>c, <1>e, MOpConst DEF WP!ThreadWaitReturn, WP!Return, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc
+    BY <1>wl, <1>g, <1>1, <1>c, <1>e, MOpConst DEF WP!ThreadWaitReturn, WP!Return, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, MapWl, WaitExits, WaitPcs
   <1> QED
-    BY <1>D, <1>s DEF WP!Next, WP!ThreadStep
+    BY <1>D, <1>s DEF WP!Next, WP!ThreadStep, MapWl, WaitExits
+
+\* A18: the finally block of the wait: the count down by one and waitLock free, which the
+\* abstraction saw at the return already; a stuttering step there
+LEMMA SReaderWaitExit == ASSUME Inv, NEW r \in Readers, ReaderWaitExit(r), UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
+  <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
+    BY DEF Inv, DInv, DType
+  <1>g rpc[r] \in WaitExits /\ wl = r
+    BY DEF ReaderWaitExit
+  <1> DEFINE nx == IF rpc[r] = "wexit" THEN "done" ELSE IF rpc[r] = "wexitlock" THEN "lock" ELSE "ret0"
+  <1>1 rpc' = [rpc EXCEPT ![r] = nx] /\ waiters' = waiters - 1 /\ wl' = None /\ buf' = buf /\ pos' = pos /\ avail' = avail /\ written' = written /\ taken' = taken /\ toff' = toff /\ closed' = closed /\ nextByte' = nextByte /\ wpc' = wpc /\ cpc' = cpc /\ want' = want /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ wres' = wres /\ wclosed' = wclosed /\ eofAt' = eofAt /\ permits' = permits /\ parked' = parked /\ bl' = bl
+    BY DEF ReaderWaitExit, Goto, Shared
+  <1>x nx \in {"done", "lock", "ret0"} /\ MapPc(nx) = MapPc(rpc[r]) /\ nx \notin WaitPcs
+    BY <1>g DEF WaitExits, MapPc, WaitPcs
+  <1>m MRpc' = MRpc
+    <2>1 MRpc' = [MRpc EXCEPT ![r] = MapPc(nx)]
+      BY <1>0, <1>1, MapGo DEF DTThr, ReaderStates
+    <2> QED
+      BY <2>1, <1>x DEF MRpc
+  <1>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in WaitPcs THEN 1 ELSE 0)
+                                + (IF nx \in WaitPcs THEN 1 ELSE 0)
+       /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF MapPc(rpc[r]) # "done" THEN 1 ELSE 0)
+                                   + (IF MapPc(nx) # "done" THEN 1 ELSE 0)
+       /\ Cardinality(WSet) \in Nat /\ Cardinality(NotDone) \in Nat
+    BY <1>0, <1>1, SetsGo DEF DTThr, ReaderStates, MapPc, WaitPcs, WaitExits
+  <1>w waiters >= 1
+    <2>1 r \in WSet /\ IsFiniteSet(WSet)
+      BY <1>g, FinSub DEF WSet, WaitPcs, MapPc, WaitExits
+    <2> QED
+      BY <2>1, CardPos, <1>0 DEF DWait, MapPc, WaitPcs, WaitExits
+  <1>DTBuf DTBuf'
+    BY <1>0, <1>1, FrDTBuf
+  <1>DTSeq DTSeq'
+    BY <1>0, <1>1, FrDTSeq
+  <1>DTSca DTSca'
+    BY <1>0, <1>1, <1>w DEF DTSca
+  <1>DTThr DTThr'
+    BY <1>0, <1>1, <1>x, Extra DEF DTThr, DTSca, ReaderStates
+  <1>DWriter DWriter'
+    BY <1>0, <1>1, FrDWriter
+  <1>DBuf DBuf'
+    BY <1>0, <1>1, FrDBuf
+  <1>DWait DWait'
+    BY <1>0, <1>1, <1>n, <1>g, <1>x DEF DWait, WaitPcs, WaitExits, MapPc
+  <1>DHold DHold'
+    BY <1>0, <1>1, FrDHold
+  <1>DWant DWant'
+    BY <1>0, <1>1, <1>g, <1>x DEF DWant, DTThr, WaitExits
+  <1>D DInv'
+    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType, MapPc, WaitPcs, WaitExits
+  <1>v WP!vars' = WP!vars
+    <2>1 MapWl' = None /\ MapWl = None
+      BY <1>1, <1>g DEF MapWl
+    <2>2 NotDone' = NotDone
+      BY <1>0, <1>1, <1>x DEF NotDone, DTThr, MapPc, WaitPcs, WaitExits
+    <2> QED
+      BY <1>1, <1>m, <2>1, <2>2 DEF WP!vars, MRpc, NotDone, MapWl, WaitExits, MapPc, WaitPcs
+  <1> QED
+    BY <1>D, <1>v
 
 LEMMA SReaderStart == ASSUME Inv, NEW r \in Readers, ReaderStart(r), UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
   <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
@@ -1058,15 +1184,15 @@ LEMMA SReaderStart == ASSUME Inv, NEW r \in Readers, ReaderStart(r), UNCHANGED s
     <2>1 /\ rpc' = [rpc EXCEPT ![r] = "done"] /\ wres' = [wres EXCEPT ![r] = avail]
          /\ wclosed' = [wclosed EXCEPT ![r] = closed] /\ want' = [want EXCEPT ![r] = WantNow(r)]
          /\ buf' = buf /\ pos' = pos /\ avail' = avail /\ written' = written /\ taken' = taken /\ toff' = toff /\ closed' = closed /\ nextByte' = nextByte /\ wpc' = wpc /\ cpc' = cpc /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ eofAt' = eofAt /\ permits' = permits /\ waiters' = waiters /\ parked' = parked /\ wl' = wl /\ bl' = bl
-      BY <1>a, WantSame, Current DEF ReaderStart, Return, Goto, Shared, Sync
+      BY <1>a, WantSame, Current DEF ReaderStart, Record, Return, Goto, Shared, Sync
     <2>m MRpc' = [MRpc EXCEPT ![r] = "done"]
       BY <1>0, <2>1, <1>g, MapGo DEF DTThr, ReaderStates, MapPc, MRpc
-    <2>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-                                  + (IF "done" \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-         /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF rpc[r] # "done" THEN 1 ELSE 0)
-                                     + (IF "done" # "done" THEN 1 ELSE 0)
+    <2>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in WaitPcs THEN 1 ELSE 0)
+                                  + (IF "done" \in WaitPcs THEN 1 ELSE 0)
+         /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF MapPc(rpc[r]) # "done" THEN 1 ELSE 0)
+                                     + (IF MapPc("done") # "done" THEN 1 ELSE 0)
          /\ Cardinality(WSet) \in Nat /\ Cardinality(NotDone) \in Nat
-      BY <1>0, <2>1, SetsGo DEF DTThr, ReaderStates
+      BY <1>0, <2>1, SetsGo DEF DTThr, ReaderStates, MapPc, WaitPcs, WaitExits
     <2>DTBuf DTBuf'
       BY <1>0, <2>1, FrDTBuf
     <2>DTSeq DTSeq'
@@ -1080,33 +1206,35 @@ LEMMA SReaderStart == ASSUME Inv, NEW r \in Readers, ReaderStart(r), UNCHANGED s
     <2>DBuf DBuf'
       BY <1>0, <2>1, FrDBuf
     <2>DWait DWait'
-      BY <1>0, <2>1, <2>n, <1>g DEF DWait
+      BY <1>0, <2>1, <2>n, <1>g DEF DWait, MapPc, WaitPcs, WaitExits
     <2>DHold DHold'
       BY <1>0, <2>1, FrDHold
     <2>DWant DWant'
       BY <1>0, <2>1, <1>g, WantSame DEF DWant, DTThr
     <2>D DInv'
-      BY <2>DTBuf, <2>DTSeq, <2>DTSca, <2>DTThr, <2>DWriter, <2>DBuf, <2>DWait, <2>DHold, <2>DWant DEF DInv, DType
+      BY <2>DTBuf, <2>DTSeq, <2>DTSca, <2>DTThr, <2>DWriter, <2>DBuf, <2>DWait, <2>DHold, <2>DWant DEF DInv, DType, MapPc, WaitPcs, WaitExits
     <2>e WP!EndCall(r)
-      BY <2>1, <1>g, EndDone
+      BY <2>1, <1>g, EndDone DEF MapPc, WaitPcs, WaitExits
     <2>c MHold' = MHold /\ MWpc' = MWpc /\ MCpc' = MCpc
-      BY <2>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+      BY <2>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, WaitPcs, WaitExits
+    <2>wl MapWl' = MapWl
+      BY <1>0, <2>1, <1>g, MapWlGo DEF DTThr, ReaderStates, WaitExits
     <2>s WP!ThreadStart(r)
-      BY <1>g, <1>a, <2>1, <2>c, <2>e, MOpConst, WantSame DEF WP!ThreadStart, WP!Return, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc
+      BY <2>wl, <1>g, <1>a, <2>1, <2>c, <2>e, MOpConst, WantSame DEF WP!ThreadStart, WP!Return, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, MapWl, WaitExits, WaitPcs
     <2> QED
-      BY <2>D, <2>s DEF WP!Next, WP!ThreadStep
+      BY <2>D, <2>s DEF WP!Next, WP!ThreadStep, MapWl, WaitExits
   <1>b CASE ~(avail >= LenOf(r) /\ r \in WaitCallers)
     <2>1 /\ rpc' = [rpc EXCEPT ![r] = (IF avail >= LenOf(r) THEN "lock" ELSE "fastclosed")] /\ want' = [want EXCEPT ![r] = WantNow(r)]
          /\ buf' = buf /\ pos' = pos /\ avail' = avail /\ written' = written /\ taken' = taken /\ toff' = toff /\ closed' = closed /\ nextByte' = nextByte /\ wpc' = wpc /\ cpc' = cpc /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ wres' = wres /\ wclosed' = wclosed /\ eofAt' = eofAt /\ permits' = permits /\ waiters' = waiters /\ parked' = parked /\ wl' = wl /\ bl' = bl
       BY <1>b, WantSame, Current DEF ReaderStart, Goto, Shared, Sync
     <2>m MRpc' = [MRpc EXCEPT ![r] = (IF avail >= LenOf(r) THEN "lock" ELSE "fastclosed")]
       BY <1>0, <2>1, <1>g, MapGo DEF DTThr, ReaderStates, MapPc, MRpc
-    <2>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-                                  + (IF (IF avail >= LenOf(r) THEN "lock" ELSE "fastclosed") \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-         /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF rpc[r] # "done" THEN 1 ELSE 0)
-                                     + (IF (IF avail >= LenOf(r) THEN "lock" ELSE "fastclosed") # "done" THEN 1 ELSE 0)
+    <2>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in WaitPcs THEN 1 ELSE 0)
+                                  + (IF (IF avail >= LenOf(r) THEN "lock" ELSE "fastclosed") \in WaitPcs THEN 1 ELSE 0)
+         /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF MapPc(rpc[r]) # "done" THEN 1 ELSE 0)
+                                     + (IF MapPc((IF avail >= LenOf(r) THEN "lock" ELSE "fastclosed")) # "done" THEN 1 ELSE 0)
          /\ Cardinality(WSet) \in Nat /\ Cardinality(NotDone) \in Nat
-      BY <1>0, <2>1, SetsGo DEF DTThr, ReaderStates
+      BY <1>0, <2>1, SetsGo DEF DTThr, ReaderStates, MapPc, WaitPcs, WaitExits
     <2>DTBuf DTBuf'
       BY <1>0, <2>1, FrDTBuf
     <2>DTSeq DTSeq'
@@ -1120,23 +1248,25 @@ LEMMA SReaderStart == ASSUME Inv, NEW r \in Readers, ReaderStart(r), UNCHANGED s
     <2>DBuf DBuf'
       BY <1>0, <2>1, FrDBuf
     <2>DWait DWait'
-      BY <1>0, <2>1, <2>n, <1>g DEF DWait
+      BY <1>0, <2>1, <2>n, <1>g DEF DWait, MapPc, WaitPcs, WaitExits
     <2>DHold DHold'
       BY <1>0, <2>1, FrDHold
     <2>DWant DWant'
       BY <1>0, <2>1, <1>g, WantSame DEF DWant, DTThr
     <2>D DInv'
-      BY <2>DTBuf, <2>DTSeq, <2>DTSca, <2>DTThr, <2>DWriter, <2>DBuf, <2>DWait, <2>DHold, <2>DWant DEF DInv, DType
+      BY <2>DTBuf, <2>DTSeq, <2>DTSca, <2>DTThr, <2>DWriter, <2>DBuf, <2>DWait, <2>DHold, <2>DWant DEF DInv, DType, MapPc, WaitPcs, WaitExits
     <2>c MHold' = MHold /\ MWpc' = MWpc /\ MCpc' = MCpc
-      BY <2>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+      BY <2>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, WaitPcs, WaitExits
     <2>cn Cardinality(NotDone') = Cardinality(NotDone)
-      BY <2>n, <1>g, <1>b
+      BY <2>n, <1>g, <1>b DEF MapPc, WaitPcs, WaitExits
     <2>cc MCalls' = MCalls
-      BY <2>1, <2>cn DEF MCalls
+      BY <2>1, <2>cn DEF MCalls, MapPc, WaitPcs, WaitExits
+    <2>wl MapWl' = MapWl
+      BY <1>0, <2>1, <1>g, MapWlGo DEF DTThr, ReaderStates, WaitExits
     <2>s WP!ThreadStart(r)
-      BY <1>g, <1>b, <2>1, <2>m, <2>c, <2>cc, MOpConst, WantSame, Current DEF WP!ThreadStart, WP!Go, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc
+      BY <2>wl, <1>g, <1>b, <2>1, <2>m, <2>c, <2>cc, MOpConst, WantSame, Current DEF WP!ThreadStart, WP!Go, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, MapWl, WaitExits, WaitPcs
     <2> QED
-      BY <2>D, <2>s DEF WP!Next, WP!ThreadStep
+      BY <2>D, <2>s DEF WP!Next, WP!ThreadStep, MapWl, WaitExits
   <1> QED
     BY <1>a, <1>b
 
@@ -1149,15 +1279,15 @@ LEMMA SReaderReread == ASSUME Inv, NEW r \in Readers, ReaderReread(r), UNCHANGED
     <2>1 /\ rpc' = [rpc EXCEPT ![r] = "done"] /\ wres' = [wres EXCEPT ![r] = avail]
          /\ wclosed' = [wclosed EXCEPT ![r] = closed] 
          /\ buf' = buf /\ pos' = pos /\ avail' = avail /\ written' = written /\ taken' = taken /\ toff' = toff /\ closed' = closed /\ nextByte' = nextByte /\ wpc' = wpc /\ cpc' = cpc /\ want' = want /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ eofAt' = eofAt /\ permits' = permits /\ waiters' = waiters /\ parked' = parked /\ wl' = wl /\ bl' = bl
-      BY <1>a, WantSame, Current DEF ReaderReread, Return, Goto, Shared, Sync
+      BY <1>a, WantSame, Current DEF ReaderReread, Record, Return, Goto, Shared, Sync
     <2>m MRpc' = [MRpc EXCEPT ![r] = "done"]
       BY <1>0, <2>1, <1>g, MapGo DEF DTThr, ReaderStates, MapPc, MRpc
-    <2>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-                                  + (IF "done" \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-         /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF rpc[r] # "done" THEN 1 ELSE 0)
-                                     + (IF "done" # "done" THEN 1 ELSE 0)
+    <2>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in WaitPcs THEN 1 ELSE 0)
+                                  + (IF "done" \in WaitPcs THEN 1 ELSE 0)
+         /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF MapPc(rpc[r]) # "done" THEN 1 ELSE 0)
+                                     + (IF MapPc("done") # "done" THEN 1 ELSE 0)
          /\ Cardinality(WSet) \in Nat /\ Cardinality(NotDone) \in Nat
-      BY <1>0, <2>1, SetsGo DEF DTThr, ReaderStates
+      BY <1>0, <2>1, SetsGo DEF DTThr, ReaderStates, MapPc, WaitPcs, WaitExits
     <2>DTBuf DTBuf'
       BY <1>0, <2>1, FrDTBuf
     <2>DTSeq DTSeq'
@@ -1171,33 +1301,35 @@ LEMMA SReaderReread == ASSUME Inv, NEW r \in Readers, ReaderReread(r), UNCHANGED
     <2>DBuf DBuf'
       BY <1>0, <2>1, FrDBuf
     <2>DWait DWait'
-      BY <1>0, <2>1, <2>n, <1>g DEF DWait
+      BY <1>0, <2>1, <2>n, <1>g DEF DWait, MapPc, WaitPcs, WaitExits
     <2>DHold DHold'
       BY <1>0, <2>1, FrDHold
     <2>DWant DWant'
       BY <1>0, <2>1, <1>g, WantSame DEF DWant, DTThr
     <2>D DInv'
-      BY <2>DTBuf, <2>DTSeq, <2>DTSca, <2>DTThr, <2>DWriter, <2>DBuf, <2>DWait, <2>DHold, <2>DWant DEF DInv, DType
+      BY <2>DTBuf, <2>DTSeq, <2>DTSca, <2>DTThr, <2>DWriter, <2>DBuf, <2>DWait, <2>DHold, <2>DWant DEF DInv, DType, MapPc, WaitPcs, WaitExits
     <2>e WP!EndCall(r)
-      BY <2>1, <1>g, EndDone
+      BY <2>1, <1>g, EndDone DEF MapPc, WaitPcs, WaitExits
     <2>c MHold' = MHold /\ MWpc' = MWpc /\ MCpc' = MCpc
-      BY <2>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+      BY <2>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, WaitPcs, WaitExits
+    <2>wl MapWl' = MapWl
+      BY <1>0, <2>1, <1>g, MapWlGo DEF DTThr, ReaderStates, WaitExits
     <2>s WP!ThreadReread(r)
-      BY <1>g, <1>a, <2>1, <2>c, <2>e, MOpConst, WantSame DEF WP!ThreadReread, WP!Return, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc
+      BY <2>wl, <1>g, <1>a, <2>1, <2>c, <2>e, MOpConst, WantSame DEF WP!ThreadReread, WP!Return, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, MapWl, WaitExits, WaitPcs
     <2> QED
-      BY <2>D, <2>s DEF WP!Next, WP!ThreadStep
+      BY <2>D, <2>s DEF WP!Next, WP!ThreadStep, MapWl, WaitExits
   <1>b CASE ~(r \in WaitCallers)
     <2>1 /\ rpc' = [rpc EXCEPT ![r] = (IF avail >= 1 THEN "lock" ELSE "ret0")] 
          /\ buf' = buf /\ pos' = pos /\ avail' = avail /\ written' = written /\ taken' = taken /\ toff' = toff /\ closed' = closed /\ nextByte' = nextByte /\ wpc' = wpc /\ cpc' = cpc /\ want' = want /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ wres' = wres /\ wclosed' = wclosed /\ eofAt' = eofAt /\ permits' = permits /\ waiters' = waiters /\ parked' = parked /\ wl' = wl /\ bl' = bl
       BY <1>b, WantSame, Current DEF ReaderReread, Goto, Shared, Sync
     <2>m MRpc' = [MRpc EXCEPT ![r] = (IF avail >= 1 THEN "lock" ELSE "ret0")]
       BY <1>0, <2>1, <1>g, MapGo DEF DTThr, ReaderStates, MapPc, MRpc
-    <2>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-                                  + (IF (IF avail >= 1 THEN "lock" ELSE "ret0") \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-         /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF rpc[r] # "done" THEN 1 ELSE 0)
-                                     + (IF (IF avail >= 1 THEN "lock" ELSE "ret0") # "done" THEN 1 ELSE 0)
+    <2>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in WaitPcs THEN 1 ELSE 0)
+                                  + (IF (IF avail >= 1 THEN "lock" ELSE "ret0") \in WaitPcs THEN 1 ELSE 0)
+         /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF MapPc(rpc[r]) # "done" THEN 1 ELSE 0)
+                                     + (IF MapPc((IF avail >= 1 THEN "lock" ELSE "ret0")) # "done" THEN 1 ELSE 0)
          /\ Cardinality(WSet) \in Nat /\ Cardinality(NotDone) \in Nat
-      BY <1>0, <2>1, SetsGo DEF DTThr, ReaderStates
+      BY <1>0, <2>1, SetsGo DEF DTThr, ReaderStates, MapPc, WaitPcs, WaitExits
     <2>DTBuf DTBuf'
       BY <1>0, <2>1, FrDTBuf
     <2>DTSeq DTSeq'
@@ -1211,23 +1343,25 @@ LEMMA SReaderReread == ASSUME Inv, NEW r \in Readers, ReaderReread(r), UNCHANGED
     <2>DBuf DBuf'
       BY <1>0, <2>1, FrDBuf
     <2>DWait DWait'
-      BY <1>0, <2>1, <2>n, <1>g DEF DWait
+      BY <1>0, <2>1, <2>n, <1>g DEF DWait, MapPc, WaitPcs, WaitExits
     <2>DHold DHold'
       BY <1>0, <2>1, FrDHold
     <2>DWant DWant'
       BY <1>0, <2>1, <1>g, WantSame DEF DWant, DTThr
     <2>D DInv'
-      BY <2>DTBuf, <2>DTSeq, <2>DTSca, <2>DTThr, <2>DWriter, <2>DBuf, <2>DWait, <2>DHold, <2>DWant DEF DInv, DType
+      BY <2>DTBuf, <2>DTSeq, <2>DTSca, <2>DTThr, <2>DWriter, <2>DBuf, <2>DWait, <2>DHold, <2>DWant DEF DInv, DType, MapPc, WaitPcs, WaitExits
     <2>c MHold' = MHold /\ MWpc' = MWpc /\ MCpc' = MCpc
-      BY <2>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+      BY <2>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, WaitPcs, WaitExits
     <2>cn Cardinality(NotDone') = Cardinality(NotDone)
-      BY <2>n, <1>g, <1>b
+      BY <2>n, <1>g, <1>b DEF MapPc, WaitPcs, WaitExits
     <2>cc MCalls' = MCalls
-      BY <2>1, <2>cn DEF MCalls
+      BY <2>1, <2>cn DEF MCalls, MapPc, WaitPcs, WaitExits
+    <2>wl MapWl' = MapWl
+      BY <1>0, <2>1, <1>g, MapWlGo DEF DTThr, ReaderStates, WaitExits
     <2>s WP!ThreadReread(r)
-      BY <1>g, <1>b, <2>1, <2>m, <2>c, <2>cc, MOpConst, WantSame, Current DEF WP!ThreadReread, WP!Go, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc
+      BY <2>wl, <1>g, <1>b, <2>1, <2>m, <2>c, <2>cc, MOpConst, WantSame, Current DEF WP!ThreadReread, WP!Go, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, MapWl, WaitExits, WaitPcs
     <2> QED
-      BY <2>D, <2>s DEF WP!Next, WP!ThreadStep
+      BY <2>D, <2>s DEF WP!Next, WP!ThreadStep, MapWl, WaitExits
   <1> QED
     BY <1>a, <1>b
 
@@ -1241,12 +1375,12 @@ LEMMA SReaderFastClosed == ASSUME Inv, NEW r \in Readers, ReaderFastClosed(r), U
     BY WantSame, Current DEF ReaderFastClosed, Goto, Shared, Sync
   <1>m MRpc' = [MRpc EXCEPT ![r] = (IF closed THEN "reread" ELSE "lockwait")]
     BY <1>0, <1>1, <1>g, MapGo DEF DTThr, ReaderStates, MapPc, MRpc
-  <1>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-                                + (IF (IF closed THEN "reread" ELSE "lockwait") \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-       /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF rpc[r] # "done" THEN 1 ELSE 0)
-                                   + (IF (IF closed THEN "reread" ELSE "lockwait") # "done" THEN 1 ELSE 0)
+  <1>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in WaitPcs THEN 1 ELSE 0)
+                                + (IF (IF closed THEN "reread" ELSE "lockwait") \in WaitPcs THEN 1 ELSE 0)
+       /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF MapPc(rpc[r]) # "done" THEN 1 ELSE 0)
+                                   + (IF MapPc((IF closed THEN "reread" ELSE "lockwait")) # "done" THEN 1 ELSE 0)
        /\ Cardinality(WSet) \in Nat /\ Cardinality(NotDone) \in Nat
-    BY <1>0, <1>1, SetsGo DEF DTThr, ReaderStates
+    BY <1>0, <1>1, SetsGo DEF DTThr, ReaderStates, MapPc, WaitPcs, WaitExits
   <1>DTBuf DTBuf'
     BY <1>0, <1>1, FrDTBuf
   <1>DTSeq DTSeq'
@@ -1260,23 +1394,25 @@ LEMMA SReaderFastClosed == ASSUME Inv, NEW r \in Readers, ReaderFastClosed(r), U
   <1>DBuf DBuf'
     BY <1>0, <1>1, FrDBuf
   <1>DWait DWait'
-    BY <1>0, <1>1, <1>n, <1>g DEF DWait
+    BY <1>0, <1>1, <1>n, <1>g DEF DWait, MapPc, WaitPcs, WaitExits
   <1>DHold DHold'
     BY <1>0, <1>1, FrDHold
   <1>DWant DWant'
     BY <1>0, <1>1, <1>g, WantSame DEF DWant, DTThr
   <1>D DInv'
-    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType
+    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType, MapPc, WaitPcs, WaitExits
   <1>c MHold' = MHold /\ MWpc' = MWpc /\ MCpc' = MCpc
-    BY <1>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+    BY <1>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, WaitPcs, WaitExits
   <1>cn Cardinality(NotDone') = Cardinality(NotDone)
-    BY <1>n, <1>g
+    BY <1>n, <1>g DEF MapPc, WaitPcs, WaitExits
   <1>cc MCalls' = MCalls
-    BY <1>1, <1>cn DEF MCalls
+    BY <1>1, <1>cn DEF MCalls, MapPc, WaitPcs, WaitExits
+  <1>wl MapWl' = MapWl
+    BY <1>0, <1>1, <1>g, MapWlGo DEF DTThr, ReaderStates, WaitExits
   <1>s WP!ThreadFastClosed(r)
-    BY <1>g, <1>1, <1>m, <1>c, <1>cc, MOpConst, WantSame, Current DEF WP!ThreadFastClosed, WP!Go, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc
+    BY <1>wl, <1>g, <1>1, <1>m, <1>c, <1>cc, MOpConst, WantSame, Current DEF WP!ThreadFastClosed, WP!Go, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, MapWl, WaitExits, WaitPcs
   <1> QED
-    BY <1>D, <1>s DEF WP!Next, WP!ThreadStep
+    BY <1>D, <1>s DEF WP!Next, WP!ThreadStep, MapWl, WaitExits
 
 \* the abstract invariant, per thread, in the detailed state
 LEMMA HoldLeftR ==
@@ -1285,18 +1421,18 @@ LEMMA HoldLeftR ==
         /\ rpc[x] = "copy" => left[x] >= 1
         /\ rpc[x] = "finish" => left[x] = 0 /\ Len(hold[x]) >= 1
         /\ rpc[x] \in {"copy", "finish"} => Len(hold[x]) + left[x] <= LenOf(x)
-  BY DEF Inv, WP!SafeInv, WP!HoldLeft, MapPc
+  BY DEF Inv, WP!SafeInv, WP!HoldLeft, MapPc, MapWl, WaitExits
 
 LEMMA CopyHasR ==
   ASSUME Inv, NEW x \in Readers, rpc[x] = "copy"
   PROVE MBuffered >= left[x]
-  BY DEF Inv, WP!SafeInv, WP!CopyHasBytes, WP!Buffered, WP!InFlight, MBuffered, MHold, MapPc
+  BY DEF Inv, WP!SafeInv, WP!CopyHasBytes, WP!Buffered, WP!InFlight, MBuffered, MHold, MapPc, MapWl, WaitExits
 
 LEMMA BufNonNegR == ASSUME Inv PROVE MBuffered >= 0
-  BY DEF Inv, WP!SafeInv, WP!BufNonNeg, WP!Buffered, WP!InFlight, MBuffered, MHold
+  BY DEF Inv, WP!SafeInv, WP!BufNonNeg, WP!Buffered, WP!InFlight, MBuffered, MHold, MapWl, WaitExits
 
 LEMMA BufferedSame == WP!Buffered = MBuffered
-  BY DEF WP!Buffered, WP!InFlight, MBuffered, MHold
+  BY DEF WP!Buffered, WP!InFlight, MBuffered, MHold, MapWl, WaitExits
 
 LEMMA SReaderTest == ASSUME Inv, NEW r \in Readers, ReaderTest(r), UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
   <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
@@ -1305,26 +1441,26 @@ LEMMA SReaderTest == ASSUME Inv, NEW r \in Readers, ReaderTest(r), UNCHANGED spu
     BY <1>0 DEF ReaderTest, DWant, DTThr
   <1>w waiters >= 1
     <2>1 r \in WSet /\ IsFiniteSet(WSet)
-      BY <1>g, FinSub DEF WSet
+      BY <1>g, FinSub DEF WSet, MapPc, WaitPcs, WaitExits
     <2> QED
-      BY <2>1, CardPos, <1>0 DEF DWait
+      BY <2>1, CardPos, <1>0 DEF DWait, MapPc, WaitPcs, WaitExits
   <1>T1 CASE avail >= LenOf(r) /\ r \in WaitCallers
-    <2>1 rpc' = [rpc EXCEPT ![r] = "done"] /\ wres' = [wres EXCEPT ![r] = avail] /\ wclosed' = [wclosed EXCEPT ![r] = closed] /\ waiters' = waiters - 1 /\ wl' = None /\ buf' = buf /\ pos' = pos /\ avail' = avail /\ written' = written /\ taken' = taken /\ toff' = toff /\ closed' = closed /\ nextByte' = nextByte /\ wpc' = wpc /\ cpc' = cpc /\ want' = want /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ eofAt' = eofAt /\ permits' = permits /\ parked' = parked /\ bl' = bl
-      BY <1>T1, <1>g, Current DEF ReaderTest, Return, Goto, Shared, ReaderVars, Sync
+    <2>1 rpc' = [rpc EXCEPT ![r] = "wexit"] /\ wres' = [wres EXCEPT ![r] = avail] /\ wclosed' = [wclosed EXCEPT ![r] = closed] /\ waiters' = waiters /\ wl' = wl /\ buf' = buf /\ pos' = pos /\ avail' = avail /\ written' = written /\ taken' = taken /\ toff' = toff /\ closed' = closed /\ nextByte' = nextByte /\ wpc' = wpc /\ cpc' = cpc /\ want' = want /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ eofAt' = eofAt /\ permits' = permits /\ parked' = parked /\ bl' = bl
+      BY <1>T1, <1>g, Current DEF ReaderTest, Record, Return, Goto, Shared, ReaderVars, Sync
     <2>m MRpc' = [MRpc EXCEPT ![r] = "done"]
       BY <1>0, <2>1, <1>g, MapGo DEF DTThr, ReaderStates, MapPc, MRpc
-    <2>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-                                  + (IF "done" \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-         /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF rpc[r] # "done" THEN 1 ELSE 0)
-                                     + (IF "done" # "done" THEN 1 ELSE 0)
+    <2>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in WaitPcs THEN 1 ELSE 0)
+                                  + (IF "wexit" \in WaitPcs THEN 1 ELSE 0)
+         /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF MapPc(rpc[r]) # "done" THEN 1 ELSE 0)
+                                     + (IF MapPc("wexit") # "done" THEN 1 ELSE 0)
          /\ Cardinality(WSet) \in Nat /\ Cardinality(NotDone) \in Nat
-      BY <1>0, <2>1, SetsGo DEF DTThr, ReaderStates
+      BY <1>0, <2>1, SetsGo DEF DTThr, ReaderStates, MapPc, WaitPcs, WaitExits
     <2>DTBuf DTBuf'
       BY <1>0, <2>1, FrDTBuf
     <2>DTSeq DTSeq'
       BY <1>0, <2>1, FrDTSeq
     <2>DTSca DTSca'
-      BY <1>0, <2>1, <1>w DEF DTSca
+      BY <1>0, <2>1, FrDTSca
     <2>DTThr DTThr'
       BY <1>0, <2>1, Extra DEF DTThr, DTSca, ReaderStates
     <2>DWriter DWriter'
@@ -1332,38 +1468,40 @@ LEMMA SReaderTest == ASSUME Inv, NEW r \in Readers, ReaderTest(r), UNCHANGED spu
     <2>DBuf DBuf'
       BY <1>0, <2>1, FrDBuf
     <2>DWait DWait'
-      BY <1>0, <2>1, <2>n, <1>g DEF DWait
+      BY <1>0, <2>1, <2>n, <1>g DEF DWait, WaitPcs, WaitExits, MapPc
     <2>DHold DHold'
       BY <1>0, <2>1, FrDHold
     <2>DWant DWant'
       BY <1>0, <2>1, <1>g DEF DWant, DTThr
     <2>D DInv'
-      BY <2>DTBuf, <2>DTSeq, <2>DTSca, <2>DTThr, <2>DWriter, <2>DBuf, <2>DWait, <2>DHold, <2>DWant DEF DInv, DType
+      BY <2>DTBuf, <2>DTSeq, <2>DTSca, <2>DTThr, <2>DWriter, <2>DBuf, <2>DWait, <2>DHold, <2>DWant DEF DInv, DType, MapPc, WaitPcs, WaitExits
     <2>e WP!EndCall(r)
-      BY <2>1, <1>g, EndDone
+      BY <2>1, <1>g, EndExit DEF MapPc, WaitPcs, WaitExits
     <2>c MHold' = MHold /\ MWpc' = MWpc /\ MCpc' = MCpc
-      BY <2>1, <2>n, <1>g DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+      BY <2>1, <2>n, <1>g DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, WaitPcs, WaitExits
+    <2>wl MapWl = r /\ MapWl' = None
+      BY <1>0, <2>1, <1>g DEF MapWl, WaitExits, DTThr
     <2>s WP!ThreadTest(r)
-      BY <1>g, <1>T1, <2>1, <2>m, <2>c, <2>e, MOpConst, WantSame, Current, BufferedSame DEF WP!ThreadTest, WP!Go, WP!Return, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc
+      BY <2>wl, <1>g, <1>T1, <2>1, <2>m, <2>c, <2>e, MOpConst, WantSame, Current, BufferedSame DEF WP!ThreadTest, WP!Go, WP!Return, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, MapWl, WaitExits, WaitPcs
     <2> QED
-      BY <2>D, <2>s DEF WP!Next, WP!ThreadStep
+      BY <2>D, <2>s DEF WP!Next, WP!ThreadStep, MapWl, WaitExits
   <1>T2 CASE avail >= LenOf(r) /\ r \notin WaitCallers
-    <2>1 rpc' = [rpc EXCEPT ![r] = "lock"] /\ waiters' = waiters - 1 /\ wl' = None /\ buf' = buf /\ pos' = pos /\ avail' = avail /\ written' = written /\ taken' = taken /\ toff' = toff /\ closed' = closed /\ nextByte' = nextByte /\ wpc' = wpc /\ cpc' = cpc /\ want' = want /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ wres' = wres /\ wclosed' = wclosed /\ eofAt' = eofAt /\ permits' = permits /\ parked' = parked /\ bl' = bl
-      BY <1>T2, <1>g, Current DEF ReaderTest, Return, Goto, Shared, ReaderVars, Sync
+    <2>1 rpc' = [rpc EXCEPT ![r] = "wexitlock"] /\ waiters' = waiters /\ wl' = wl /\ buf' = buf /\ pos' = pos /\ avail' = avail /\ written' = written /\ taken' = taken /\ toff' = toff /\ closed' = closed /\ nextByte' = nextByte /\ wpc' = wpc /\ cpc' = cpc /\ want' = want /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ wres' = wres /\ wclosed' = wclosed /\ eofAt' = eofAt /\ permits' = permits /\ parked' = parked /\ bl' = bl
+      BY <1>T2, <1>g, Current DEF ReaderTest, Record, Return, Goto, Shared, ReaderVars, Sync
     <2>m MRpc' = [MRpc EXCEPT ![r] = "lock"]
       BY <1>0, <2>1, <1>g, MapGo DEF DTThr, ReaderStates, MapPc, MRpc
-    <2>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-                                  + (IF "lock" \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-         /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF rpc[r] # "done" THEN 1 ELSE 0)
-                                     + (IF "lock" # "done" THEN 1 ELSE 0)
+    <2>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in WaitPcs THEN 1 ELSE 0)
+                                  + (IF "wexitlock" \in WaitPcs THEN 1 ELSE 0)
+         /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF MapPc(rpc[r]) # "done" THEN 1 ELSE 0)
+                                     + (IF MapPc("wexitlock") # "done" THEN 1 ELSE 0)
          /\ Cardinality(WSet) \in Nat /\ Cardinality(NotDone) \in Nat
-      BY <1>0, <2>1, SetsGo DEF DTThr, ReaderStates
+      BY <1>0, <2>1, SetsGo DEF DTThr, ReaderStates, MapPc, WaitPcs, WaitExits
     <2>DTBuf DTBuf'
       BY <1>0, <2>1, FrDTBuf
     <2>DTSeq DTSeq'
       BY <1>0, <2>1, FrDTSeq
     <2>DTSca DTSca'
-      BY <1>0, <2>1, <1>w DEF DTSca
+      BY <1>0, <2>1, FrDTSca
     <2>DTThr DTThr'
       BY <1>0, <2>1, Extra DEF DTThr, ReaderStates
     <2>DWriter DWriter'
@@ -1371,30 +1509,32 @@ LEMMA SReaderTest == ASSUME Inv, NEW r \in Readers, ReaderTest(r), UNCHANGED spu
     <2>DBuf DBuf'
       BY <1>0, <2>1, FrDBuf
     <2>DWait DWait'
-      BY <1>0, <2>1, <2>n, <1>g DEF DWait
+      BY <1>0, <2>1, <2>n, <1>g DEF DWait, MapPc, WaitPcs, WaitExits
     <2>DHold DHold'
       BY <1>0, <2>1, FrDHold
     <2>DWant DWant'
       BY <1>0, <2>1, <1>g DEF DWant, DTThr
     <2>D DInv'
-      BY <2>DTBuf, <2>DTSeq, <2>DTSca, <2>DTThr, <2>DWriter, <2>DBuf, <2>DWait, <2>DHold, <2>DWant DEF DInv, DType
+      BY <2>DTBuf, <2>DTSeq, <2>DTSca, <2>DTThr, <2>DWriter, <2>DBuf, <2>DWait, <2>DHold, <2>DWant DEF DInv, DType, MapPc, WaitPcs, WaitExits
     <2>c MHold' = MHold /\ MCalls' = MCalls /\ MWpc' = MWpc /\ MCpc' = MCpc
-      BY <2>1, <2>n, <1>g DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+      BY <2>1, <2>n, <1>g DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, WaitPcs, WaitExits
+    <2>wl MapWl = r /\ MapWl' = None
+      BY <1>0, <2>1, <1>g DEF MapWl, WaitExits, DTThr
     <2>s WP!ThreadTest(r)
-      BY <1>g, <1>T2, <2>1, <2>m, <2>c, MOpConst, WantSame, Current, BufferedSame DEF WP!ThreadTest, WP!Go, WP!Return, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc
+      BY <2>wl, <1>g, <1>T2, <2>1, <2>m, <2>c, MOpConst, WantSame, Current, BufferedSame DEF WP!ThreadTest, WP!Go, WP!Return, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, MapWl, WaitExits, WaitPcs
     <2> QED
-      BY <2>D, <2>s DEF WP!Next, WP!ThreadStep
+      BY <2>D, <2>s DEF WP!Next, WP!ThreadStep, MapWl, WaitExits
   <1>T3 CASE ~(avail >= LenOf(r))
     <2>1 rpc' = [rpc EXCEPT ![r] = "waitclosed"]  /\ buf' = buf /\ pos' = pos /\ avail' = avail /\ written' = written /\ taken' = taken /\ toff' = toff /\ closed' = closed /\ nextByte' = nextByte /\ wpc' = wpc /\ cpc' = cpc /\ want' = want /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ wres' = wres /\ wclosed' = wclosed /\ eofAt' = eofAt /\ permits' = permits /\ waiters' = waiters /\ parked' = parked /\ wl' = wl /\ bl' = bl
-      BY <1>T3, <1>g, Current DEF ReaderTest, Return, Goto, Shared, ReaderVars, Sync
+      BY <1>T3, <1>g, Current DEF ReaderTest, Record, Return, Goto, Shared, ReaderVars, Sync
     <2>m MRpc' = [MRpc EXCEPT ![r] = "waitclosed"]
       BY <1>0, <2>1, <1>g, MapGo DEF DTThr, ReaderStates, MapPc, MRpc
-    <2>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-                                  + (IF "waitclosed" \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-         /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF rpc[r] # "done" THEN 1 ELSE 0)
-                                     + (IF "waitclosed" # "done" THEN 1 ELSE 0)
+    <2>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in WaitPcs THEN 1 ELSE 0)
+                                  + (IF "waitclosed" \in WaitPcs THEN 1 ELSE 0)
+         /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF MapPc(rpc[r]) # "done" THEN 1 ELSE 0)
+                                     + (IF MapPc("waitclosed") # "done" THEN 1 ELSE 0)
          /\ Cardinality(WSet) \in Nat /\ Cardinality(NotDone) \in Nat
-      BY <1>0, <2>1, SetsGo DEF DTThr, ReaderStates
+      BY <1>0, <2>1, SetsGo DEF DTThr, ReaderStates, MapPc, WaitPcs, WaitExits
     <2>DTBuf DTBuf'
       BY <1>0, <2>1, FrDTBuf
     <2>DTSeq DTSeq'
@@ -1408,19 +1548,21 @@ LEMMA SReaderTest == ASSUME Inv, NEW r \in Readers, ReaderTest(r), UNCHANGED spu
     <2>DBuf DBuf'
       BY <1>0, <2>1, FrDBuf
     <2>DWait DWait'
-      BY <1>0, <2>1, <2>n, <1>g DEF DWait
+      BY <1>0, <2>1, <2>n, <1>g DEF DWait, MapPc, WaitPcs, WaitExits
     <2>DHold DHold'
       BY <1>0, <2>1, FrDHold
     <2>DWant DWant'
       BY <1>0, <2>1, <1>g DEF DWant, DTThr
     <2>D DInv'
-      BY <2>DTBuf, <2>DTSeq, <2>DTSca, <2>DTThr, <2>DWriter, <2>DBuf, <2>DWait, <2>DHold, <2>DWant DEF DInv, DType
+      BY <2>DTBuf, <2>DTSeq, <2>DTSca, <2>DTThr, <2>DWriter, <2>DBuf, <2>DWait, <2>DHold, <2>DWant DEF DInv, DType, MapPc, WaitPcs, WaitExits
     <2>c MHold' = MHold /\ MCalls' = MCalls /\ MWpc' = MWpc /\ MCpc' = MCpc
-      BY <2>1, <2>n, <1>g DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+      BY <2>1, <2>n, <1>g DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, WaitPcs, WaitExits
+    <2>wl MapWl' = MapWl
+      BY <1>0, <2>1, <1>g, MapWlGo DEF DTThr, ReaderStates, WaitExits
     <2>s WP!ThreadTest(r)
-      BY <1>g, <1>T3, <2>1, <2>m, <2>c, MOpConst, WantSame, Current, BufferedSame DEF WP!ThreadTest, WP!Go, WP!Return, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc
+      BY <2>wl, <1>g, <1>T3, <2>1, <2>m, <2>c, MOpConst, WantSame, Current, BufferedSame DEF WP!ThreadTest, WP!Go, WP!Return, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, MapWl, WaitExits, WaitPcs
     <2> QED
-      BY <2>D, <2>s DEF WP!Next, WP!ThreadStep
+      BY <2>D, <2>s DEF WP!Next, WP!ThreadStep, MapWl, WaitExits
   <1> QED
     BY <1>T1, <1>T2, <1>T3
 
@@ -1431,20 +1573,20 @@ LEMMA SReaderWaitClosed == ASSUME Inv, NEW r \in Readers, ReaderWaitClosed(r), U
     BY <1>0 DEF ReaderWaitClosed, DWant, DTThr
   <1>w waiters >= 1
     <2>1 r \in WSet /\ IsFiniteSet(WSet)
-      BY <1>g, FinSub DEF WSet
+      BY <1>g, FinSub DEF WSet, MapPc, WaitPcs, WaitExits
     <2> QED
-      BY <2>1, CardPos, <1>0 DEF DWait
+      BY <2>1, CardPos, <1>0 DEF DWait, MapPc, WaitPcs, WaitExits
   <1>W1 CASE closed /\ r \in WaitCallers
     <2>1 rpc' = [rpc EXCEPT ![r] = "wret"]  /\ buf' = buf /\ pos' = pos /\ avail' = avail /\ written' = written /\ taken' = taken /\ toff' = toff /\ closed' = closed /\ nextByte' = nextByte /\ wpc' = wpc /\ cpc' = cpc /\ want' = want /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ wres' = wres /\ wclosed' = wclosed /\ eofAt' = eofAt /\ permits' = permits /\ waiters' = waiters /\ parked' = parked /\ wl' = wl /\ bl' = bl
-      BY <1>W1, <1>g, Current DEF ReaderWaitClosed, Return, Goto, Shared, ReaderVars, Sync
+      BY <1>W1, <1>g, Current DEF ReaderWaitClosed, Record, Return, Goto, Shared, ReaderVars, Sync
     <2>m MRpc' = [MRpc EXCEPT ![r] = "wret"]
       BY <1>0, <2>1, <1>g, MapGo DEF DTThr, ReaderStates, MapPc, MRpc
-    <2>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-                                  + (IF "wret" \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-         /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF rpc[r] # "done" THEN 1 ELSE 0)
-                                     + (IF "wret" # "done" THEN 1 ELSE 0)
+    <2>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in WaitPcs THEN 1 ELSE 0)
+                                  + (IF "wret" \in WaitPcs THEN 1 ELSE 0)
+         /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF MapPc(rpc[r]) # "done" THEN 1 ELSE 0)
+                                     + (IF MapPc("wret") # "done" THEN 1 ELSE 0)
          /\ Cardinality(WSet) \in Nat /\ Cardinality(NotDone) \in Nat
-      BY <1>0, <2>1, SetsGo DEF DTThr, ReaderStates
+      BY <1>0, <2>1, SetsGo DEF DTThr, ReaderStates, MapPc, WaitPcs, WaitExits
     <2>DTBuf DTBuf'
       BY <1>0, <2>1, FrDTBuf
     <2>DTSeq DTSeq'
@@ -1458,67 +1600,32 @@ LEMMA SReaderWaitClosed == ASSUME Inv, NEW r \in Readers, ReaderWaitClosed(r), U
     <2>DBuf DBuf'
       BY <1>0, <2>1, FrDBuf
     <2>DWait DWait'
-      BY <1>0, <2>1, <2>n, <1>g DEF DWait
+      BY <1>0, <2>1, <2>n, <1>g DEF DWait, MapPc, WaitPcs, WaitExits
     <2>DHold DHold'
       BY <1>0, <2>1, FrDHold
     <2>DWant DWant'
       BY <1>0, <2>1, <1>g DEF DWant, DTThr
     <2>D DInv'
-      BY <2>DTBuf, <2>DTSeq, <2>DTSca, <2>DTThr, <2>DWriter, <2>DBuf, <2>DWait, <2>DHold, <2>DWant DEF DInv, DType
+      BY <2>DTBuf, <2>DTSeq, <2>DTSca, <2>DTThr, <2>DWriter, <2>DBuf, <2>DWait, <2>DHold, <2>DWant DEF DInv, DType, MapPc, WaitPcs, WaitExits
     <2>c MHold' = MHold /\ MCalls' = MCalls /\ MWpc' = MWpc /\ MCpc' = MCpc
-      BY <2>1, <2>n, <1>g DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+      BY <2>1, <2>n, <1>g DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, WaitPcs, WaitExits
+    <2>wl MapWl' = MapWl
+      BY <1>0, <2>1, <1>g, MapWlGo DEF DTThr, ReaderStates, WaitExits
     <2>s WP!ThreadWaitClosed(r)
-      BY <1>g, <1>W1, <2>1, <2>m, <2>c, MOpConst, WantSame, Current, BufferedSame DEF WP!ThreadWaitClosed, WP!Go, WP!Return, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc
+      BY <2>wl, <1>g, <1>W1, <2>1, <2>m, <2>c, MOpConst, WantSame, Current, BufferedSame DEF WP!ThreadWaitClosed, WP!Go, WP!Return, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, MapWl, WaitExits, WaitPcs
     <2> QED
-      BY <2>D, <2>s DEF WP!Next, WP!ThreadStep
+      BY <2>D, <2>s DEF WP!Next, WP!ThreadStep, MapWl, WaitExits
   <1>W2 CASE closed /\ r \notin WaitCallers
-    <2>1 rpc' = [rpc EXCEPT ![r] = (IF avail >= 1 THEN "lock" ELSE "ret0")] /\ waiters' = waiters - 1 /\ wl' = None /\ buf' = buf /\ pos' = pos /\ avail' = avail /\ written' = written /\ taken' = taken /\ toff' = toff /\ closed' = closed /\ nextByte' = nextByte /\ wpc' = wpc /\ cpc' = cpc /\ want' = want /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ wres' = wres /\ wclosed' = wclosed /\ eofAt' = eofAt /\ permits' = permits /\ parked' = parked /\ bl' = bl
-      BY <1>W2, <1>g, Current DEF ReaderWaitClosed, Return, Goto, Shared, ReaderVars, Sync
+    <2>1 rpc' = [rpc EXCEPT ![r] = (IF avail >= 1 THEN "wexitlock" ELSE "wexitret0")] /\ waiters' = waiters /\ wl' = wl /\ buf' = buf /\ pos' = pos /\ avail' = avail /\ written' = written /\ taken' = taken /\ toff' = toff /\ closed' = closed /\ nextByte' = nextByte /\ wpc' = wpc /\ cpc' = cpc /\ want' = want /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ wres' = wres /\ wclosed' = wclosed /\ eofAt' = eofAt /\ permits' = permits /\ parked' = parked /\ bl' = bl
+      BY <1>W2, <1>g, Current DEF ReaderWaitClosed, Record, Return, Goto, Shared, ReaderVars, Sync
     <2>m MRpc' = [MRpc EXCEPT ![r] = (IF avail >= 1 THEN "lock" ELSE "ret0")]
       BY <1>0, <2>1, <1>g, MapGo DEF DTThr, ReaderStates, MapPc, MRpc
-    <2>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-                                  + (IF (IF avail >= 1 THEN "lock" ELSE "ret0") \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-         /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF rpc[r] # "done" THEN 1 ELSE 0)
-                                     + (IF (IF avail >= 1 THEN "lock" ELSE "ret0") # "done" THEN 1 ELSE 0)
+    <2>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in WaitPcs THEN 1 ELSE 0)
+                                  + (IF (IF avail >= 1 THEN "wexitlock" ELSE "wexitret0") \in WaitPcs THEN 1 ELSE 0)
+         /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF MapPc(rpc[r]) # "done" THEN 1 ELSE 0)
+                                     + (IF MapPc((IF avail >= 1 THEN "wexitlock" ELSE "wexitret0")) # "done" THEN 1 ELSE 0)
          /\ Cardinality(WSet) \in Nat /\ Cardinality(NotDone) \in Nat
-      BY <1>0, <2>1, SetsGo DEF DTThr, ReaderStates
-    <2>DTBuf DTBuf'
-      BY <1>0, <2>1, FrDTBuf
-    <2>DTSeq DTSeq'
-      BY <1>0, <2>1, FrDTSeq
-    <2>DTSca DTSca'
-      BY <1>0, <2>1, <1>w DEF DTSca
-    <2>DTThr DTThr'
-      BY <1>0, <2>1, Extra DEF DTThr, ReaderStates
-    <2>DWriter DWriter'
-      BY <1>0, <2>1, FrDWriter
-    <2>DBuf DBuf'
-      BY <1>0, <2>1, FrDBuf
-    <2>DWait DWait'
-      BY <1>0, <2>1, <2>n, <1>g DEF DWait
-    <2>DHold DHold'
-      BY <1>0, <2>1, FrDHold
-    <2>DWant DWant'
-      BY <1>0, <2>1, <1>g DEF DWant, DTThr
-    <2>D DInv'
-      BY <2>DTBuf, <2>DTSeq, <2>DTSca, <2>DTThr, <2>DWriter, <2>DBuf, <2>DWait, <2>DHold, <2>DWant DEF DInv, DType
-    <2>c MHold' = MHold /\ MCalls' = MCalls /\ MWpc' = MWpc /\ MCpc' = MCpc
-      BY <2>1, <2>n, <1>g DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
-    <2>s WP!ThreadWaitClosed(r)
-      BY <1>g, <1>W2, <2>1, <2>m, <2>c, MOpConst, WantSame, Current, BufferedSame DEF WP!ThreadWaitClosed, WP!Go, WP!Return, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc
-    <2> QED
-      BY <2>D, <2>s DEF WP!Next, WP!ThreadStep
-  <1>W3 CASE ~closed
-    <2>1 rpc' = [rpc EXCEPT ![r] = "parked"] /\ parked' = parked \cup {r} /\ wl' = None /\ buf' = buf /\ pos' = pos /\ avail' = avail /\ written' = written /\ taken' = taken /\ toff' = toff /\ closed' = closed /\ nextByte' = nextByte /\ wpc' = wpc /\ cpc' = cpc /\ want' = want /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ wres' = wres /\ wclosed' = wclosed /\ eofAt' = eofAt /\ permits' = permits /\ waiters' = waiters /\ bl' = bl
-      BY <1>W3, <1>g, Current DEF ReaderWaitClosed, Return, Goto, Shared, ReaderVars, Sync
-    <2>m MRpc' = [MRpc EXCEPT ![r] = "parked"]
-      BY <1>0, <2>1, <1>g, MapGo DEF DTThr, ReaderStates, MapPc, MRpc
-    <2>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-                                  + (IF "parked" \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-         /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF rpc[r] # "done" THEN 1 ELSE 0)
-                                     + (IF "parked" # "done" THEN 1 ELSE 0)
-         /\ Cardinality(WSet) \in Nat /\ Cardinality(NotDone) \in Nat
-      BY <1>0, <2>1, SetsGo DEF DTThr, ReaderStates
+      BY <1>0, <2>1, SetsGo DEF DTThr, ReaderStates, MapPc, WaitPcs, WaitExits
     <2>DTBuf DTBuf'
       BY <1>0, <2>1, FrDTBuf
     <2>DTSeq DTSeq'
@@ -1532,19 +1639,63 @@ LEMMA SReaderWaitClosed == ASSUME Inv, NEW r \in Readers, ReaderWaitClosed(r), U
     <2>DBuf DBuf'
       BY <1>0, <2>1, FrDBuf
     <2>DWait DWait'
-      BY <1>0, <2>1, <2>n, <1>g DEF DWait
+      BY <1>0, <2>1, <2>n, <1>g DEF DWait, MapPc, WaitPcs, WaitExits
     <2>DHold DHold'
       BY <1>0, <2>1, FrDHold
     <2>DWant DWant'
       BY <1>0, <2>1, <1>g DEF DWant, DTThr
     <2>D DInv'
-      BY <2>DTBuf, <2>DTSeq, <2>DTSca, <2>DTThr, <2>DWriter, <2>DBuf, <2>DWait, <2>DHold, <2>DWant DEF DInv, DType
+      BY <2>DTBuf, <2>DTSeq, <2>DTSca, <2>DTThr, <2>DWriter, <2>DBuf, <2>DWait, <2>DHold, <2>DWant DEF DInv, DType, MapPc, WaitPcs, WaitExits
+    <2>x /\ MapPc((IF avail >= 1 THEN "wexitlock" ELSE "wexitret0")) # "done"
+         /\ MapPc(rpc[r]) # "done"
+      BY <1>g DEF MapPc
     <2>c MHold' = MHold /\ MCalls' = MCalls /\ MWpc' = MWpc /\ MCpc' = MCpc
-      BY <2>1, <2>n, <1>g DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+      BY <2>x, <2>1, <2>n, <1>g DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, WaitPcs, WaitExits
+    <2>wl MapWl = r /\ MapWl' = None
+      BY <1>0, <2>1, <1>g DEF MapWl, WaitExits, DTThr
     <2>s WP!ThreadWaitClosed(r)
-      BY <1>g, <1>W3, <2>1, <2>m, <2>c, MOpConst, WantSame, Current, BufferedSame DEF WP!ThreadWaitClosed, WP!Go, WP!Return, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc
+      BY <2>wl, <1>g, <1>W2, <2>1, <2>m, <2>c, MOpConst, WantSame, Current, BufferedSame DEF WP!ThreadWaitClosed, WP!Go, WP!Return, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, MapWl, WaitExits, WaitPcs
     <2> QED
-      BY <2>D, <2>s DEF WP!Next, WP!ThreadStep
+      BY <2>D, <2>s DEF WP!Next, WP!ThreadStep, MapWl, WaitExits
+  <1>W3 CASE ~closed
+    <2>1 rpc' = [rpc EXCEPT ![r] = "parked"] /\ parked' = parked \cup {r} /\ wl' = None /\ buf' = buf /\ pos' = pos /\ avail' = avail /\ written' = written /\ taken' = taken /\ toff' = toff /\ closed' = closed /\ nextByte' = nextByte /\ wpc' = wpc /\ cpc' = cpc /\ want' = want /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ wres' = wres /\ wclosed' = wclosed /\ eofAt' = eofAt /\ permits' = permits /\ waiters' = waiters /\ bl' = bl
+      BY <1>W3, <1>g, Current DEF ReaderWaitClosed, Record, Return, Goto, Shared, ReaderVars, Sync
+    <2>m MRpc' = [MRpc EXCEPT ![r] = "parked"]
+      BY <1>0, <2>1, <1>g, MapGo DEF DTThr, ReaderStates, MapPc, MRpc
+    <2>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in WaitPcs THEN 1 ELSE 0)
+                                  + (IF "parked" \in WaitPcs THEN 1 ELSE 0)
+         /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF MapPc(rpc[r]) # "done" THEN 1 ELSE 0)
+                                     + (IF MapPc("parked") # "done" THEN 1 ELSE 0)
+         /\ Cardinality(WSet) \in Nat /\ Cardinality(NotDone) \in Nat
+      BY <1>0, <2>1, SetsGo DEF DTThr, ReaderStates, MapPc, WaitPcs, WaitExits
+    <2>DTBuf DTBuf'
+      BY <1>0, <2>1, FrDTBuf
+    <2>DTSeq DTSeq'
+      BY <1>0, <2>1, FrDTSeq
+    <2>DTSca DTSca'
+      BY <1>0, <2>1, FrDTSca
+    <2>DTThr DTThr'
+      BY <1>0, <2>1, Extra DEF DTThr, ReaderStates
+    <2>DWriter DWriter'
+      BY <1>0, <2>1, FrDWriter
+    <2>DBuf DBuf'
+      BY <1>0, <2>1, FrDBuf
+    <2>DWait DWait'
+      BY <1>0, <2>1, <2>n, <1>g DEF DWait, MapPc, WaitPcs, WaitExits
+    <2>DHold DHold'
+      BY <1>0, <2>1, FrDHold
+    <2>DWant DWant'
+      BY <1>0, <2>1, <1>g DEF DWant, DTThr
+    <2>D DInv'
+      BY <2>DTBuf, <2>DTSeq, <2>DTSca, <2>DTThr, <2>DWriter, <2>DBuf, <2>DWait, <2>DHold, <2>DWant DEF DInv, DType, MapPc, WaitPcs, WaitExits
+    <2>c MHold' = MHold /\ MCalls' = MCalls /\ MWpc' = MWpc /\ MCpc' = MCpc
+      BY <2>1, <2>n, <1>g DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, WaitPcs, WaitExits
+    <2>wl MapWl = r /\ MapWl' = None
+      BY <1>0, <2>1, <1>g DEF MapWl, WaitExits, DTThr
+    <2>s WP!ThreadWaitClosed(r)
+      BY <2>wl, <1>g, <1>W3, <2>1, <2>m, <2>c, MOpConst, WantSame, Current, BufferedSame DEF WP!ThreadWaitClosed, WP!Go, WP!Return, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, MapWl, WaitExits, WaitPcs
+    <2> QED
+      BY <2>D, <2>s DEF WP!Next, WP!ThreadStep, MapWl, WaitExits
   <1> QED
     BY <1>W1, <1>W2, <1>W3
 
@@ -1563,12 +1714,12 @@ LEMMA SReaderDecide == ASSUME Inv, NEW r \in Readers, ReaderDecide(r), UNCHANGED
       BY <1>D1, <1>g, Current DEF ReaderDecide, Return, Goto, Shared, ReaderVars, Sync
     <2>m MRpc' = [MRpc EXCEPT ![r] = "copy"]
       BY <1>0, <2>1, <1>g, MapGo DEF DTThr, ReaderStates, MapPc, MRpc
-    <2>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-                                  + (IF "copy" \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-         /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF rpc[r] # "done" THEN 1 ELSE 0)
-                                     + (IF "copy" # "done" THEN 1 ELSE 0)
+    <2>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in WaitPcs THEN 1 ELSE 0)
+                                  + (IF "copy" \in WaitPcs THEN 1 ELSE 0)
+         /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF MapPc(rpc[r]) # "done" THEN 1 ELSE 0)
+                                     + (IF MapPc("copy") # "done" THEN 1 ELSE 0)
          /\ Cardinality(WSet) \in Nat /\ Cardinality(NotDone) \in Nat
-      BY <1>0, <2>1, SetsGo DEF DTThr, ReaderStates
+      BY <1>0, <2>1, SetsGo DEF DTThr, ReaderStates, MapPc, WaitPcs, WaitExits
     <2>DTBuf DTBuf'
       BY <1>0, <2>1, FrDTBuf
     <2>DTSeq DTSeq'
@@ -1582,30 +1733,32 @@ LEMMA SReaderDecide == ASSUME Inv, NEW r \in Readers, ReaderDecide(r), UNCHANGED
     <2>DBuf DBuf'
       BY <1>0, <2>1, FrDBuf
     <2>DWait DWait'
-      BY <1>0, <2>1, <2>n, <1>g DEF DWait
+      BY <1>0, <2>1, <2>n, <1>g DEF DWait, MapPc, WaitPcs, WaitExits
     <2>DHold DHold'
       BY <1>0, <2>1, FrDHold
     <2>DWant DWant'
       BY <1>0, <2>1, <1>g DEF DWant, DTThr
     <2>D DInv'
-      BY <2>DTBuf, <2>DTSeq, <2>DTSca, <2>DTThr, <2>DWriter, <2>DBuf, <2>DWait, <2>DHold, <2>DWant DEF DInv, DType
+      BY <2>DTBuf, <2>DTSeq, <2>DTSca, <2>DTThr, <2>DWriter, <2>DBuf, <2>DWait, <2>DHold, <2>DWant DEF DInv, DType, MapPc, WaitPcs, WaitExits
     <2>c MHold' = MHold /\ MCalls' = MCalls /\ MWpc' = MWpc /\ MCpc' = MCpc
-      BY <2>1, <2>n, <1>g DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+      BY <2>1, <2>n, <1>g DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, WaitPcs, WaitExits
+    <2>wl MapWl' = MapWl
+      BY <1>0, <2>1, <1>g, MapWlGo DEF DTThr, ReaderStates, WaitExits
     <2>s WP!ThreadDecide(r)
-      BY <1>g, <1>D1, <2>1, <2>m, <2>c, MOpConst, WantSame, Current, BufferedSame DEF WP!ThreadDecide, WP!Min, Min, WP!Go, WP!Return, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc
+      BY <2>wl, <1>g, <1>D1, <2>1, <2>m, <2>c, MOpConst, WantSame, Current, BufferedSame DEF WP!ThreadDecide, WP!Min, Min, WP!Go, WP!Return, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, MapWl, WaitExits, WaitPcs
     <2> QED
-      BY <2>D, <2>s DEF WP!Next, WP!ThreadStep
+      BY <2>D, <2>s DEF WP!Next, WP!ThreadStep, MapWl, WaitExits
   <1>D2 CASE ~(avail >= LenOf(r) \/ (closed /\ avail > 0))
     <2>1 rpc' = [rpc EXCEPT ![r] = "start"] /\ bl' = None /\ buf' = buf /\ pos' = pos /\ avail' = avail /\ written' = written /\ taken' = taken /\ toff' = toff /\ closed' = closed /\ nextByte' = nextByte /\ wpc' = wpc /\ cpc' = cpc /\ want' = want /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ wres' = wres /\ wclosed' = wclosed /\ eofAt' = eofAt /\ permits' = permits /\ waiters' = waiters /\ parked' = parked /\ wl' = wl
       BY <1>D2, <1>g, Current DEF ReaderDecide, Return, Goto, Shared, ReaderVars, Sync
     <2>m MRpc' = [MRpc EXCEPT ![r] = "start"]
       BY <1>0, <2>1, <1>g, MapGo DEF DTThr, ReaderStates, MapPc, MRpc
-    <2>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-                                  + (IF "start" \in {"test", "waitclosed", "parked", "woken", "wret"} THEN 1 ELSE 0)
-         /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF rpc[r] # "done" THEN 1 ELSE 0)
-                                     + (IF "start" # "done" THEN 1 ELSE 0)
+    <2>n /\ Cardinality(WSet') = Cardinality(WSet) - (IF rpc[r] \in WaitPcs THEN 1 ELSE 0)
+                                  + (IF "start" \in WaitPcs THEN 1 ELSE 0)
+         /\ Cardinality(NotDone') = Cardinality(NotDone) - (IF MapPc(rpc[r]) # "done" THEN 1 ELSE 0)
+                                     + (IF MapPc("start") # "done" THEN 1 ELSE 0)
          /\ Cardinality(WSet) \in Nat /\ Cardinality(NotDone) \in Nat
-      BY <1>0, <2>1, SetsGo DEF DTThr, ReaderStates
+      BY <1>0, <2>1, SetsGo DEF DTThr, ReaderStates, MapPc, WaitPcs, WaitExits
     <2>DTBuf DTBuf'
       BY <1>0, <2>1, FrDTBuf
     <2>DTSeq DTSeq'
@@ -1622,19 +1775,21 @@ LEMMA SReaderDecide == ASSUME Inv, NEW r \in Readers, ReaderDecide(r), UNCHANGED
       <3> QED
         BY <1>0, <2>1, <3>1 DEF DBuf
     <2>DWait DWait'
-      BY <1>0, <2>1, <2>n, <1>g DEF DWait
+      BY <1>0, <2>1, <2>n, <1>g DEF DWait, MapPc, WaitPcs, WaitExits
     <2>DHold DHold'
       BY <1>0, <2>1, <1>z, <1>g DEF DHold
     <2>DWant DWant'
       BY <1>0, <2>1, <1>g DEF DWant, DTThr
     <2>D DInv'
-      BY <2>DTBuf, <2>DTSeq, <2>DTSca, <2>DTThr, <2>DWriter, <2>DBuf, <2>DWait, <2>DHold, <2>DWant DEF DInv, DType
+      BY <2>DTBuf, <2>DTSeq, <2>DTSca, <2>DTThr, <2>DWriter, <2>DBuf, <2>DWait, <2>DHold, <2>DWant DEF DInv, DType, MapPc, WaitPcs, WaitExits
     <2>c MHold' = MHold /\ MCalls' = MCalls /\ MWpc' = MWpc /\ MCpc' = MCpc
-      BY <2>1, <2>n, <1>g DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+      BY <2>1, <2>n, <1>g DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, WaitPcs, WaitExits
+    <2>wl MapWl' = MapWl
+      BY <1>0, <2>1, <1>g, MapWlGo DEF DTThr, ReaderStates, WaitExits
     <2>s WP!ThreadDecide(r)
-      BY <1>g, <1>D2, <2>1, <2>m, <2>c, MOpConst, WantSame, Current, BufferedSame DEF WP!ThreadDecide, WP!Min, Min, WP!Go, WP!Return, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc
+      BY <2>wl, <1>g, <1>D2, <2>1, <2>m, <2>c, MOpConst, WantSame, Current, BufferedSame DEF WP!ThreadDecide, WP!Min, Min, WP!Go, WP!Return, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, MapWl, WaitExits, WaitPcs
     <2> QED
-      BY <2>D, <2>s DEF WP!Next, WP!ThreadStep
+      BY <2>D, <2>s DEF WP!Next, WP!ThreadStep, MapWl, WaitExits
   <1> QED
     BY <1>D1, <1>D2
 
@@ -1689,8 +1844,11 @@ LEMMA SReaderCopy == ASSUME Inv, NEW r \in Readers, ReaderCopy(r), UNCHANGED spu
     BY <1>f
   <1>m MRpc' = [MRpc EXCEPT ![r] = IF left[r] = k THEN "finish" ELSE "copy"]
     BY <1>0, <1>1, MapGo DEF DTThr, ReaderStates, MapPc
+  <1>x /\ (IF left[r] = k THEN "finish" ELSE "copy") \notin WaitPcs /\ rpc[r] \notin WaitPcs
+       /\ MapPc((IF left[r] = k THEN "finish" ELSE "copy")) # "done" /\ MapPc(rpc[r]) # "done"
+    BY <1>g DEF WaitPcs, WaitExits, MapPc
   <1>n /\ Cardinality(WSet') = Cardinality(WSet) /\ Cardinality(NotDone') = Cardinality(NotDone)
-    BY <1>0, <1>1, <1>g, SetsGo DEF DTThr, ReaderStates
+    BY <1>0, <1>1, <1>g, <1>x, SetsGo DEF DTThr, ReaderStates
   <1>hr hold'[r] = hold[r] \o piece /\ bl' = r /\ (\A x \in Readers \ {r} : hold'[x] = hold[x])
     BY <1>f, <1>g, <1>0 DEF DTThr
   <1>L1 InLen' = InLen + k
@@ -1716,7 +1874,7 @@ LEMMA SReaderCopy == ASSUME Inv, NEW r \in Readers, ReaderCopy(r), UNCHANGED spu
     <2> QED
       BY <2>1, <2>2, <2>3, <1>1, <1>0 DEF DTThr
   <1>DWait DWait'
-    BY <1>0, <1>1, <1>n DEF DWait
+    BY <1>0, <1>1, <1>n DEF DWait, MapPc, WaitPcs, WaitExits
   <1>DHold DHold'
     BY <1>0, <1>hr, <1>g DEF DHold
   <1>DWant DWant'
@@ -1789,7 +1947,7 @@ LEMMA SReaderCopy == ASSUME Inv, NEW r \in Readers, ReaderCopy(r), UNCHANGED spu
         <4> QED
           BY <4>1, <4>2, <1>e
       <3> QED
-        BY <1>DTSeq, <1>DTSca, <1>DWriter, <1>DTThr, <1>DWait, <1>DHold, <1>DWant, <3>DTBuf, <3>DBuf DEF DInv, DType
+        BY <1>DTSeq, <1>DTSca, <1>DWriter, <1>DTThr, <1>DWait, <1>DHold, <1>DWant, <3>DTBuf, <3>DBuf DEF DInv, DType, MapPc, WaitPcs, WaitExits
     <2>B CASE pos + k # Len(e)
       <3>1 buf' = buf /\ pos' = pos + k
         BY <2>B, <1>f
@@ -1809,13 +1967,15 @@ LEMMA SReaderCopy == ASSUME Inv, NEW r \in Readers, ReaderCopy(r), UNCHANGED spu
           <5> QED
             BY <5>1, <5>2, <5>3 DEF DBuf
       <3> QED
-        BY <1>DTSeq, <1>DTSca, <1>DWriter, <1>DTThr, <1>DWait, <1>DHold, <1>DWant, <3>DTBuf, <3>DBuf DEF DInv, DType
+        BY <1>DTSeq, <1>DTSca, <1>DWriter, <1>DTThr, <1>DWait, <1>DHold, <1>DWant, <3>DTBuf, <3>DBuf DEF DInv, DType, MapPc, WaitPcs, WaitExits
     <2> QED
       BY <2>A, <2>B
   <1>c MWpc' = MWpc /\ MCpc' = MCpc
-    BY <1>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone
+    BY <1>1 DEF MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, WaitPcs, WaitExits
   <1>cc MCalls' = MCalls
-    BY <1>1, <1>n DEF MCalls
+    BY <1>1, <1>n DEF MCalls, MapPc, WaitPcs, WaitExits
+  <1>wl MapWl' = MapWl
+    BY <1>0, <1>1, <1>g, MapWlGo DEF DTThr, ReaderStates, WaitExits
   <1>s WP!ThreadCopy(r)
     <2>1 ~(WP!Buffered = 0)
       BY <1>h, BufferedSame
@@ -1834,9 +1994,9 @@ LEMMA SReaderCopy == ASSUME Inv, NEW r \in Readers, ReaderCopy(r), UNCHANGED spu
       <3> QED
         BY <3>1, <3>2, <3>3, <3>4, <1>m
     <2> QED
-      BY <1>g, <2>1, <2>2, <1>1, <1>c, <1>cc, MOpConst DEF WP!ThreadCopy, WP!Go, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc
+      BY <1>wl, <1>g, <2>1, <2>2, <1>1, <1>c, <1>cc, MOpConst DEF WP!ThreadCopy, WP!Go, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, MapWl, WaitExits, WaitPcs
   <1> QED
-    BY <1>D, <1>s DEF WP!Next, WP!ThreadStep
+    BY <1>D, <1>s DEF WP!Next, WP!ThreadStep, MapWl, WaitExits
 
 LEMMA SReaderFinish == ASSUME Inv, NEW r \in Readers, ReaderFinish(r), UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
   <1>0 DTBuf /\ DTSeq /\ DTSca /\ DTThr /\ DWriter /\ DBuf /\ DWait /\ DHold /\ DWant
@@ -1861,7 +2021,7 @@ LEMMA SReaderFinish == ASSUME Inv, NEW r \in Readers, ReaderFinish(r), UNCHANGED
   <1>m MRpc' = [MRpc EXCEPT ![r] = "start"]
     BY <1>0, <1>1, MapGo DEF DTThr, ReaderStates, MapPc
   <1>n /\ Cardinality(WSet') = Cardinality(WSet)
-    BY <1>0, <1>1, <1>g, SetsGo DEF DTThr, ReaderStates
+    BY <1>0, <1>1, <1>g, SetsGo DEF DTThr, ReaderStates, MapPc, WaitPcs, WaitExits
   <1>DTBuf DTBuf'
     BY <1>0, <1>1, FrDTBuf
   <1>DTSeq DTSeq'
@@ -1878,13 +2038,13 @@ LEMMA SReaderFinish == ASSUME Inv, NEW r \in Readers, ReaderFinish(r), UNCHANGED
     <2> QED
       BY <1>0, <1>1, <1>t, <2>1 DEF DBuf
   <1>DWait DWait'
-    BY <1>0, <1>1, <1>n DEF DWait
+    BY <1>0, <1>1, <1>n DEF DWait, MapPc, WaitPcs, WaitExits
   <1>DHold DHold'
     BY <1>0, <1>1, <1>g DEF DHold, DTThr
   <1>DWant DWant'
     BY <1>0, <1>1, <1>g DEF DWant, DTThr
   <1>D DInv'
-    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType
+    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType, MapPc, WaitPcs, WaitExits
   <1>e WP!EndCall(r)
     <2>0 Len(written) \in Nat /\ Len(taken) \in Nat
       BY AbsFacts
@@ -1892,19 +2052,21 @@ LEMMA SReaderFinish == ASSUME Inv, NEW r \in Readers, ReaderFinish(r), UNCHANGED
       BY <1>t
     <2>1 Len(taken') <= Bytes
       BY <2>0, <2>1a, <1>h, SBAssump
-    <2>2 rpc[r] # "done" /\ rpc' = [rpc EXCEPT ![r] = "start"]
-      BY <1>g, <1>1
+    <2>2 MapPc(rpc[r]) # "done" /\ rpc' = [rpc EXCEPT ![r] = "start"]
+      BY <1>g, <1>1 DEF MapPc
     <2>3 Len(hold[r]) \in Nat /\ Len(hold[r]) >= 1
       BY <1>h
     <2> QED
-      BY <2>1, <2>1a, <2>2, <2>3, EndNext
+      BY <2>1, <2>1a, <2>2, <2>3, EndNext DEF MapPc, WaitPcs, WaitExits
   <1>c /\ MHold' = [MHold EXCEPT ![r] = 0] /\ MWpc' = MWpc /\ MCpc' = MCpc
        /\ Len(taken') = Len(taken) + MHold[r]
     BY <1>1, <1>t, <1>0, EmptySeq DEF MHold, MWpc, MCpc, DTThr
+  <1>wl MapWl' = MapWl
+    BY <1>0, <1>1, <1>g, MapWlGo DEF DTThr, ReaderStates, WaitExits
   <1>s WP!ThreadFinish(r)
-    BY <1>g, <1>1, <1>c, <1>e, <1>m, <1>h, MOpConst DEF WP!ThreadFinish, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc
+    BY <1>wl, <1>g, <1>1, <1>c, <1>e, <1>m, <1>h, MOpConst DEF WP!ThreadFinish, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, MapWl, WaitExits, WaitPcs
   <1> QED
-    BY <1>D, <1>s DEF WP!Next, WP!ThreadStep
+    BY <1>D, <1>s DEF WP!Next, WP!ThreadStep, MapWl, WaitExits
 
 LEMMA SReaderAcquire == ASSUME Inv, NEW r \in Readers, ReaderAcquire(r), UNCHANGED spurious PROVE DInv' /\ [WP!Next]_WP!vars
   \* not possible with Protocol = "condition": no thread is in "acquire"
@@ -1919,11 +2081,11 @@ LEMMA SSpuriousWake == ASSUME Inv, NEW r \in Readers, SpuriousWake(r) PROVE DInv
        /\ buf' = buf /\ pos' = pos /\ avail' = avail /\ written' = written /\ taken' = taken /\ toff' = toff /\ closed' = closed /\ nextByte' = nextByte /\ wpc' = wpc /\ cpc' = cpc /\ want' = want /\ cur' = cur /\ hold' = hold /\ left' = left /\ reads' = reads /\ wres' = wres /\ wclosed' = wclosed /\ eofAt' = eofAt /\ permits' = permits /\ waiters' = waiters /\ wl' = wl /\ bl' = bl
     BY DEF SpuriousWake, Goto, Shared
   <1>p rpc[r] = "parked"
-    BY <1>1 DEF Inv, WP!SafeInv, WP!ParkedInv, MapPc
+    BY <1>1 DEF Inv, WP!SafeInv, WP!ParkedInv, MapPc, MapWl, WaitExits
   <1>w WSet' = WSet
-    BY <1>0, <1>1, <1>p DEF WSet, DTThr
+    BY <1>0, <1>1, <1>p DEF WSet, DTThr, MapPc, WaitPcs, WaitExits
   <1>q NotDone' = NotDone
-    BY <1>0, <1>1, <1>p DEF NotDone, DTThr
+    BY <1>0, <1>1, <1>p DEF NotDone, DTThr, MapPc, WaitPcs, WaitExits
   <1>DTBuf DTBuf'
     BY <1>0, <1>1, FrDTBuf
   <1>DTSeq DTSeq'
@@ -1937,20 +2099,22 @@ LEMMA SSpuriousWake == ASSUME Inv, NEW r \in Readers, SpuriousWake(r) PROVE DInv
   <1>DBuf DBuf'
     BY <1>0, <1>1, FrDBuf
   <1>DWait DWait'
-    BY <1>0, <1>1, <1>w DEF DWait
+    BY <1>0, <1>1, <1>w DEF DWait, MapPc, WaitPcs, WaitExits
   <1>DHold DHold'
     BY <1>0, <1>1, FrDHold
   <1>DWant DWant'
     BY <1>0, <1>1, <1>p DEF DWant, DTThr
   <1>D DInv'
-    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType
+    BY <1>DTBuf, <1>DTSeq, <1>DTSca, <1>DTThr, <1>DWriter, <1>DBuf, <1>DWait, <1>DHold, <1>DWant DEF DInv, DType, MapPc, WaitPcs, WaitExits
   <1>c /\ MRpc' = [MRpc EXCEPT ![r] = "woken"] /\ MHold' = MHold /\ MWpc' = MWpc /\ MCpc' = MCpc
        /\ MCalls' = MCalls
-    BY <1>0, <1>1, <1>q DEF MRpc, MHold, MWpc, MCpc, MCalls, MapPc, DTThr
+    BY <1>0, <1>1, <1>q DEF MRpc, MHold, MWpc, MCpc, MCalls, MapPc, DTThr, WaitPcs, WaitExits
+  <1>wl MapWl' = MapWl
+    BY <1>0, <1>1, <1>p, MapWlGo DEF DTThr, ReaderStates, WaitExits
   <1>s WP!SpuriousWake(r)
-    BY <1>1, <1>p, <1>c, MOpConst DEF WP!SpuriousWake, WP!Go, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc
+    BY <1>wl, <1>1, <1>p, <1>c, MOpConst DEF WP!SpuriousWake, WP!Go, MRpc, MHold, MOp, MWpc, MCpc, MCalls, NotDone, MapPc, MapWl, WaitExits, WaitPcs
   <1> QED
-    BY <1>D, <1>s DEF WP!Next
+    BY <1>D, <1>s DEF WP!Next, MapWl, WaitExits
 
 \* every step of StreamBuffer.tla keeps DInv and is a step of the abstraction or stutters
 LEMMA Step == Inv /\ [Next]_vars => DInv' /\ [WP!Next]_WP!vars
@@ -1970,12 +2134,12 @@ LEMMA Step == Inv /\ [Next]_vars => DInv' /\ [WP!Next]_WP!vars
     <2> PICK r \in Readers : ReaderStep(r)
       BY <1>3
     <2> QED
-      BY SReaderLock, SReaderInc, SReaderWaitLock, SReaderRet0, SReaderEof, SReaderWaitReturn, SReaderStart, SReaderFastClosed, SReaderReread, SReaderTest, SReaderWaitClosed, SReaderDecide, SReaderCopy, SReaderFinish, SReaderAcquire DEF ReaderStep
+      BY SReaderLock, SReaderInc, SReaderWaitLock, SReaderRet0, SReaderEof, SReaderWaitReturn, SReaderWaitExit, SReaderStart, SReaderFastClosed, SReaderReread, SReaderTest, SReaderWaitClosed, SReaderDecide, SReaderCopy, SReaderFinish, SReaderAcquire DEF ReaderStep
   <1>4 CASE UNCHANGED vars
     <2>1 DInv'
-      BY <1>4 DEF vars, DInv, DType, DTBuf, DTSeq, DTSca, DTThr, DWriter, DBuf, DWait, DHold, DWant, InLen, WSet, NotDone, DTBuf, DTSeq, DTSca, DTThr, Inv
+      BY <1>4 DEF vars, DInv, DType, DTBuf, DTSeq, DTSca, DTThr, DWriter, DBuf, DWait, DHold, DWant, InLen, WSet, NotDone, DTBuf, DTSeq, DTSca, DTThr, Inv, MapPc, WaitPcs, WaitExits
     <2>2 WP!vars' = WP!vars
-      BY <1>4 DEF vars, WP!vars, MapPc, MapSig, NotDone
+      BY <1>4 DEF vars, WP!vars, MapPc, MapSig, NotDone, MapWl, WaitExits, WaitPcs
     <2> QED
       BY <2>1, <2>2
   <1>5 CASE \E r \in Readers : SpuriousWake(r)
@@ -1996,5 +2160,5 @@ THEOREM Refinement == Spec => WP!CSpec
   <1>2 Inv /\ [Next]_vars => [WP!Next]_WP!vars
     BY Step
   <1> QED
-    BY <1>1, <1>2, InitW, PTL DEF Spec, WP!CSpec
+    BY <1>1, <1>2, InitW, PTL DEF Spec, WP!CSpec, MapWl, WaitExits
 =============================================================================

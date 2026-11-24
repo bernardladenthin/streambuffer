@@ -34,7 +34,8 @@
 #   GraphCheck's -Xmx), GRAPHCHECK_REFERENCE (1: run graphcheck.py too and fail unless both print
 #   the same; for small scenarios, it needs about 700 bytes per product state), GRAPHMIN_CACHE (1:
 #   keep graphmin.py's module per graph file and take it again for the same graph, arguments and
-#   graphmin.py, in $WORK/graphmin-cache).
+#   graphmin.py, in $WORK/graphmin-cache), PRODUCT_SPURIOUS (the product's budget of spurious
+#   wake-ups, default 0).
 set -euo pipefail
 name="$1" bytes="$2" chunk="$3" readlen="$4" nbyte="$5" nrecord="$6" nwait="$7" close="$8"
 controls="${9:-}"
@@ -119,6 +120,11 @@ product() {  # product <label> <graph> <model dir> [sed for the cfg]: TLC's dump
     fi
   fi
   sed 's/^/  /' "$d/graphmin.log"
+  # the product without spurious wake-ups (PRODUCT_SPURIOUS, default 0): JPF's Condition.await()
+  # returns only after a signal, and a word accepted without one is accepted with any budget (the
+  # runs are a subset); about a quarter of the states (S1A 24,217 instead of 94,555)
+  sed -i "s/^    Spurious = [0-9]*/    Spurious = ${PRODUCT_SPURIOUS:-0}/" "$d/Graph_$name.cfg" || return 2
+  grep -q "^    Spurious = ${PRODUCT_SPURIOUS:-0}$" "$d/Graph_$name.cfg" || { echo "  no Spurious in the cfg"; return 2; }
   if [ -n "${4:-}" ]; then sed -i "$4" "$d/Graph_$name.cfg" || return 2; fi
   local s dump="$d/product.dot" zpid=""
   s=$(date +%s)

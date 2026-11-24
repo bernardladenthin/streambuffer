@@ -53,6 +53,10 @@ models=(
   "Writers2WaitAndRead2|Model checking completed. No error has been found."
   "Writers2Reached2|Error: Invariant NoTwoWritersSignalling is violated."
   "Closers2Reached2|Error: Invariant NoTwoClosersSignalling is violated."
+  # a word of A18's S6A automaton, accepted without spurious wake-ups since the finally block of
+  # the wait is a step of its own (the trace's TraceNotDone violated: every line consumed; the
+  # model before ReaderWaitExit rejected it at line 40)
+  "TraceSignalBeforeExit@TraceSignalBeforeExit|Error: Invariant TraceNotDone is violated."
   # model@module: threads that call forever; fairness per process, no lock fairness
   "WaitForever2@StreamBufferWaitForever|Model checking completed. No error has been found."
   "WaitForever3@StreamBufferWaitForever|Model checking completed. No error has been found."

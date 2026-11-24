@@ -124,8 +124,8 @@ BufBytes == IF buf = <<>> THEN <<>>
 Got(r) == Flat(reads[r])
 
 ReaderStates == {"start", "fastclosed", "reread", "acquire", "lockwait", "inc", "test",
-                 "waitclosed", "parked", "woken", "wret", "lock", "decide", "copy", "finish",
-                 "ret0", "eof", "done", "nsee"}
+                 "waitclosed", "parked", "woken", "wret", "wexit", "wexitlock", "wexitret0",
+                 "lock", "decide", "copy", "finish", "ret0", "eof", "done", "nsee"}
 
 TypeOK ==
     /\ buf \in Seq(Seq(1..Bytes)) /\ \A i \in 1..Len(buf) : buf[i] # <<>>
@@ -261,10 +261,11 @@ Goto(r, s) == rpc' = [rpc EXCEPT ![r] = s]
 Shared == <<buf, pos, avail, written, taken, toff, closed, nextByte, wpc, cpc>>
 
 (* waitForAtLeast returns avail to w; the snapshot also notes streamClosed. *)
-Return(w) ==
+Record(w) ==
     /\ wres' = [wres EXCEPT ![w] = avail]
     /\ wclosed' = [wclosed EXCEPT ![w] = closed]
-    /\ Goto(w, "done")
+
+Return(w) == Record(w) /\ Goto(w, "done")
 
 (* What the current wait waits for: the whole read (AtomicRead), else the  *)
 (* first byte (readSingleByte) and then the rest (waitForAtLeast(missing)). *)
@@ -328,25 +329,26 @@ ReaderInc(r) ==
 (* The loop of awaitAtLeast reads availableBytes, and only if that is too few, then           *)
 (* streamClosed: two steps, as in the fast path (a write needs no waitLock, so it can commit    *)
 (* between them; its signal waits for waitLock, so a park after it is woken all the same).     *)
+(* Leaving the loop is a step of its own: the finally block               *)
+(* (waitingReaders.decrementAndGet(), unlock) comes after the return value  *)
+(* is taken, as ReaderWaitExit (A18: a signal read in between counts the    *)
+(* thread still, and the model needed a spurious wake-up for what that      *)
+(* signal wakes).                                                           *)
 ReaderTest(r) ==
     /\ rpc[r] = "test" /\ wl = r
     /\ IF avail >= want[r]
           THEN IF r \in WaitCallers
                   \* CheckedReturn: enough bytes, return the count just checked
                   THEN IF CheckedReturn
-                          THEN /\ Return(r)
-                               /\ waiters' = waiters - 1
-                               /\ wl' = None
-                               /\ UNCHANGED parked
+                          THEN /\ Record(r)
+                               /\ Goto(r, "wexit")
                           ELSE /\ Goto(r, "wret")
-                               /\ UNCHANGED <<waiters, parked, wl, wres, wclosed>>
-                  ELSE /\ waiters' = waiters - 1
-                       /\ Goto(r, "lock")
-                       /\ wl' = None
-                       /\ UNCHANGED <<parked, wres, wclosed>>
+                               /\ UNCHANGED <<wres, wclosed>>
+                  ELSE /\ Goto(r, "wexitlock")
+                       /\ UNCHANGED <<wres, wclosed>>
           ELSE /\ Goto(r, "waitclosed")
-               /\ UNCHANGED <<waiters, parked, wl, wres, wclosed>>
-    /\ UNCHANGED <<Shared, want, cur, hold, left, reads, eofAt, permits, bl>>
+               /\ UNCHANGED <<wres, wclosed>>
+    /\ UNCHANGED <<Shared, want, cur, hold, left, reads, eofAt, permits, waiters, parked, wl, bl>>
 
 (* Too few seen: streamClosed. Closed: a wait returns availableBytes read again, a read goes on *)
 (* by it; open: await.                                                                         *)
@@ -356,24 +358,36 @@ ReaderWaitClosed(r) ==
           THEN IF r \in WaitCallers
                   THEN /\ Goto(r, "wret")
                        /\ UNCHANGED <<waiters, parked, wl, wres, wclosed>>
-                  ELSE /\ waiters' = waiters - 1
-                       /\ Goto(r, IF avail >= 1 THEN "lock" ELSE "ret0")
-                       /\ wl' = None
-                       /\ UNCHANGED <<parked, wres, wclosed>>
+                  ELSE /\ Goto(r, IF avail >= 1 THEN "wexitlock" ELSE "wexitret0")
+                       /\ UNCHANGED <<waiters, parked, wl, wres, wclosed>>
           ELSE /\ parked' = parked \cup {r}
                /\ Goto(r, "parked")
                /\ wl' = None
                /\ UNCHANGED <<waiters, wres, wclosed>>
     /\ UNCHANGED <<Shared, want, cur, hold, left, reads, eofAt, permits, bl>>
 
-(* "condition": return availableBytes, still under waitLock, then the      *)
-(* finally block (waitingReaders.decrementAndGet(), unlock).               *)
+(* "condition": return availableBytes, still under waitLock; the finally    *)
+(* block follows (ReaderWaitExit).                                          *)
 ReaderWaitReturn(r) ==
     /\ rpc[r] = "wret" /\ wl = r
-    /\ Return(r)
+    /\ Record(r)
+    /\ Goto(r, "wexit")
+    /\ UNCHANGED <<Shared, want, cur, hold, left, reads, eofAt, permits, waiters, parked, wl, bl>>
+
+(* "condition": the finally block of awaitAtLeast,                        *)
+(* waitingReaders.decrementAndGet() and waitLock.unlock(), one step (a     *)
+(* write's signal reads the count without the lock but takes the lock      *)
+(* before it signals). Then a waitForAtLeast caller is done, a read goes   *)
+(* on: wexitlock to bufferLock, wexitret0 with nothing left on a closed    *)
+(* stream.                                                                 *)
+WaitExits == {"wexit", "wexitlock", "wexitret0"}
+
+ReaderWaitExit(r) ==
+    /\ rpc[r] \in WaitExits /\ wl = r
     /\ waiters' = waiters - 1
     /\ wl' = None
-    /\ UNCHANGED <<Shared, want, cur, hold, left, reads, eofAt, permits, parked, bl>>
+    /\ Goto(r, IF rpc[r] = "wexit" THEN "done" ELSE IF rpc[r] = "wexitlock" THEN "lock" ELSE "ret0")
+    /\ UNCHANGED <<Shared, want, cur, hold, left, reads, wres, wclosed, eofAt, permits, parked, bl>>
 
 (* Take bufferLock. *)
 ReaderLock(r) ==
@@ -477,7 +491,7 @@ ReaderEof(r) ==
 ReaderStep(r) ==
     /\ \/ ReaderStart(r) \/ ReaderFastClosed(r) \/ ReaderReread(r) \/ ReaderAcquire(r)
        \/ ReaderWaitLock(r) \/ ReaderInc(r) \/ ReaderTest(r) \/ ReaderWaitClosed(r)
-       \/ ReaderWaitReturn(r) \/ ReaderLock(r)
+       \/ ReaderWaitReturn(r) \/ ReaderWaitExit(r) \/ ReaderLock(r)
        \/ ReaderDecide(r) \/ ReaderCopy(r) \/ ReaderFinish(r) \/ ReaderRet0(r) \/ ReaderEof(r)
     /\ UNCHANGED spurious
 

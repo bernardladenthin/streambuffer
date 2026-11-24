@@ -74,7 +74,101 @@ LEMMA StepSafe == SafeInv /\ [Next]_vars => SafeInv'
   <2>11 CASE ReaderFastClosed(r)
     BY <2>11 DEF ReaderFastClosed, Go
   <2>12 CASE ReaderWaitClosed(r)
-    BY <2>12 DEF ReaderWaitClosed, Go
+    \* closed: the finally block follows; open: park
+    <3> USE <2>12 DEF ReaderWaitClosed, Go
+    <3>a CASE closed
+      <4> USE <3>a
+      <4>1 TypeOK'
+        OBVIOUS
+      <4>2 Safety'
+        OBVIOUS
+      <4>3 BufLock'
+        OBVIOUS
+      <4>4 HoldInv'
+        OBVIOUS
+      <4>5 BufNonNeg'
+        OBVIOUS
+      <4>6 CopyHasByte'
+        OBVIOUS
+      <4>7 WaitLockInv'
+        OBVIOUS
+      <4>8 ParkedInv'
+        OBVIOUS
+      <4>9 RereadClosed'
+        OBVIOUS
+      <4>10 Ret0Empty'
+        OBVIOUS
+      <4>11 DoneEof'
+        OBVIOUS
+      <4>12 CloserInv'
+        OBVIOUS
+      <4>13 WriterInv'
+        OBVIOUS
+      <4> QED
+        BY <4>1, <4>2, <4>3, <4>4, <4>5, <4>6, <4>7, <4>8, <4>9, <4>10, <4>11, <4>12, <4>13 DEF SafeInv
+    <3>b CASE ~closed
+      <4> USE <3>b
+      <4>1 TypeOK'
+        OBVIOUS
+      <4>2 Safety'
+        OBVIOUS
+      <4>3 BufLock'
+        OBVIOUS
+      <4>4 HoldInv'
+        OBVIOUS
+      <4>5 BufNonNeg'
+        OBVIOUS
+      <4>6 CopyHasByte'
+        OBVIOUS
+      <4>7 WaitLockInv'
+        OBVIOUS
+      <4>8 ParkedInv'
+        OBVIOUS
+      <4>9 RereadClosed'
+        OBVIOUS
+      <4>10 Ret0Empty'
+        OBVIOUS
+      <4>11 DoneEof'
+        OBVIOUS
+      <4>12 CloserInv'
+        OBVIOUS
+      <4>13 WriterInv'
+        OBVIOUS
+      <4> QED
+        BY <4>1, <4>2, <4>3, <4>4, <4>5, <4>6, <4>7, <4>8, <4>9, <4>10, <4>11, <4>12, <4>13 DEF SafeInv
+    <3> QED
+      BY <3>a, <3>b
+  \* A18: the finally block of the wait, a step of its own
+  <2>13 CASE ReaderWaitExit(r)
+    <3> USE <2>13 DEF ReaderWaitExit, Go
+    <3>1 TypeOK'
+      OBVIOUS
+    <3>2 Safety'
+      OBVIOUS
+    <3>3 BufLock'
+      OBVIOUS
+    <3>4 HoldInv'
+      OBVIOUS
+    <3>5 BufNonNeg'
+      OBVIOUS
+    <3>6 CopyHasByte'
+      OBVIOUS
+    <3>7 WaitLockInv'
+      OBVIOUS
+    <3>8 ParkedInv'
+      OBVIOUS
+    <3>9 RereadClosed'
+      OBVIOUS
+    <3>10 Ret0Empty'
+      OBVIOUS
+    <3>11 DoneEof'
+      OBVIOUS
+    <3>12 CloserInv'
+      OBVIOUS
+    <3>13 WriterInv'
+      OBVIOUS
+    <3> QED
+      BY <3>1, <3>2, <3>3, <3>4, <3>5, <3>6, <3>7, <3>8, <3>9, <3>10, <3>11, <3>12, <3>13 DEF SafeInv
   <2>2 CASE ReaderReread(r)
     BY <2>2 DEF ReaderReread, Go
   <2>3 CASE ReaderWaitLock(r)
@@ -219,9 +313,17 @@ LEMMA StepSafe == SafeInv /\ [Next]_vars => SafeInv'
     \* the end of the stream: nothing is in flight, the buffer is empty
     <3>0 InFlight = 0
       <4>1 avail = 0 /\ closed
-        BY DEF Ret0Empty
+        BY <2>10 DEF ReaderRet0, Ret0Empty
       <4>2 InFlight \in {0, 1}
-        BY DEF InFlight
+        <5>1 CASE bl = 0
+          BY <5>1 DEF InFlight, None
+        <5>2 CASE bl # 0
+          <6>1 bl \in Readers /\ hold \in [Readers -> {0, 1}]
+            BY <5>2 DEF TypeOK, Readers, SafeInv
+          <6> QED
+            BY <5>2, <6>1 DEF InFlight, None
+        <5> QED
+          BY <5>1, <5>2
       <4> QED
         BY <4>1, <4>2 DEF BufNonNeg, AvailLinearizable, Buffered
     <3>1 TypeOK'
@@ -258,7 +360,7 @@ LEMMA StepSafe == SafeInv /\ [Next]_vars => SafeInv'
     <3> QED
       BY <3>1, <3>2, <3>3, <3>4, <3>5, <3>6, <3>7, <3>8, <3>9, <3>10, <3>11, <3>12, <3>13 DEF SafeInv
     <2> QED
-      BY <2>1, <2>2, <2>3, <2>4, <2>5, <2>6, <2>7, <2>8, <2>9, <2>10, <2>11, <2>12 DEF ReaderStep
+      BY <2>1, <2>2, <2>3, <2>4, <2>5, <2>6, <2>7, <2>8, <2>9, <2>10, <2>11, <2>12, <2>13 DEF ReaderStep
   <1>8 CASE UNCHANGED vars
     BY <1>8 DEF vars
   <1> QED

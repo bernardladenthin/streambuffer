@@ -190,7 +190,12 @@ deliberately not part of the synchronous Publish pipeline and never a required c
    through a pipe when zstd is there; `graphcheck.py` is its reference, `graphcheck-test.sh` tests
    both, and with `GRAPHCHECK_REFERENCE=1` both run on every product and must agree);
    `check-graph.sh` does it per scenario with its controls. A change of `TraceStreamBuffer.tla`'s `StepOf` or `Obs`
-   changes this check too (it uses them as they are). A table that comes from the cfg
+   changes this check too (it uses them as they are). The products run without spurious
+   wake-ups (`PRODUCT_SPURIOUS`, default 0): JPF's `await()` returns only after a signal, and with
+   a budget a missing signal could pass as one. The finally block of `awaitAtLeast` is a step of
+   its own (`ReaderWaitExit`, the pcs `WaitExits`; in `StreamBufferCounters.tla` too), and
+   `TraceStreamBuffer.tla` checks `waitingReaders` exactly; `RefineWait.tla`, `RefineRecords.tla`
+   and `RefineWaitProof.tla` map a thread in it to where it goes next (`MapPc`, `MapWl`). A table that comes from the cfg
    (`GEdge <- TEdge`, `TraceLog <- TTrace`) is read only through a definition of its own (`Edges`,
    `Out`, `Log`): TLC 1.7.4 evaluates a substituted constant anew at every use (tlaplus issue 648),
    which made the products ~36 times slower; `check.sh` counts the evaluations (`ConstCache*`).

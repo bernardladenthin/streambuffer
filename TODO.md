@@ -251,7 +251,7 @@ annotated, so everything below is genuinely still open.
       bounded search from `Init`: without the F278 re-check, with the two-phase read before #212,
       and with `waitForAtLeast` reading the count again before `CheckedReturn`.
     - **Link to the code:** TLAPS proves that `StreamBuffer.tla` with the current code refines
-      `StreamBufferWait.tla` for any number of readers, writers and closers (`RefineWaitProof.tla`, 2,826 obligations),
+      `StreamBufferWait.tla` for any number of readers, writers and closers (`RefineWaitProof.tla`, 3,345 obligations),
       so its safety results hold for the detailed model (liveness does not carry over: the
       refinement is of the specifications without fairness). TLC also checks the
       refinement of all three abstractions (`RefineCounters.tla`, `RefineRecords.tla`,
@@ -504,8 +504,31 @@ annotated, so everything below is genuinely still open.
       taken again while the graph (size, time), the arguments and `graphmin.py` are the same; the
       control without the writer's signal has the main product's graph. CI sets it (the control
       takes the cached module); tested on S1A: a second run takes it, a touched graph does not.
+    - [x] The products without spurious wake-ups (2026-11-23): with `Spurious = 0` and the
+      model of then S6A was rejected (a word of 40 events, also with `K = 6`), S1A accepted. As a
+      trace (A6) the word showed why: r2's `waitForAtLeast(2)` leaves the loop with the bytes,
+      the writer reads `waitingReaders = 1`, only then r2's finally block lowers it; the model
+      lowered it with the return (one step), the trace acceptance allowed a lower count and the
+      signal was skipped, and only a spurious wake-up woke r1, which had parked after. The code
+      was right; with the budget a missing signal of the code could have passed the same way.
+    - [x] The finally block of the wait a step of its own (`ReaderWaitExit`, pcs `wexit`,
+      `wexitlock`, `wexitret0`) in `StreamBuffer.tla` and `StreamBufferCounters.tla`;
+      `TraceStreamBuffer.tla` checks `waitingReaders` exactly (`waiters = v`) and the signal
+      without the skip; `RefineWait.tla`, `RefineRecords.tla` map a thread in the finally block to
+      where it goes next and `waitLock` free (`MapPc`, `MapWl`). `TraceSignalBeforeExit` in
+      `check.sh` (the S6A word, `Spurious = 0`: accepted, the old model rejected it at line 40).
+      Local: `trace.sh` 51/51 (also with `Spurious = 0`), S1A 4/4 with its controls (product
+      24,217 states instead of 94,555), S6A accepted with `Spurious = 0` (1,042,046 states
+      instead of 3,837,985). `check-graph.sh` runs the products with `PRODUCT_SPURIOUS`, default 0.
+    - [x] (2026-11-24) `check.sh` 60 OK, `inductive.sh` 64 OK, `trace-controls.sh` OK with the
+      step; the TLC refinements again after `MapPc` became a nested `IF` (14 OK). TLAPS at the
+      workflow's pin: `StreamBufferCountersProof.tla` 349 obligations (a case for the step, the
+      closed and open branch of `ReaderWaitClosed` apart), `RefineWaitProof.tla` 3,345 (the
+      mapping: `WaitPcs`, `NotDone` by `MapPc`, `EndExit`, `SReaderWaitExit` as a stuttering step,
+      `MapWl` in every abstract step by `MapWlGo`); `LEMMA Bad == FALSE` appended fails alone.
     - [ ] S3N again with the lighter `graphmin.py` on the same graph (`REUSE_GRAPH=1`), with
-      its controls: run 3 since 2026-11-23 05:53 UTC, TLC with 64 GB on the cached module.
+      its controls: run 3 since 2026-11-23 05:53 UTC, TLC with 64 GB on the cached module; to be
+      replaced by a run with `Spurious = 0` and the finally step once the checks above pass.
     - [ ] The next long run (S3A, S6N, S8A, S3N; figures of the 2026-11-16 run in the owner's
       local result folder, `runinfo-*.txt`): a machine rented by the day (one large, or one small
       per scenario); reuse the saved JPF graphs (`REUSE_GRAPH=1`);

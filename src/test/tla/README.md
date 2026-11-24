@@ -209,9 +209,9 @@ therefore true by construction there, and the F279 defect is only shown by the b
 
 | Abstraction | Slice | Apalache (fixed N) | TLAPS (any N) | Refinement (TLC) | Older code reaches a violation |
 |---|---|---|---|---|---|
-| `StreamBufferCounters.tla` | `read()`, single-byte writes | N = 2, 3, 4, 8, 12; any bytes (`IndInv`) | `SafeInv`, 216 obligations | `Condition2`, `Condition3` | the empty take without the re-check (F278), 10 steps |
+| `StreamBufferCounters.tla` | `read()`, single-byte writes | N = 2, 3, 4, 8, 12; any bytes (`IndInv`) | `SafeInv`, 349 obligations | `Condition2`, `Condition3` | the empty take without the re-check (F278), 10 steps |
 | `StreamBufferRecords.tla` | `read(b, 0, K)`, several writers and closers, any chunking | 2, 3, 4 readers with 2 writers and 2 closers, 2 readers with 3 and 3; any K and bytes (`SafeModInv`) | `SafeInv`, any readers, writers and closers, 488 obligations | `Records2`, `Chunks2` | a torn record with the two-phase read (#212), 6 steps |
-| `StreamBufferWait.tla` | every thread any number of calls, each `read(b, 0, K[r])` (`K[r] = 1` is `read()`) or `waitForAtLeast(M[r])`; several writers and closers, any chunking | 2, 3, 4 threads with 2 writers and 2 closers, 2 threads with 3 and 3; any read sizes, requests, bytes and calls (`SafeModInv`) | `SafeInv`, any threads, writers and closers, with spurious wake-ups, 617 obligations | TLAPS for any number of readers, writers and closers (`RefineWaitProof.tla`, 2,826 obligations, spurious wake-ups included); TLC in all seven configurations of the current code (`Condition2`, `Condition3`, `Records2`, `Chunks2`, `Mixed2`, `WaitAndRead2`, `WaitChecked2`), two with spurious wake-ups (`SpuriousWaitChecked2`, `SpuriousMixed2`) and two with two writers and two closers (`Writers2Mixed2`, `Writers2WaitChecked2`) | `waitForAtLeast(M[r]) < M[r]` on an open buffer before `CheckedReturn`, 11 steps |
+| `StreamBufferWait.tla` | every thread any number of calls, each `read(b, 0, K[r])` (`K[r] = 1` is `read()`) or `waitForAtLeast(M[r])`; several writers and closers, any chunking | 2, 3, 4 threads with 2 writers and 2 closers, 2 threads with 3 and 3; any read sizes, requests, bytes and calls (`SafeModInv`) | `SafeInv`, any threads, writers and closers, with spurious wake-ups, 617 obligations | TLAPS for any number of readers, writers and closers (`RefineWaitProof.tla`, 3,345 obligations, spurious wake-ups included); TLC in all seven configurations of the current code (`Condition2`, `Condition3`, `Records2`, `Chunks2`, `Mixed2`, `WaitAndRead2`, `WaitChecked2`), two with spurious wake-ups (`SpuriousWaitChecked2`, `SpuriousMixed2`) and two with two writers and two closers (`Writers2Mixed2`, `Writers2WaitChecked2`) | `waitForAtLeast(M[r]) < M[r]` on an open buffer before `CheckedReturn`, 11 steps |
 | `StreamBufferWaitForeverLive.tla` | liveness with threads that call forever: with a closer, every call returns | TLC (`WaitForever*`, below) | `SpecRole => EveryCallReturns`, any threads, writers and closers, any budget of spurious wake-ups: 633 + 1,378 obligations | as `StreamBufferWait.tla` | with an endless writer and no close a reader starves, also with fair locks |
 | `StreamBufferWaitLive.tla` | liveness of `StreamBufferWait.tla`: with a closer, every call returns and all finish | 2 threads with 2 writers and 1 closer, 3 with 2 and 2: `LiveInv` inductive, `Pot` goes down with every step, a step until all are done | `FairSpec => <>AllDone`, any threads, writers and closers, any budget of spurious wake-ups: 363 + 628 + 956 obligations | as `StreamBufferWait.tla` | without `ClosedNoPark` a state of `SafeInv` has no step |
 
@@ -329,7 +329,7 @@ the threads parked has no step (in `inductive.sh`).
 invariant `DInv` and is a step of `StreamBufferWait.tla` under the mapping of `RefineWait.tla`, or
 a stuttering step; with `Init` mapped to `Init`, `Spec => W!CSpec` for any finite set of readers
 and any numbers of writers and closers (writer i is the abstraction's writer i, closer c its closer
-c; 2,826 obligations, tlapm, 2026-11-14).
+c; 3,345 obligations, tlapm, 2026-11-24, with the finally block of the wait as a step of its own).
 The abstraction's own invariant holds in the mapped state (the instantiated `StepSafe`) and gives
 what the detailed one lacks, such as a copying reader having its bytes buffered. `DInv` needs no
 sum over the FIFO: the writers write the bytes 1, 2, ... in commit order, so it describes each entry by
@@ -365,6 +365,18 @@ above. With the ranges made non-empty, the torn record is found in 6 steps inste
     the other. The A18 graph check found it (`S6A`, below): a write and a close between the two
     reads give runs of the code the model did not have. Both reads are steps of their own since
     (`fastclosed`, `waitclosed`, in the detailed model and in the three abstractions).
+  - Until 2026-11 the finally block of `awaitAtLeast` (`waitingReaders.decrementAndGet()`,
+    `waitLock.unlock()`) was one step with the return: the model lowered the count where the code
+    still counts the thread. A18 found a word (`S6A`) the model accepted only with a spurious
+    wake-up: a writer reads the count 1 between a waiter's check and its finally block, and its
+    signal wakes a reader that parked after; the model had the signal skipped (the trace
+    acceptance allowed a lower count) and woke the reader spuriously. The finally block is a step
+    of its own since (`ReaderWaitExit`, the pcs `wexit`, `wexitlock`, `wexitret0`; in
+    `StreamBufferCounters.tla` too, which counts `waitingReaders`), the trace acceptance checks
+    the count exactly, and the word is accepted without a spurious wake-up
+    (`TraceSignalBeforeExit`, `check.sh`). `StreamBufferWait.tla` and `StreamBufferRecords.tla`,
+    which have no count, see a thread in the finally block where it goes next and `waitLock` free
+    (`MapPc`, `MapWl` in `RefineWait.tla`, `RefineRecords.tla`, `RefineWaitProof.tla`).
   - Spurious wake-ups of `await` are modelled with a finite budget ("Spurious wake-ups" above):
     safety holds for any budget, liveness assumes finitely many.
 - **The refinement proof is for the current code** (`Protocol = "condition"` and the four fixes on),
@@ -616,14 +628,14 @@ prints the first line no placement could consume.
 **Negative controls** (`trace-controls.sh`, also in CI; in CI the two scripts take about 5 min). A validation that accepts everything shows
 nothing, so these must reject:
 
-| control | rejected (one CI-sized run: 51 traces, 3 seeds, a budget of 3 spurious wake-ups, 2026-11-14; the counts vary with the interleavings) |
+| control | rejected (one CI-sized run: 51 traces, 3 seeds, a budget of 3 spurious wake-ups, 2026-11-24, the model with the finally block of the wait as a step and the exact count; the counts vary with the interleavings) |
 |---|---|
-| older code with fewer behaviours: `AtomicRead = FALSE` (before #212, the `Records*` traces) | 2 of 6 |
-| the semaphore wait (before F278) | 30 of 51 |
-| no re-check under `bufferLock` (`ReCheck = FALSE`, before F278, the `Bytes*` traces) | 5 of 9 |
-| a mutated model whose writer never signals (without spurious wake-ups, which could stand in for the signal) | 16 of 51 |
+| older code with fewer behaviours: `AtomicRead = FALSE` (before #212, the `Records*` traces) | 4 of 6 |
+| the semaphore wait (before F278) | 27 of 51 |
+| no re-check under `bufferLock` (`ReCheck = FALSE`, before F278, the `Bytes*` traces) | 9 of 9 |
+| a mutated model whose writer never signals (without spurious wake-ups, which could stand in for the signal) | 15 of 51 |
 | a spurious wake-up written into a trace (unpark, the test, park right after a reader's park with `availableBytes` 0 and the stream open, before any other thread's line): accepted with the budget, rejected with `Spurious = 0` | 3 of 3 |
-| every trace with a completed read, its first returned byte changed by one | 46 of 46 |
+| every trace with a completed read, its first returned byte changed by one | 49 of 49 |
 
 The traces a wrong model accepts are those that never reach the difference, e.g. no thread
 waited, so the semaphore and the missing signal never mattered. Two older versions accept every
@@ -641,7 +653,10 @@ runs have the properties is what model checking (`check.sh`) and the proofs show
   instead.
 - A spurious wake-up of `await()` is in the model within the trace's budget (`Spurious = 3`, set by
   `TraceGenerator`). An accepted trace therefore no longer shows whether one happened in the
-  recorded run; that a written one is accepted only with a budget is the control above.
+  recorded run; that a written one is accepted only with a budget is the control above. Every
+  trace of `TraceGenerator` is also accepted with `Spurious = 0` (51 of 51, 2026-11-24), and A18's
+  products check without a budget (`PRODUCT_SPURIOUS`, default 0, of `check-graph.sh`): with one,
+  a missing signal of the code could pass as a spurious wake-up.
 - The lines name a method and its n-th access of a kind (`waitForAtLeast.getAvail#0`). A change of
   those methods needs the mapping in `TraceStreamBuffer.tla` changed with it (`TraceRecorderTest`
   fails first, with the fixed list of a single-threaded run).
