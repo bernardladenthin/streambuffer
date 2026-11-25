@@ -24,7 +24,8 @@ import org.objectweb.asm.Opcodes;
  * in bytecode order. Accesses: {@code getAvail}/{@code putAvail} ({@code availableBytes}),
  * {@code getClosed}/{@code putClosed} ({@code streamClosed}), {@code waitersGet},
  * {@code waitersInc}, {@code waitersDec} ({@code waitingReaders}), {@code enter}/{@code exit}
- * ({@code bufferLock}, the only monitor), {@code wlock}/{@code wunlock} ({@code waitLock}),
+ * (every monitor: {@code bufferLock}, and {@code signalLock}, which only the external signals of
+ * {@code addSignal} take and no scenario registers), {@code wlock}/{@code wunlock} ({@code waitLock}),
  * {@code park}/{@code unpark} (before and after {@code modified.await()}) and {@code signalAll}.
  * Not rewritten: the timed {@code modified.awaitNanos} of {@code waitForAtLeast(n, timeout,
  * unit)}, which the model does not have and no scenario calls.
@@ -35,6 +36,8 @@ public final class TracingClassLoader extends ClassLoader {
 
     private static final String REC = "net/ladenthin/streambuffer/trace/TraceRecorder";
 
+    private final String mutant;
+
     /**
      * Creates the loader; it delegates every class but {@code StreamBuffer*} to its parent. Its
      * classes run with assertions enabled whatever the JVM's flags are ({@code assert
@@ -42,7 +45,18 @@ public final class TracingClassLoader extends ClassLoader {
      * under PIT, which starts its JVMs with {@code -ea}.
      */
     public TracingClassLoader() {
+        this(null);
+    }
+
+    /**
+     * Creates the loader with a defect of {@link TraceMutants} in {@code StreamBuffer}, a negative
+     * control.
+     *
+     * @param mutant the defect, or {@code null} for the class as it is
+     */
+    public TracingClassLoader(String mutant) {
         super(TracingClassLoader.class.getClassLoader());
+        this.mutant = mutant;
         setDefaultAssertionStatus(true);
     }
 
@@ -54,7 +68,8 @@ public final class TracingClassLoader extends ClassLoader {
         synchronized (getClassLoadingLock(name)) {
             Class<?> c = findLoadedClass(name);
             if (c == null) {
-                final byte[] original = read(name.replace('.', '/') + ".class");
+                final String internal = name.replace('.', '/');
+                final byte[] original = TraceMutants.apply(mutant, internal, read(internal + ".class"));
                 final byte[] rewritten = instrument(original);
                 c = defineClass(name, rewritten, 0, rewritten.length);
             }

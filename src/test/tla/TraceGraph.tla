@@ -56,7 +56,7 @@ Choose ==
 (* a step of the model by the thread of the chosen edge's event *)
 GSilent ==
     /\ pend # -1 /\ k < K
-    /\ StepOf(EdgeOf(pend).e.t)
+    /\ StepFor(EdgeOf(pend).e)
     /\ k' = k + 1
     /\ UNCHANGED <<l, g, pend>>
 

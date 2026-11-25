@@ -26,8 +26,13 @@
 # The external signals, StreamBufferSignalProof.tla: with the release of the code since F280 a
 # registered semaphore never holds more than one permit and no signal is lost, for any number of
 # signalers.
-# Fails unless every obligation of every proof is proved. In CI: the scheduled tlaps-proofs job of
-# formal-verification.yml, with tlapm built from a pinned commit (no tagged 1.6 release; README.md).
+# Fails unless every obligation of every proof is proved, and each module has exactly the number of
+# obligations below: a theorem weakened to something trivial, a step cut out or a module that
+# lost its proofs proves fewer, and "All N obligations proved" alone would still pass (the
+# vacuity audit of 2026-11-25). A proof change that adds or removes obligations updates its
+# count here, with the reason in the commit. Also fails on an omitted or missing proof in the log.
+# In CI: the scheduled tlaps-proofs job of formal-verification.yml, with tlapm built from a pinned
+# commit (no tagged 1.6 release; README.md).
 #
 # Usage: src/test/tla/proof.sh <path to tlapm>   (run from anywhere)
 set -euo pipefail
@@ -43,6 +48,19 @@ cp StreamBufferCounters.tla StreamBufferCountersProof.tla \
    StreamBufferWaitForever.tla StreamBufferWaitForeverRoles.tla StreamBufferWaitForeverLive.tla \
    StreamBufferWaitForeverEnabled.tla StreamBufferWaitForeverLiveProof.tla    StreamBufferSignal.tla StreamBufferSignalProof.tla "$work/"
 cd "$work"
+# the obligations of each module (tlapm ff40755, 2026-11-25)
+declare -A expected=(
+  [StreamBufferCountersProof]=349
+  [StreamBufferRecordsProof]=554
+  [StreamBufferWaitProof]=709
+  [StreamBufferCountLemmas]=704
+  [StreamBufferWaitEnabled]=714
+  [StreamBufferWaitLiveProof]=1054
+  [RefineWaitProof]=3345
+  [StreamBufferWaitForeverEnabled]=768
+  [StreamBufferWaitForeverLiveProof]=1553
+  [StreamBufferSignalProof]=28
+)
 failed=0
 for proof in StreamBufferCountersProof StreamBufferRecordsProof StreamBufferWaitProof \
              StreamBufferCountLemmas StreamBufferWaitEnabled StreamBufferWaitLiveProof RefineWaitProof \
@@ -65,8 +83,17 @@ for proof in StreamBufferCountersProof StreamBufferRecordsProof StreamBufferWait
   result="$(grep -E 'All [0-9]+ obligations proved|obligations failed' "$proof.log" | tail -1)"
   echo "$proof: $result"
   case "$result" in
-    *"All "*" obligations proved"*) ;;
+    *"All ${expected[$proof]} obligations proved"*) ;;
+    *"All "*" obligations proved"*)
+      echo "FAIL $proof: expected ${expected[$proof]} obligations (a proof that changed: update the count with the reason)"
+      failed=1 ;;
     *) grep -B1 -A3 'Could not prove' "$proof.log" | head -40; failed=1 ;;
   esac
+  if grep -qiE '[0-9]+ (obligations? )?(omitted|missing)|missing proof' "$proof.log"; then
+    echo "FAIL $proof: an omitted or missing proof"
+    grep -iE 'omitted|missing' "$proof.log" | head -5
+    failed=1
+  fi
 done
+[ "${#expected[@]}" = 10 ] || { echo "FAIL the table of expected counts has ${#expected[@]} modules, not 10"; failed=1; }
 exit "$failed"

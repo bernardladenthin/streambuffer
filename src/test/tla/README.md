@@ -171,8 +171,9 @@ current code with two:
 | `Writers2Reached2` | as `Writers2Condition2`, probe `NoTwoWritersSignalling` | 2 | 2, 1 | violated: two writers signal at once |
 | `Closers2Reached2` | as `Closers2Condition2`, probe `NoTwoClosersSignalling` | 2 | 1, 2 | violated: two closers signal at once |
 
-The probes show that the writers and the closers do interleave, so the clean results are not
-vacuous. The models of older code keep one writer and one closer: their defects need no second
+The probes show that the writers and the closers do interleave in the `Condition2` constants, so
+those clean results are not vacuous; `Writers2WaitAndRead2` and `Writers2WaitChecked2` commit one
+write only (the second writer finds no bytes left or the stream closed). The models of older code keep one writer and one closer: their defects need no second
 one. TLC checks the refinement of `StreamBufferWait.tla` and `StreamBufferRecords.tla` with two
 writers and two closers too (`inductive.sh`), and `RefineWaitProof.tla` proves it for any numbers
 (below).
@@ -607,12 +608,17 @@ than the code in two places, so a thread's model steps are not tied to single li
 Before a line of thread `t`, `t` may take up to `K` = 6 model steps; then the line must agree with
 the model's state:
 
-- **Values:** every value read or written. Only `waitingReaders` may be lower in the model,
-  because of the later decrement; the writer then skips a signal that wakes nobody.
+- **Values:** every value read or written, `waitingReaders` too (exactly, since the finally block
+  of the wait is a step of its own).
 - **Locks:** who holds `bufferLock` and `waitLock`.
 - **The thread's position:** after the fast path, after the closed check, parked, past the
   decrement.
 - **Results:** what its calls returned.
+- **The signal:** a writer's or closer's read of `waitingReaders` and its signal are model steps
+  only right before its `waitersGet` and `signalAll` lines (`SignalAt`). Before 2026-11-25 the
+  model could signal where the code had no line of it; the closer's signal then woke the reader
+  later, and a class whose write never signals passed (48 of 51 traces). The class control
+  `no-write-signal` (`TraceMutants`) now has every trace with a committed write rejected.
 
 Other threads move only at their own lines. A trace is accepted if some placement consumes every
 line. TLC 1.7.4 has no `POSTCONDITION`, so the verdict is the inverted invariant `TraceNotDone`,
@@ -759,7 +765,8 @@ errors.
 - **Not in the model:** read sizes other than 1 and `ReadLen`, `waitForAtLeast` with a timeout,
   interrupts, the external `addSignal` semaphores, and trim's merging of the entries (it keeps the
   bytes, their order and `availableBytes`; it only changes how many copy steps a read takes, which
-  matters to the count per entry before F279 alone). JPF, vmlens, jcstress and Lincheck cover them.
+  matters to the count per entry before F279 alone). JPF, vmlens, jcstress and Lincheck cover
+  trim; the timed wait and interrupts only the unit tests and jcstress.
 - **Sequential consistency.** TLC explores interleavings of atomic steps. That this matches the Java
   memory model rests on the data-race-freedom argument in the README ("Data-Race Freedom").
 - **Model vs. code.** The model is written by hand from the code. Trace validation (above, roadmap

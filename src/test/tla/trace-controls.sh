@@ -7,6 +7,7 @@
 # everything shows nothing, so wrong models and corrupted traces must be rejected.
 #
 # Usage: src/test/tla/trace-controls.sh <tla2tools.jar> <dir with the Trace_*.tla of TraceGenerator>
+#          <dir with the traces of TraceGenerator's no-write-signal class>
 #
 # Each control copies the traces into a directory of its own and changes the model or the traces:
 #   - the model of older code that allows fewer behaviours than the current code: a read(b, 0, n)
@@ -15,7 +16,13 @@
 #     read() traces only, as the model allows), and a mutated model whose writer never signals;
 #     each must reject at least one trace;
 #   - every trace with a completed read, its first returned byte changed by one: every one of
-#     them must be rejected.
+#     them must be rejected;
+#   - the traces of a defective class (TraceMutants' no-write-signal: a write never wakes a
+#     waiting reader, the close still does): every trace with a committed write must be rejected.
+#     The model of the current code with the writer's signal taken where the code had no line of it
+#     accepted 48 of these 51 (2026-11-25); SignalAt in TraceStreamBuffer.tla ties the signal to
+#     the code's lines. A trace whose writes all failed (closed before) has no signal in the
+#     correct code either, and is accepted.
 # Older code whose model allows MORE behaviours (CountOnce = FALSE before F279, CheckedReturn =
 # FALSE) accepts the traces of the current code, which is right: trace validation checks that the
 # code's runs are runs of the model, not the model's properties (README, "Trace validation").
@@ -23,6 +30,7 @@ set -euo pipefail
 
 jar="$1"
 src="$2"
+nosignal="$3"
 here="$(cd "$(dirname "$0")" && pwd)"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
@@ -154,6 +162,27 @@ if [ "$corrupted" -gt 0 ] && [ "$rejected" = "$corrupted" ]; then
   echo "OK    corrupted traces (first returned byte + 1): $rejected/$corrupted rejected"
 else
   echo "FAIL  corrupted traces (first returned byte + 1): $rejected/$corrupted rejected"
+  failed=1
+fi
+
+# the class whose write never signals: every trace with a committed write (writeFromArray's
+# putAvail) rejected, without spurious wake-ups (they could stand in for a missing signal)
+mkdir -p "$work/classnosignal"
+committed=0
+for f in "$nosignal"/Trace_*.tla; do
+  if grep -q 'm |-> "writeFromArray", a |-> "putAvail"' "$f"; then
+    cp "$f" "${f%.tla}.cfg" "$work/classnosignal/"
+    committed=$((committed + 1))
+  fi
+done
+sed -i 's/    Spurious = [0-9]*/    Spurious = 0/' "$work/classnosignal"/*.cfg
+out=$(bash "$here/trace.sh" "$jar" "$work/classnosignal" reject 2>&1 || true)
+rejected=$(printf '%s\n' "$out" | grep -c "^REJECT" || true)
+if [ "$committed" -gt 0 ] && [ "$rejected" = "$committed" ]; then
+  echo "OK    a class whose write never signals: $rejected/$committed traces with a committed write rejected"
+else
+  echo "FAIL  a class whose write never signals: $rejected/$committed traces with a committed write rejected"
+  printf '%s\n' "$out" | grep "^ACCEPT" | head -5 | sed 's/^/      /'
   failed=1
 fi
 

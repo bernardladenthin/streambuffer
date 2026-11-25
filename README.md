@@ -477,7 +477,7 @@ Test coverage includes:
 - Lincheck including reads (one at a time, only what is buffered) and a variant with `maxBufferElements` 2, so writes trim [V7]
 - Concurrent read/write stress tests
 - Parallel close without deadlock
-- Deadlock-freedom of every blocking entry point, stress-checked with jcstress `Mode.Termination`
+- Deadlock-freedom of the blocking reads and of `waitForAtLeast(n)`, stress-checked with jcstress `Mode.Termination`
   (`-Pjcstress`): a thread parked in `read()`, in `read(byte[], off, len)` waiting for the rest
   of its bytes, or in `waitForAtLeast(...)` is always released by both a concurrent `write` and a
   concurrent `close`
@@ -514,7 +514,7 @@ what it assumes, and lists the trusted base and what no result covers:
 - **Deductive proof — OpenJML ESC (Z3, and again with cvc5) [V1].** The complete static, sequential core is *proven*
   against full functional contracts: both offset/length validators — including the classic
   `(off + len) < 0` integer-overflow guard, proven equivalent to the clean bounds condition
-  under Java wrap semantics — and the thirteen static trim-decision/arithmetic/timeout helpers, among
+  under Java wrap semantics — and the fifteen static trim-decision/arithmetic/timeout helpers, among
   them the ceiling division in `calculateResultingChunks` (proven against its multiplicative
   characterization `m·(⌈a/m⌉−1) < a ≤ m·⌈a/m⌉`, including the wrap-around boundary
   `a = Long.MAX_VALUE − m + 1`) and the full decision tree of `decideTrimExecution`.
@@ -548,13 +548,15 @@ what it assumes, and lists the trusted base and what no result covers:
   - **Older code:** each older version reaches a violation in a bounded search.
   - **Trace validation** [V17]: recorded runs of the code (an instrumented copy of the class in the tests,
     every access to shared state logged in order) are checked against the model with TLC; 990 runs
-    were accepted, and models of older code, a mutated model and corrupted runs are rejected.
+    were accepted, and models of older code, a mutated model, corrupted runs and the runs of a class
+    whose write never signals are rejected.
   - **Every interleaving** [V19]: for 13 small scenarios (one writer, one closer, one or two
     readers, one or two bytes), Java
     PathFinder explores every interleaving of the instrumented bytecode, its state graph is reduced
     to the minimal automaton of all their event sequences, and an exact check (a subset
     construction over TLC's product with the model) shows every one of them is a run of the model.
-    A model whose writer never signals, a corrupted byte and a defective class are rejected.
+    A model whose writer never signals, a corrupted byte and two defective classes (reads that do
+    not lower the count, a write that never signals) are rejected.
   - **Threads that call forever:** with a finite stream and a closer every call returns, with fair
     scheduling only and no lock fairness: TLC in bounded models of the abstraction and the
     detailed model, TLAPS for the abstraction and any number of threads [V14] [V15] (assuming fairness by role,

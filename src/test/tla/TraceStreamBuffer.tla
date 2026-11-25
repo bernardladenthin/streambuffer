@@ -54,6 +54,24 @@ StepOf(t) ==
     ELSE IF IsCloser(t) THEN CloserStep(CloserOf(t))
     ELSE ReaderStep(t) \/ SpuriousWake(t)
 
+(* The signal of a writer or closer is a step only at the code's lines of *)
+(* it: its read of waitingReaders (WriterSigRead, CloserSigRead) right     *)
+(* before its waitersGet line, its signal (WriterSigLock, CloserSigLock)   *)
+(* right before its signalAll line. Otherwise the model could signal where *)
+(* the code does not: a class whose write never signals was accepted, the  *)
+(* closer's signal waking its reader later (every scenario has a closer).  *)
+(* Now its writer stays at "sigread", and its wret line is rejected.       *)
+SignalAt(e) ==
+    /\ IsWriter(e.t) =>
+           /\ wpc[WriterOf(e.t)] = "sigread" => e.a = "waitersGet"
+           /\ wpc[WriterOf(e.t)] = "siglock" => e.a = "signalAll"
+    /\ IsCloser(e.t) =>
+           /\ cpc[CloserOf(e.t)] = "sigread" => e.a = "waitersGet"
+           /\ cpc[CloserOf(e.t)] = "siglock" => e.a = "signalAll"
+
+(* A model step of the thread of line e, before e is consumed. *)
+StepFor(e) == SignalAt(e) /\ StepOf(e.t)
+
 (***************************************************************************)
 (* What a line says about the model's state once the thread's steps up to  *)
 (* it are taken.                                                           *)
@@ -130,7 +148,7 @@ TraceInit == Init /\ l = 1 /\ k = 0 /\ TLCSet(1, 0)
 
 Silent ==
     /\ l <= Len(Log) /\ k < K
-    /\ StepOf(Log[l].t)
+    /\ StepFor(Log[l])
     /\ k' = k + 1
     /\ UNCHANGED l
 

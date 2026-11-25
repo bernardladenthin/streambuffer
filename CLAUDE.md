@@ -107,12 +107,17 @@ deliberately not part of the synchronous Publish pipeline and never a required c
    `TrimReentrancy.jpf` (a trim start signal writing from inside the trim, a reader).
    Requires JDK 11; builds jpf-core from a pinned commit with a
    one-file `AtomicLong` model patch; the harnesses are compiled at `--release 8` and run under JPF. Local recipe (Docker+JDK 11) in
-   `src/test/jpf/README.md`. Never touches the shipped jar.
+   `src/test/jpf/README.md`. Never touches the shipped jar. The gate requires `constraints=0` (JPF
+   prints "no errors detected" after a search cut short by the heap too) and at least each
+   harness's states of 2026-11-25 (`min_states` in the workflow; a change that lowers one updates it).
 
 4. **TLA+ model** (`src/test/tla/`, scheduled/dispatch CI job `tla-model`): `StreamBuffer.tla` models
    the wait/wake-up/close protocol, the writes (one FIFO entry each) and the reads; TLC checks safety
-   and liveness (weak fairness per thread, no lock fairness). `check.sh` compares 55 models (and two mutants) with
-   their expected outcomes: the current code checks
+   and liveness (weak fairness per thread, no lock fairness). `check.sh` compares 55 models with
+   their expected outcomes, the distinct states of every clean one included (a spec change that
+   changes a count updates it there, with the reason), runs four mutants (one in two models; the
+   others show `Fifo`, `ReaderOrder` and `AllReadersFinish` can fail) and fails on a `.cfg` no
+   script runs: the current code checks
    clean (`read()` with 1, 2, 3 readers, `read(b, 0, 2)` records, records across entries, a `read()`
    reader next to a record reader, `waitForAtLeast` next to a reader, also next to a 2-byte write),
    the older code fails with its counterexamples (F278: an empty take, a deadlock after the close or
@@ -131,8 +136,10 @@ deliberately not part of the synchronous Publish pipeline and never a required c
    number of calls, each a read of its own size or a wait of its own request, several writers and
    closers) have inductive invariants -- `inductive.sh` checks them with Apalache v0.63.0 (fixed
    threads, any bytes, sizes, requests and calls) and checks with TLC that the model refines them
-   (`RefineCounters.tla`, `RefineRecords.tla`, `RefineWait.tla`); `proof.sh` proves them with TLAPS
-   for any number of threads (the `*Proof.tla`), and the liveness of `StreamBufferWait.tla`
+   (`RefineCounters.tla`, `RefineRecords.tla`, `RefineWait.tla`; `RefineWaitNoReCheck2` must fail);
+   `proof.sh` proves them with TLAPS
+   for any number of threads (the `*Proof.tla`; it requires each module's exact obligation count,
+   so a proof change that adds or removes obligations updates its count there), and the liveness of `StreamBufferWait.tla`
    (`StreamBufferWaitLive.tla`: with a closer, weak fairness of `Next` ends with all done;
    `StreamBufferWaitLiveProof.tla` with `StreamBufferCountLemmas.tla` and
    `StreamBufferWaitEnabled.tla`), and that `StreamBuffer.tla` refines `StreamBufferWait.tla` for
@@ -189,8 +196,14 @@ deliberately not part of the synchronous Publish pipeline and never a required c
    `GraphCheck.java` runs a subset construction over TLC's dump of the product (zstd-compressed
    through a pipe when zstd is there; `graphcheck.py` is its reference, `graphcheck-test.sh` tests
    both, and with `GRAPHCHECK_REFERENCE=1` both run on every product and must agree);
-   `check-graph.sh` does it per scenario with its controls. A change of `TraceStreamBuffer.tla`'s `StepOf` or `Obs`
-   changes this check too (it uses them as they are). The products run without spurious
+   `check-graph.sh` does it per scenario with its controls. A change of `TraceStreamBuffer.tla`'s `StepFor` or `Obs`
+   changes this check too (it uses them as they are). `StepFor` lets a writer or closer take its
+   signal steps only at the code's lines of them (`SignalAt`: the read of `waitingReaders` at its
+   `waitersGet`, the signal at its `signalAll`); without that, a class whose write never signals
+   was accepted. The class controls are `TraceMutants` (`no-decrement`, `no-write-signal`), used by
+   `TracedClassDump` (A18), `TracingClassLoader(mutant)` and `TraceGenerator`'s fourth argument (A6,
+   `trace-controls.sh`); a change of `writeFromArray`'s call of `signalModification()` or of the
+   reads' decrement changes them with it. The products run without spurious
    wake-ups (`PRODUCT_SPURIOUS`, default 0): JPF's `await()` returns only after a signal, and with
    a budget a missing signal could pass as one. The finally block of `awaitAtLeast` is a step of
    its own (`ReaderWaitExit`, the pcs `WaitExits`; in `StreamBufferCounters.tla` too), and

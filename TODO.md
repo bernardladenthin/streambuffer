@@ -108,6 +108,44 @@ annotated, so everything below is genuinely still open.
     - No TLC model has a `waitForAtLeast` caller next to two writers that both commit
       (`Writers2WaitAndRead2`, `Writers2WaitChecked2` and `RefineWaitWriters2WaitChecked2` allow
       one commit; `Writers2Mixed2` has two but no wait caller). TLAPS covers it for any numbers.
+  - The vacuity audit (2026-11-25, four independent reviews of TLAPS, TLC, the model-to-code link
+    and JML/jcstress/JPF, after the Lean `sorry`/`axiom` debate): no false proof (no `OMITTED`,
+    `AXIOM`, `assume`, `skipesc`; the assumptions are satisfiable, with witnesses; no invariant is
+    trivial; fairness is on real actions). One real gap and missing regression gates, on branch
+    `fix/verification-gates`:
+    - [x] A class whose write never signals passed the trace checks: the model took the writer's
+      signal where the code had no line of it, and the closer's signal woke the reader later
+      (every scenario has a closer). 48 of 51 such traces were accepted (local run). `SignalAt`
+      (`TraceStreamBuffer.tla`) ties the signal steps to the `waitersGet` and `signalAll` lines;
+      the class control `no-write-signal` (`TraceMutants`) is rejected: A6 48/48, A18 in CI (S1A).
+    - [x] Gates: TLAPS obligation counts per module (`proof.sh`), the states of every clean TLC
+      model (`check.sh`), every `.cfg` run, JPF `constraints=0` and a lower bound of states per
+      harness; negative controls for `Fifo`, `ReaderOrder`, `AllReadersFinish` (mutants) and the
+      refinement (`RefineWaitNoReCheck2`); a background thread's uncaught throwable fails its test
+      (`UncaughtExceptionsExtension`, RAC). The docs that said more than was checked (V1, V2,
+      V10, V13, V17, the README) are corrected.
+    - [ ] A18: the 12 scenarios beyond S1A again, with the current trace model and the
+      `no-write-signal` class control (rented machine; `pack.sh` builds `traced-nosignal/`). Their
+      results of 2026-11-24 were with the model before `SignalAt`, which accepts more; S1A runs in
+      CI. Each control is one more JPF run of its scenario.
+    - [ ] `common/check-proof-escapes` of bernardladenthin/actions (branch
+      `feat/check-proof-escapes`, not yet released): once released, a step in the
+      `repository-checks` job and a `proof-escapes` section in `.github/actions-config.json`
+      (today: 29 files, 0 escapes).
+    - [ ] `OffMod` into `SafeInv` of `StreamBufferRecords.tla` and `StreamBufferWait.tla`, so the
+      proved `RecordsAligned` is about `t mod K` and not only the ghost `off`: `off < K` and
+      `hold <= K` (`HoldLeft`) make it inductive; the obligation counts in `proof.sh` change.
+    - [ ] `NoLostSignal` (`StreamBufferSignal.tla`) says nothing after the first `release()` that
+      threw (the ghost `threw` stays): a property for the runs after a throw.
+    - [ ] The trace acceptance checks the locks one way (`Locks`): a reader's release of
+      `bufferLock` and `waitLock` may come before its `exit` and `wunlock` lines. Tie them to the
+      lines as `SignalAt` does for the signal; check the end state too (`Obs` constrains only the
+      access kinds it names).
+    - [ ] The three ESC helpers called only from the tests (`shouldSkipTrimDueToInvalidMaxBufferElements`,
+      `...SmallBuffer`, `...SufficientBuffer`): delete them (ESC count 14) or have
+      `decideTrimExecution` call them; until then V1 says so.
+    - [ ] jcstress `Mode.Termination` checks no values, and `waitForAnyData` and the timed
+      `waitForAtLeast` have no termination test.
   - [x] README, CHANGELOG, CLAUDE.md, `VERIFICATION-ASSUMPTIONS.md` (V10, V13, V17 and the gaps),
     the table above.
 
@@ -326,7 +364,7 @@ annotated, so everything below is genuinely still open.
     what is left is the code-to-model link (A18); an Isabelle project would mostly re-prove that reduction.
     Source-to-bytecode correctness: javac and the JVM stay trusted (A16 lists them).
   - **The gaps left:** no formal job gates a release (they run scheduled only); code and model are
-    linked by 990 recorded runs (A6), not by every interleaving; liveness of the detailed model and
+    linked by 990 recorded runs (A6) and, in 13 small scenarios, by every interleaving (A18); liveness of the detailed model and
     the instance methods for any number of threads.
   Order: A18 (done, its PR from `fix/stale-reads`); A19 and A9 only if wanted afterwards. A15 last, once
   every other item of the table above is done (owner, 2026-11-13). Run with `/loop` and the prompt

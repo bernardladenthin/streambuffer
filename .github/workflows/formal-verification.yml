@@ -16,7 +16,7 @@
 #   openjml-esc   Deductive proof (OpenJML/Z3, extended static checking) of the sequential
 #                 static core: both offset/length validators — including the intentional
 #                 "(off + len) < 0" int-overflow idiom, proven equivalent to the clean bounds
-#                 condition under Java wrap semantics — and the thirteen static trim-decision/
+#                 condition under Java wrap semantics — and the fifteen static trim-decision/
 #                 arithmetic/timeout helpers with full functional contracts.
 #
 #   openjml-rac   Runtime assertion checking: the EXISTING JUnit suite runs against
@@ -388,6 +388,19 @@ jobs:
         run: |
           set -euo pipefail
           echo "### JPF exhaustive interleavings" >> "$GITHUB_STEP_SUMMARY"
+          # the states of each harness's search (jpf-core e61e396, 2026-11-25), as a lower bound:
+          # a search that explores fewer states than this has lost schedules (a harness or a
+          # setting that cut it down) and is no longer the check it was. A change of StreamBuffer
+          # or a harness that lowers it updates the number here, with the reason in the commit.
+          declare -A min_states=(
+            [jpf-output.log]=20157
+            [jpf-output-write-close.log]=197906
+            [jpf-output-two-readers.log]=3502695
+            [jpf-output-record-readers.log]=2795195
+            [jpf-output-wait-and-read.log]=344100
+            [jpf-output-wait-snapshot.log]=127525
+            [jpf-output-trim-reentrancy.log]=25459
+          )
           for log in src/test/jpf/jpf-output.log src/test/jpf/jpf-output-write-close.log \
                      src/test/jpf/jpf-output-two-readers.log src/test/jpf/jpf-output-record-readers.log \
                      src/test/jpf/jpf-output-wait-and-read.log src/test/jpf/jpf-output-wait-snapshot.log \
@@ -400,7 +413,19 @@ jobs:
               echo "::error::JPF did not finish cleanly ('no errors detected' absent in $log) — treat as failure."
               exit 1
             fi
-            states="$(grep -oE 'new=[0-9]+' "$log" | head -1 || echo 'new=?')"
+            # JPF stops early when the heap runs low (search.min_free) or at a depth limit and
+            # still prints "no errors detected"; only constraints=0 says the search was complete
+            if ! grep -qE 'constraints=0$' "$log"; then
+              echo "::error::A search constraint cut JPF's search short in $log (heap or depth) — not exhaustive."
+              exit 1
+            fi
+            n="$(grep -oE 'new=[0-9]+' "$log" | head -1 | cut -d= -f2)"
+            want="${min_states[$(basename "$log")]}"
+            if [ -z "$n" ] || [ "$n" -lt "$want" ]; then
+              echo "::error::$log: ${n:-no} states, fewer than the $want of the full search — fewer schedules explored."
+              exit 1
+            fi
+            states="new=$n"
             echo "$(basename "$log"): no errors detected over all enumerated schedules ($states states) — no deadlock, no uncaught exception, byte fidelity held." >> "$GITHUB_STEP_SUMMARY"
           done
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -425,6 +450,7 @@ jobs:
           cp="target/test-classes:target/classes:$(cat target/test-classpath.txt)"
           java -cp "$cp" net.ladenthin.streambuffer.trace.TracedClassDump "$PWD/target/a18/traced"
           java -cp "$cp" net.ladenthin.streambuffer.trace.TracedClassDump "$PWD/target/a18/traced-mutant" no-decrement
+          java -cp "$cp" net.ladenthin.streambuffer.trace.TracedClassDump "$PWD/target/a18/traced-nosignal" no-write-signal
           curl --fail --location --retry 3 -o "$RUNNER_TEMP/tla2tools.jar" \
             "https://github.com/tlaplus/tlaplus/releases/download/$TLA_TOOLS_VERSION/tla2tools.jar"
           echo "$TLA_TOOLS_SHA256  $RUNNER_TEMP/tla2tools.jar" | sha256sum --check --strict
@@ -434,7 +460,7 @@ jobs:
           bash src/test/jpf/trace/graphmin-test.sh
           JPF_CORE="$PWD/jpf-core" JAVA_JPF="$JAVA_HOME_11_X64/bin/java" JAVA_TLC="$JAVA_HOME_11_X64/bin/java" \
           TLA2TOOLS="$RUNNER_TEMP/tla2tools.jar" TRACED="$PWD/target/a18/traced" \
-          TRACED_MUTANT="$PWD/target/a18/traced-mutant" LIB="$PWD/src/test/jpf/lib" WORK="$RUNNER_TEMP/a18" \
+          TRACED_MUTANT="$PWD/target/a18/traced-mutant" TRACED_NOSIGNAL="$PWD/target/a18/traced-nosignal" LIB="$PWD/src/test/jpf/lib" WORK="$RUNNER_TEMP/a18" \
           GRAPHCHECK_REFERENCE=1 GRAPHMIN_CACHE=1 \
             bash src/test/jpf/trace/check-graph.sh S1A 1 1 1 1 0 0 after controls > jpf-a18.log 2>&1             || status=$?
           cat jpf-a18.log
@@ -580,8 +606,11 @@ jobs:
           # the instrumented StreamBuffer and the scenarios are test classes; 3 runs per scenario
           mvn -B --no-transfer-progress -q test-compile dependency:build-classpath             -Dmdep.includeScope=test -Dmdep.outputFile=target/test-classpath.txt
           java -cp "target/test-classes:target/classes:$(cat target/test-classpath.txt)"             net.ladenthin.streambuffer.trace.TraceGenerator target/traces 3 32
+          # the negative control of a class whose write never signals (TraceMutants)
+          java -cp "target/test-classes:target/classes:$(cat target/test-classpath.txt)" \
+            net.ladenthin.streambuffer.trace.TraceGenerator target/traces-nosignal 3 32 no-write-signal
           bash src/test/tla/trace.sh "$RUNNER_TEMP/tla2tools.jar" target/traces | tee tla-trace.log
-          bash src/test/tla/trace-controls.sh "$RUNNER_TEMP/tla2tools.jar" target/traces             | tee -a tla-trace.log
+          bash src/test/tla/trace-controls.sh "$RUNNER_TEMP/tla2tools.jar" target/traces target/traces-nosignal             | tee -a tla-trace.log
           {
             echo "### Trace validation (TLC $TLA_TOOLS_VERSION)"
             echo '```'

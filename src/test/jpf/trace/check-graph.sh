@@ -23,7 +23,8 @@
 #          <record readers> <waitForAtLeast callers> <after|any> [controls]
 # Environment: JPF_CORE (jpf-core, built), JAVA_JPF (a JDK 11 java for JPF), JAVA_TLC (java 11+
 #   for TLC), TLA2TOOLS (the jar), TRACED (the instrumented class files), TRACED_MUTANT (the same
-#   with TracedClassDump's no-decrement, for the controls), LIB (the annotation jars:
+#   with TracedClassDump's no-decrement, for the controls), TRACED_NOSIGNAL (the same with
+#   no-write-signal: a write never wakes a waiting reader, for the controls), LIB (the annotation jars:
 #   checker-qual.jar, jspecify.jar, error-prone-annotations.jar), WORK (a scratch directory),
 #   JPF_HEAP (default 6g), TLC_WORKERS (default auto), TLC_HEAP (optional: TLC's -Xmx; the JVM's
 #   default is a quarter of the memory, and a product of millions of states grows past it), GRAPHMIN_LOCK (optional: a lock file, so
@@ -292,5 +293,11 @@ EOF
     # the mutation is on the read paths, which a scenario of waitForAtLeast callers only never runs
     echo "SKIP  control: the reads do not lower the count (no reader in this scenario)"
   fi
+  # a class whose write never signals: the closer's signal wakes its readers later, so JPF finds
+  # no deadlock and the graph is a whole search; the product must reject it, since the model's
+  # writer signals only at the code's lines of it (SignalAt in TraceStreamBuffer.tla)
+  jpf_graph "$name-nosignal-class" "$TRACED_NOSIGNAL" || failed=1
+  expect "control: the class's write never signals" 1 \
+    product "$name-nosignal-class" "$WORK/$name-nosignal-class.graph" "$tla"
 fi
 exit "$failed"
