@@ -95,8 +95,19 @@ annotated, so everything below is genuinely still open.
     one; it assumes `NW = 1`). `RefineWaitProof.tla`: the writer and closer lemmas per i and c, the
     detailed invariant for several writers; tlapm on all modules (proof.sh) on a rented machine.
   - [ ] A18 with two writers or two closers in the smallest scenario, if it fits (rented machine):
-    open; one writer and one reader already has 104,712 JPF states and the scenarios with two
-    readers do not finish, so a second writer is likely out of reach without a smaller harness.
+    open. The 13 scenarios with one writer and one closer finish (the largest, S3N with two
+    readers, from 617.9 million JPF states); a second writer multiplies the interleavings.
+    `graphmin.py` names the writer and the closer `w` and `c` (`TWriterName`, `TCloserName`):
+    one name per writer and closer first.
+  - [ ] Two gaps the review of the branch found (2026-11-25), neither unsafe:
+    - The closed branch of the wait for a `read()` or record reader (`ReaderWaitClosed`) reads
+      `streamClosed` and the count in one step; the code reads `availableBytes` again for its
+      return. A reader that sees 1 byte where the code reads 0 goes through `bufferLock` to the
+      same -1; A18 accepts it, but it is the kind of merged read A18 removed from the fast path.
+      Split it (a step of its own, as `wret` for a `waitForAtLeast` caller), with the proofs.
+    - No TLC model has a `waitForAtLeast` caller next to two writers that both commit
+      (`Writers2WaitAndRead2`, `Writers2WaitChecked2` and `RefineWaitWriters2WaitChecked2` allow
+      one commit; `Writers2Mixed2` has two but no wait caller). TLAPS covers it for any numbers.
   - [x] README, CHANGELOG, CLAUDE.md, `VERIFICATION-ASSUMPTIONS.md` (V10, V13, V17 and the gaps),
     the table above.
 
@@ -264,7 +275,7 @@ annotated, so everything below is genuinely still open.
     writer and closer), no lock fairness: TLC on `StreamBufferWaitForever.tla` (the abstraction
     with a ghost `Refill` of the call budget) and `StreamBufferForever.tla` (the detailed model, a
     thread calls again when done), and TLAPS for the abstraction and any number of threads, writers
-    and closers (`StreamBufferWaitForeverLiveProof.tla`, 1,322 + 633 obligations) under the
+    and closers (`StreamBufferWaitForeverLiveProof.tla`, 1,553 + 768 obligations) under the
     fairness by role. With an endless writer and no close a reader starves even with every thread
     step strongly fair (the bytes go to whoever commits first). The detailed model's readers have
     weak fairness now (was strong). Details, numbers, controls and limits in

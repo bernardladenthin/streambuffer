@@ -27,7 +27,7 @@ OFFSET = "I" if array("I").itemsize == 4 else "q"
 
 t0 = time.time()
 init = None
-trailer = False
+trailer = None  # the edge count of the trailer
 nedges = 0
 event_id = {}  # event text -> small integer
 events = []  # small integer -> event text
@@ -73,9 +73,10 @@ with open(sys.argv[1], encoding="utf-8") as f:
             if init > maxid:
                 maxid = init
         elif line.startswith("# edges "):
-            trailer = True
+            trailer = int(line.split()[2])
 
-if init is None or nedges == 0 or not trailer:
+# the trailer counts the edges GraphExport wrote: fewer read means lines lost (a full disk)
+if init is None or nedges == 0 or trailer is None or trailer != nedges:
     sys.exit("FAIL: the graph is incomplete (init %s, %d edges, trailer %s)" % (init, nedges, trailer))
 
 # dense ids: JPF's id v as v + 1 (so -1 is 0), fresh id v as njpf + (-2 - v)

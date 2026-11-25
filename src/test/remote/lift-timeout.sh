@@ -11,12 +11,14 @@
 # caller then logs and cleans up as usual. The caller sees exit 124 once the limit has passed;
 # the child's own log is the result. Logs to stdout; start it with detach.sh.
 #
-# Usage: lift-timeout.sh [text the timeout command line must contain]   (default: any timeout)
+# Usage: lift-timeout.sh <text the timeout command line must contain>   (required: the machine
+# may be shared, and another's timeout is not ours to stop)
 set -u
 pattern="${1:-}"
+[ -n "$pattern" ] || { echo "usage: lift-timeout.sh <text of the timeout command line>" >&2; exit 2; }
 declare -A child
 for t in $(pgrep -x timeout); do
-  [ -z "$pattern" ] || tr '\0' ' ' < "/proc/$t/cmdline" | grep -qF -- "$pattern" || continue
+  tr '\0' ' ' < "/proc/$t/cmdline" | grep -qF -- "$pattern" || continue
   c="$(pgrep -P "$t" | head -n 1)"
   [ -n "$c" ] || continue
   kill -STOP "$t"

@@ -31,8 +31,10 @@ for d in "$payload"/out/a18 "$payload"/out/formal; do
   done
 done
 [ "$runs" -gt 0 ] || echo "no run under $payload/out"
-# java runs by their command line; the provers by their exact name (Isabelle runs as poly)
-computing=$(( $(pgrep -c -f 'RunJPF|tlc2.TLC|apalache' 2>/dev/null; true) + $(pgrep -c -x 'tlapm|z3|zenon|poly' 2>/dev/null; true) ))
+# java and python runs by their command line (java itself, not a shell that names it: the
+# wrapper of apalache-mc stays while its java has died); the provers by their exact name
+# (Isabelle runs as poly)
+computing=$(( $(pgrep -c -f '(^|/)java .*(RunJPF|tlc2\.TLC|apalache|GraphCheck)|(^|/)python3? .*graphmin\.py' 2>/dev/null; true) + $(pgrep -c -x 'tlapm|z3|zenon|poly' 2>/dev/null; true) ))
 echo "== computing processes: $computing"
 uptime
 free -g | sed -n '1,2p'

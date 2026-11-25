@@ -37,6 +37,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pass as a spurious wake-up; a word accepted without one is accepted with any budget. The
   products are about a quarter the size. Each product's TLC has a temporary directory of its
   own: two started in the same second read each other's half-written `/tmp/TLC.tla`.
+- **A18 rejects a graph that is not a whole search** (found by the review of the branch): a
+  JPF search cut short by a search constraint (the heap below `search.min_free`), which still
+  ends with the trailer and "no errors detected", fails; `graphmin.py` compares the trailer's
+  edge count with the edges it read (lines lost to a full disk), and `GraphExport` writes no
+  trailer after a failed write. `REUSE_GRAPH` takes only a graph of the same arguments and
+  instrumented classes, the `graphmin.py` cache is keyed by the graph's sha256, and the JPF
+  configuration sets the yield break by the key jpf-core reads (`cg.break_yield`). The 13
+  scenarios of 2026-11-24 pass these checks as they stand: no search constraint, and every
+  graph's edge count equal to JPF's transitions.
 
 ### Added
 - **Several writers and closers in the detailed TLA+ model (roadmap A6 follow-up).**
@@ -47,7 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `read()`, records, `waitForAtLeast` and threads that call forever, all clean, and two probes
   that show the writers and the closers interleave; TLC checks the refinements with two of each.
   `RefineWaitProof.tla` proves the refinement of `StreamBufferWait.tla` for any numbers of
-  readers, writers and closers (2,826 obligations). Trace validation records runs with two or three
+  readers, writers and closers (3,345 obligations with the repairs above). Trace validation records runs with two or three
   writers and two closers: `TraceScenario` renumbers the bytes of a run by the order the writes
   commit, as the model numbers them (51 traces in CI, all accepted, the controls reject as before).
 - **Every interleaving of the code is a run of the model, for small scenarios (roadmap A18).**

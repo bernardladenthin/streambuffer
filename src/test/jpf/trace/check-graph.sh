@@ -29,7 +29,8 @@
 #   default is a quarter of the memory, and a product of millions of states grows past it), GRAPHMIN_LOCK (optional: a lock file, so
 #   that the graphmin.py of scenarios run at once take turns; each holds its whole graph in
 #   memory, about 0.7 GB per GB of graph), REUSE_GRAPH (1: take the graph and JPF log of an earlier run
-#   in the same WORK instead of running JPF again, checked as a new one is: to finish a scenario
+#   in the same WORK, of the same arguments and instrumented classes, instead of running JPF
+#   again, checked as a new one is: to finish a scenario
 #   whose later steps were cut off, without repeating a day of JPF), GRAPHCHECK_HEAP (optional:
 #   GraphCheck's -Xmx), GRAPHCHECK_REFERENCE (1: run graphcheck.py too and fail unless both print
 #   the same; for small scenarios, it needs about 700 bytes per product state), GRAPHMIN_CACHE (1:
@@ -70,19 +71,29 @@ native_classpath+=;$out
 listener = net.ladenthin.streambuffer.jpf.GraphExport
 graph.out = $WORK/$1.graph
 vm.enable_assertions = true
-# a yield is the scheduling point of every logged access (the JPF tracer); set, not left to the default
-cg.threads.break_yield = true
+# a yield is the scheduling point of every logged access (the JPF tracer); set, not left to the
+# default: the key AllRunnablesSyncPolicy reads (jpf.properties' cg.threads.break_yield is read by
+# nothing)
+cg.break_yield = true
 EOF
   local s
   s=$(date +%s)
+  stamp "$2" > "$WORK/$1.stamp"
   "$JAVA_JPF" "-Xmx${JPF_HEAP:-6g}" -jar "$JPF_CORE/build/RunJPF.jar" "$WORK/$1.jpf" > "$WORK/$1.jpf.log" 2>&1 || true
   echo "  JPF $1: $(grep -oE 'new=[0-9]+' "$WORK/$1.jpf.log" | head -1) states, $(grep -cE '^error #' "$WORK/$1.jpf.log" || true) errors, $(( $(date +%s) - s )) s"
   graph_ok "$@"
 }
 
+stamp() {  # stamp <traced classes>: the scenario's arguments and a digest of the classes
+  echo "args $bytes,$chunk,$readlen,$nbyte,$nrecord,$nwait,false,$close"
+  echo "classes $(cd "$1" && find . -type f -name '*.class' | LC_ALL=C sort | xargs sha256sum | sha256sum | cut -c1-16)"
+}
+
 graph_ok() {  # graph_ok <label> <traced classes> [mutant]: $WORK/<label>.graph is a whole search
   # the graph is the whole search only if JPF finished it: no error (it stops at the first one),
-  # and the listener's trailer written; the class mutant is expected to stop at its error
+  # no search constraint (JPF stops early when the heap runs low, search.min_free, and still
+  # writes the trailer), and the listener's trailer written (graphmin.py checks its edge count);
+  # the class mutant is expected to stop at its error
   if ! tail -c 4096 "$WORK/$1.graph" 2>/dev/null | grep -q '^# edges '; then
     echo "FAIL  JPF $1: the graph is incomplete (no trailer)"
     return 1
@@ -92,18 +103,24 @@ graph_ok() {  # graph_ok <label> <traced classes> [mutant]: $WORK/<label>.graph 
     grep -A3 '^error #' "$WORK/$1.jpf.log" | head -8 | sed 's/^/      /'
     return 1
   fi
+  if ! grep -qE 'constraints=0$' "$WORK/$1.jpf.log"; then
+    echo "FAIL  JPF $1: a search constraint cut the search short (heap or depth); the graph is no complete search"
+    grep -iE 'constraint' "$WORK/$1.jpf.log" | head -4 | sed 's/^/      /'
+    return 1
+  fi
 }
 
 product() {  # product <label> <graph> <model dir> [sed for the cfg]: TLC's dump and the check
   local d="$WORK/$1"
   rm -rf "$d" && mkdir -p "$d"
   cp "$3/StreamBuffer.tla" "$3/TraceStreamBuffer.tla" "$3/TraceGraph.tla" "$d/"
-  # GRAPHMIN_CACHE=1: the module of a graph file is kept and taken again while the graph (size and
-  # time), the arguments and graphmin.py are the same (S3N's graphmin.py took 4 h 46 min; the
-  # control without the writer's signal has the same graph). Not for a fifo (the byte control).
+  # GRAPHMIN_CACHE=1: the module of a graph file is kept and taken again while the graph (its
+  # sha256: S3N's 70 GB in minutes), the arguments and graphmin.py are the same (S3N's graphmin.py
+  # took 4 h 46 min; the control without the writer's signal has the same graph). Not for a fifo
+  # (the byte control).
   local key="" cache=""
   if [ "${GRAPHMIN_CACHE:-}" = 1 ] && [ -f "$2" ]; then
-    key="$(stat -c '%s %Y' "$2") $name $readers/$byte_readers/$wait_callers $bytes $chunk $readlen $(sha256sum "$here/graphmin.py" | cut -c1-16)"
+    key="$(sha256sum "$2" | cut -c1-32) $name $readers/$byte_readers/$wait_callers $bytes $chunk $readlen $(sha256sum "$here/graphmin.py" | cut -c1-16)"
     cache="$WORK/graphmin-cache/$(basename "$2")"
   fi
   if [ -n "$cache" ] && [ -f "$cache/key" ] && [ "$(cat "$cache/key")" = "$key" ]; then
@@ -205,13 +222,26 @@ expect() {  # expect <label> <0 accepted | 1 rejected> <command...>
 
 if [ "${REUSE_GRAPH:-}" = 1 ]; then
   echo "  JPF $name: the graph of an earlier run, $(grep -oE 'new=[0-9]+' "$WORK/$name.jpf.log" | head -1) states"
+  # the same scenario and the same instrumented classes; a run before the stamp has the arguments
+  # in its .jpf only, and its classes are not checked
+  if [ -f "$WORK/$name.stamp" ]; then
+    if [ "$(cat "$WORK/$name.stamp")" != "$(stamp "$TRACED")" ]; then
+      echo "FAIL  JPF $name: the earlier graph is of other arguments or classes ($WORK/$name.stamp)"
+      exit 1
+    fi
+  elif ! grep -qxF "target.args = $bytes,$chunk,$readlen,$nbyte,$nrecord,$nwait,false,$close" "$WORK/$name.jpf"; then
+    echo "FAIL  JPF $name: the earlier graph is of other arguments ($WORK/$name.jpf)"
+    exit 1
+  else
+    echo "  JPF $name: an earlier run without a stamp: the arguments match, the classes are not checked"
+  fi
   graph_ok "$name" "$TRACED" || exit 1
 else
   jpf_graph "$name" "$TRACED" || exit 1
 fi
 expect "$name" 0 product "$name" "$WORK/$name.graph" "$tla"
 if [ "$controls" = controls ]; then
-  mutant="$WORK/model-nosignal"
+  mutant="$WORK/$name-model-nosignal"
   rm -rf "$mutant" && mkdir -p "$mutant" && cp "$tla/StreamBuffer.tla" "$tla/TraceStreamBuffer.tla" "$tla/TraceGraph.tla" "$mutant/"
   sed -i 's/IF waiters # 0 THEN "siglock" ELSE WriterDone/WriterDone/' "$mutant/StreamBuffer.tla"
   if grep -q 'ELSE WriterDone' "$mutant/StreamBuffer.tla"; then echo "FAIL  the writer's signal not found"; failed=1; fi
@@ -222,7 +252,7 @@ if [ "$controls" = controls ]; then
   # a copy on disk would be as large as the graph (S3N: ~75 GB). Without mkfifo, a file.
   corrupt="$WORK/$name-byte.graph"
   rm -f "$corrupt"
-  cat > "$WORK/corrupt.py" <<'EOF'
+  cat > "$WORK/$name-corrupt.py" <<'EOF'
 import re, sys
 # the first byte a read returned; in a scenario without reads, the count a waitForAtLeast returned.
 # Line by line (a graph of two readers is 9 GB): first the line to change, then the copy. The
@@ -248,11 +278,11 @@ with open(sys.argv[1], encoding="utf-8") as f, out:
         out.write(line)
 EOF
   if mkfifo "$corrupt" 2> /dev/null; then
-    "$py" -I "$WORK/corrupt.py" "$WORK/$name.graph" "$corrupt" &
+    "$py" -I "$WORK/$name-corrupt.py" "$WORK/$name.graph" "$corrupt" &
     expect "control: a returned byte (or count) + 1 in the graph" 1 product_fed "$!" "$name-byte" "$corrupt" "$tla"
     rm -f "$corrupt"
   else
-    "$py" -I "$WORK/corrupt.py" "$WORK/$name.graph" "$corrupt" || { echo "FAIL  the corrupted graph"; failed=1; }
+    "$py" -I "$WORK/$name-corrupt.py" "$WORK/$name.graph" "$corrupt" || { echo "FAIL  the corrupted graph"; failed=1; }
     expect "control: a returned byte (or count) + 1 in the graph" 1 product "$name-byte" "$corrupt" "$tla"
   fi
   if [ $((nbyte + nrecord)) -gt 0 ]; then

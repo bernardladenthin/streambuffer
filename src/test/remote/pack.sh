@@ -31,6 +31,8 @@ case "$(uname -s)" in MINGW* | MSYS* | CYGWIN*) sep=";" ;; esac
 
 mvn -B -q -DskipTests -Denforcer.skip=true test-compile dependency:build-classpath \
   -Dmdep.includeScope=test -Dmdep.outputFile="$work/test-classpath.txt"
+# a fresh folder: after a version bump an old jar would match the globs below too
+rm -rf "$work/anno"
 mvn -B -q dependency:copy-dependencies -DincludeScope=compile -DoutputDirectory="$work/anno"
 cp "$work"/anno/checker-qual-*.jar "$stage/lib/checker-qual.jar"
 cp "$work"/anno/jspecify-*.jar "$stage/lib/jspecify.jar"

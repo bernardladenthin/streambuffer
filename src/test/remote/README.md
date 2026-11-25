@@ -7,8 +7,8 @@ SPDX-License-Identifier: Apache-2.0
 # Long verification runs on a rented machine
 
 CI runs the formal checks in sizes that fit a runner (`formal-verification.yml`). What needs more
-runs on a rented Linux machine: the A18 scenarios beyond the smallest one (hours to days of JPF and
-TLC each), all TLAPS proofs at once, `check.sh` with every model. This directory has the scripts
+runs on a rented Linux machine: the A18 scenarios (CI runs the smallest; the larger take hours to
+days of JPF and TLC each), all TLAPS proofs at once, `check.sh` with every model. This directory has the scripts
 for that, independent of the provider. Which provider, machine and account a run used stays in the
 owner's private notes, never in this repository.
 
@@ -25,8 +25,8 @@ owner's private notes, never in this repository.
 ## The run, step by step
 
 1. **Size the machine.** A18: each scenario at once needs its JPF heap (`JPF_HEAP`, 7 GB) plus
-   about 3 GB for TLC, and about 3 cores (JPF is single-threaded, TLC gets 4 workers);
-   `run-a18.sh` picks the parallelism from memory and cores. Proofs: cores (`PROOF_THREADS` per
+   about 3 GB for TLC, and about 4 cores (JPF is single-threaded, TLC gets 4 workers);
+   `run-a18.sh` picks the parallelism from memory and cores (at most a quarter of the cores). Proofs: cores (`PROOF_THREADS` per
    module, all modules at once). Disk: TLC's dump of a product reaches several GB per scenario
    while it runs (deleted when the scenario ends); 100 GB is plenty.
 2. **Note the machine first, then start it.** Before anything runs, write the instance, its

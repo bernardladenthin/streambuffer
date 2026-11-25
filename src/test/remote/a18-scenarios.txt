@@ -9,9 +9,11 @@ S1N 1 1 1 1 0 0 any
 S2N 2 1 1 1 0 0 any
 S3A 2 1 1 2 0 0 after
 S3N 2 1 1 2 0 0 any
+S4A 2 2 2 0 1 0 after
 S4N 2 2 2 0 1 0 any
 S5N 2 1 2 0 1 0 any
 S6A 2 2 2 1 0 1 after
 S6N 2 2 2 1 0 1 any
+S7A 2 2 2 0 0 1 after
 S7N 2 1 2 0 0 1 any
 S8A 2 1 2 1 1 0 after

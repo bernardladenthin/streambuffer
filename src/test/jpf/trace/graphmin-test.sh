@@ -76,4 +76,15 @@ elif [ -e "$work/c/Graph_T.tla" ]; then
 else
   echo "OK    a graph without its trailer: no module"
 fi
+
+# an edge lost on the way (a full disk) while the trailer was written: no module
+awk '/^E / && !d { d = 1; next } { print }' "$work/g.graph" > "$work/lost.graph"
+mkdir -p "$work/l"
+if "$py" -I "$here/graphmin.py" "$work/lost.graph" Graph_T "$work/l" r1 r1 "" 1 1 1 > "$work/out" 2>&1; then
+  echo "FAIL  a graph with an edge fewer than its trailer gave a module"; failed=1
+elif [ -e "$work/l/Graph_T.tla" ]; then
+  echo "FAIL  a graph with an edge fewer than its trailer wrote a module"; failed=1
+else
+  echo "OK    a graph with an edge fewer than its trailer: no module"
+fi
 exit "$failed"

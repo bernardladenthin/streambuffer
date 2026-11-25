@@ -80,6 +80,12 @@ public final class GraphExport extends ListenerAdapter {
 
     @Override
     public void searchFinished(Search search) {
+        // a PrintWriter keeps its IOExceptions: no trailer after a failed write, so the graph
+        // counts as incomplete
+        if (out.checkError()) {
+            out.close();
+            throw new UncheckedIOException(new IOException("graph.out: a write failed, the graph is incomplete"));
+        }
         out.println("# edges " + edges);
         out.close();
     }

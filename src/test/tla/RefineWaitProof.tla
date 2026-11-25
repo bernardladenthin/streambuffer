@@ -6,8 +6,9 @@
 (***************************************************************************)
 (* TLAPS proof (TODO roadmap A13): StreamBuffer.tla with the current code   *)
 (* refines StreamBufferWait.tla under the mapping of RefineWait.tla, for   *)
-(* ANY set of readers and ANY numbers of writers and closers (TLC checks   *)
-(* it for 2 and 3 readers, 2 writers, 2 closers). Every step of the        *)
+(* ANY finite set of readers and ANY numbers of writers and closers, with  *)
+(* Bytes >= 1 (Extra, SBAssump; TLC checks it for 2 and 3 readers, 2      *)
+(* writers, 2 closers). Every step of the                                 *)
 (* detailed model is a step of the abstraction or a stuttering step;       *)
 (* writer i is the abstraction's writer i, closer c its closer c. The      *)
 (* detailed invariant DInv needs no sum over the FIFO: the writers write   *)
@@ -78,7 +79,7 @@ DBuf ==
     /\ buf # <<>> => buf[Len(buf)][1] + Len(buf[Len(buf)]) = nextByte
     /\ buf # <<>> => Head(buf)[1] + pos = Len(taken) + InLen + 1
     /\ buf = <<>> => Len(taken) + InLen = nextByte - 1
-\* waitingReaders counts the threads between the increment and the return of the wait
+\* waitingReaders counts the threads between the increment and the finally block of the wait
 DWait == waiters = Cardinality(WSet)
 \* only the holder of bufferLock holds bytes
 DHold == \A r \in Readers : r # bl => hold[r] = <<>>

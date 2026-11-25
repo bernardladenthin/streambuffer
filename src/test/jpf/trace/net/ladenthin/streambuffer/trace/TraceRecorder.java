@@ -13,7 +13,7 @@ import java.util.List;
  * src/test/java/.../trace/TraceRecorder.java}, which the instrumented class calls. Instead of one
  * global lock it logs in a JPF atomic block, so the tracer adds no state of its own. Every access
  * keeps exactly one scheduling point, a {@code Thread.yield()} before its block (JPF breaks the
- * transition there, {@code cg.threads.break_yield}), so the interleavings of the accesses are all
+ * transition there, {@code cg.break_yield}), so the interleavings of the accesses are all
  * still explored; the access and its log line are one step, as under the global lock.
  *
  * <p>Compiled only for JPF (with {@code jpf-classes.jar}), in place of the JVM's tracer.

@@ -35,7 +35,7 @@ out="$payload/out/a18"
 mkdir -p "$out"
 rm -f "$out/DONE"
 log() { echo "$(date -u +%H:%M:%S) $*" >> "$out/progress.log"; }
-log "start: $(grep -c . "$list") scenarios, $par at once, JPF heap $heap, $mem_gb GB, $(nproc) cores, commit $(cut -c1-12 "$payload/COMMIT" 2>/dev/null)"
+log "start: $(grep -v '^#' "$list" | grep -c .) scenarios, $par at once, JPF heap $heap, $mem_gb GB, $(nproc) cores, commit $(cut -c1-12 "$payload/COMMIT" 2>/dev/null)"
 
 one() { # one <name> <args...>
   local name="$1"

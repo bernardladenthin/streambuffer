@@ -17,7 +17,7 @@
 (* - a step is possible until all are done (NoDeadlock): a lock holder can *)
 (*   always go on, and no thread parks once a closer is done, which woke   *)
 (*   every parked thread after the close.                                  *)
-(* Rank(r) <= 10, so the thread part is the sum of 10 layers, each the     *)
+(* Rank(r) <= 12, so the thread part is the sum of 12 layers, each the     *)
 (* number of threads of at least that rank: no sum over the threads.      *)
 (***************************************************************************)
 EXTENDS StreamBufferWait
