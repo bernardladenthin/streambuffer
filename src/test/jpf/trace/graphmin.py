@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2014-2026 Bernard Ladenthin <bernard.ladenthin@gmail.com>
+#
+# SPDX-License-Identifier: Apache-2.0
 """A18 gate 2: the size of JPF's state graph as a minimal deterministic automaton over its events.
 
 Reads GraphExport's file (I, E, F lines), splits multi-event edges into chains, removes the edges
