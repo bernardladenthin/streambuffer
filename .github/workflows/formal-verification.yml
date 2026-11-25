@@ -289,6 +289,9 @@ jobs:
       # Pinned jpf-core commit (no upstream releases exist). Bump deliberately; re-validate the
       # AtomicLong model patch on any bump (jpf-core has no release cadence to track).
       JPF_SHA: "e61e396087983cde00b1e4a5f4b3dde39c0f9f7f"
+      # TLC for A18's graph check (the same pin as the tla-model job)
+      TLA_TOOLS_VERSION: "v1.7.4"
+      TLA_TOOLS_SHA256: "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Display CPU Info
@@ -407,6 +410,41 @@ jobs:
           name: jpf-output
           path: src/test/jpf/jpf-output*.log
           if-no-files-found: ignore
+      - name: Every interleaving JPF explores is a run of the model, smallest scenario (A18)
+        # check-graph.sh: JPF's state graph of the A6-instrumented class -> the minimal automaton ->
+        # TLC's product with the trace model -> a subset check over its words (GraphCheck.java, and
+        # GRAPHCHECK_REFERENCE=1: graphcheck.py must print the same on every product; GRAPHMIN_CACHE=1:
+        # the control without the writer's signal takes the main product's module); with its three
+        # negative controls (a model whose writer never signals, a corrupted byte, a defect in the
+        # class). About 2 minutes locally. The larger scenarios run on a rented machine (TODO.md, A18).
+        run: |
+          set -euo pipefail
+          export JAVA_HOME="$JAVA_HOME_25_X64"
+          mvn -B --no-transfer-progress -DskipTests -Denforcer.skip=true test-compile \
+            dependency:build-classpath -Dmdep.includeScope=test -Dmdep.outputFile=target/test-classpath.txt
+          cp="target/test-classes:target/classes:$(cat target/test-classpath.txt)"
+          java -cp "$cp" net.ladenthin.streambuffer.trace.TracedClassDump "$PWD/target/a18/traced"
+          java -cp "$cp" net.ladenthin.streambuffer.trace.TracedClassDump "$PWD/target/a18/traced-mutant" no-decrement
+          curl --fail --location --retry 3 -o "$RUNNER_TEMP/tla2tools.jar" \
+            "https://github.com/tlaplus/tlaplus/releases/download/$TLA_TOOLS_VERSION/tla2tools.jar"
+          echo "$TLA_TOOLS_SHA256  $RUNNER_TEMP/tla2tools.jar" | sha256sum --check --strict
+          # the subset check and its reference on hand-written products (also compressed, a cut dump)
+          JAVA="$JAVA_HOME_11_X64/bin/java" bash src/test/jpf/trace/graphcheck-test.sh
+          # the minimal automaton on hand-written graphs, worked out by hand
+          bash src/test/jpf/trace/graphmin-test.sh
+          JPF_CORE="$PWD/jpf-core" JAVA_JPF="$JAVA_HOME_11_X64/bin/java" JAVA_TLC="$JAVA_HOME_11_X64/bin/java" \
+          TLA2TOOLS="$RUNNER_TEMP/tla2tools.jar" TRACED="$PWD/target/a18/traced" \
+          TRACED_MUTANT="$PWD/target/a18/traced-mutant" LIB="$PWD/src/test/jpf/lib" WORK="$RUNNER_TEMP/a18" \
+          GRAPHCHECK_REFERENCE=1 GRAPHMIN_CACHE=1 \
+            bash src/test/jpf/trace/check-graph.sh S1A 1 1 1 1 0 0 after controls > jpf-a18.log 2>&1             || status=$?
+          cat jpf-a18.log
+          {
+            echo "### Every interleaving is a run of the model (A18, smallest scenario)"
+            echo '```'
+            cat jpf-a18.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "${status:-0}"
       - name: Write the verification manifest (A16, VERIFICATION-ASSUMPTIONS.md)
         run: |
           set -euo pipefail
@@ -418,7 +456,8 @@ jobs:
             states+=("states_${name:-streambuffer}=$(grep -oE 'new=[0-9]+' "$log" | head -1 | cut -d= -f2)")
           done
           bash src/test/verification/manifest.sh manifest-jpf-interleavings.json jpf-interleavings \
-            "rows=V6" "tool=jpf-core $JPF_SHA" "harnesses=${#states[@]}" "${states[@]}"
+            "rows=V6 V19" "tool=jpf-core $JPF_SHA" "harnesses=${#states[@]}" "${states[@]}" \
+            "a18_ok=$(grep -c '^OK' jpf-a18.log || true)" "a18_fail=$(grep -c '^FAIL' jpf-a18.log || true)"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         timeout-minutes: ${{ fromJSON(env.ARTIFACT_TIMEOUT_MINUTES) }}
         with:

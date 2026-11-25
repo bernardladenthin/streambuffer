@@ -111,7 +111,7 @@ deliberately not part of the synchronous Publish pipeline and never a required c
 
 4. **TLA+ model** (`src/test/tla/`, scheduled/dispatch CI job `tla-model`): `StreamBuffer.tla` models
    the wait/wake-up/close protocol, the writes (one FIFO entry each) and the reads; TLC checks safety
-   and liveness (weak fairness per thread, no lock fairness). `check.sh` compares 45 models (and a mutant) with
+   and liveness (weak fairness per thread, no lock fairness). `check.sh` compares 55 models (and two mutants) with
    their expected outcomes: the current code checks
    clean (`read()` with 1, 2, 3 readers, `read(b, 0, 2)` records, records across entries, a `read()`
    reader next to a record reader, `waitForAtLeast` next to a reader, also next to a 2-byte write),
@@ -119,7 +119,8 @@ deliberately not part of the synchronous Publish pipeline and never a required c
    next to a waiter; #212: a torn record; F279: a count from the middle of a read; before
    `CheckedReturn`: `waitForAtLeast(2)` returning 1 on an open buffer). Constants `Protocol`,
    `ReCheck`, `AtomicRead`, `CountOnce`, `CheckedReturn` select the code version; `ChunkLen`,
-   `ByteReaders`, `WaitCallers` the scenario; `Spurious` is the budget of spurious wake-ups of
+   `ByteReaders`, `WaitCallers`, `NW` writers and `NC` closers (sharing the bytes in commit order)
+   the scenario; `Spurious` is the budget of spurious wake-ups of
    `Condition.await()` (`SpuriousWake(r)`, not under fairness; 0 in the existing configurations,
    2 in the `*Spurious*` models, 3 in the traces; also in `StreamBufferWait.tla` and its proofs). Every other
    step keeps the ghost `spurious` (`StreamBuffer.tla`: in `WriterStep`/`CloserStep`/`ReaderStep`;
@@ -135,7 +136,7 @@ deliberately not part of the synchronous Publish pipeline and never a required c
    (`StreamBufferWaitLive.tla`: with a closer, weak fairness of `Next` ends with all done;
    `StreamBufferWaitLiveProof.tla` with `StreamBufferCountLemmas.tla` and
    `StreamBufferWaitEnabled.tla`), and that `StreamBuffer.tla` refines `StreamBufferWait.tla` for
-   any number of readers (`RefineWaitProof.tla`); the scheduled/dispatch CI job `tlaps-proofs` builds tlapm from a
+   any number of readers, writers and closers (`RefineWaitProof.tla`); the scheduled/dispatch CI job `tlaps-proofs` builds tlapm from a
    pinned commit. Liveness with threads that call forever: `StreamBufferWaitForever.tla` (a ghost
    `Refill` of the call budget) and `StreamBufferForever.tla` (the detailed model, `Restart` when
    done), checked by TLC in `check.sh` (`WaitForever*`, `Forever*`); `StreamBufferWaitForeverLiveProof.tla`
@@ -174,10 +175,35 @@ deliberately not part of the synchronous Publish pipeline and never a required c
    calls of `TraceRecorder`, with assertions enabled; `TraceGenerator` runs the scenarios and writes each trace as a
    TLA+ module, `trace.sh` checks them against `TraceStreamBuffer.tla` (every trace must be
    accepted) and `trace-controls.sh` checks that wrong models and corrupted traces are rejected.
+   Several writers choose their bytes before writing, the model numbers them in commit order, so
+   `TraceScenario.renumber` renumbers a trace by the commits (`COMMIT`, a write's
+   `writeFromArray.putAvail#0`): if `writeFromArray` changes, `COMMIT` changes with it.
    The lines name a method and its n-th access of a kind (`waitForAtLeast.getAvail#0`), so when
    one of those methods changes, `TraceStreamBuffer.tla` (`WaitPc`) and the expected list of
    `TraceRecorderTest` change with it; a new access to shared state needs its rewrite in
    `TracingClassLoader`.
+   **Every interleaving** (A18, `src/test/jpf/trace/`, the `jpf-interleavings` job): JPF runs the
+   instrumented class (`TracedClassDump`) under a JPF-only `TraceRecorder` (an atomic block per
+   access behind one `Thread.yield()`; keep its API in step with the JVM's tracer), `GraphExport`
+   writes the state graph, `graphmin.py` the minimal automaton as a module of `TraceGraph.tla`, and
+   `GraphCheck.java` runs a subset construction over TLC's dump of the product (zstd-compressed
+   through a pipe when zstd is there; `graphcheck.py` is its reference, `graphcheck-test.sh` tests
+   both, and with `GRAPHCHECK_REFERENCE=1` both run on every product and must agree);
+   `check-graph.sh` does it per scenario with its controls. A change of `TraceStreamBuffer.tla`'s `StepOf` or `Obs`
+   changes this check too (it uses them as they are). The products run without spurious
+   wake-ups (`PRODUCT_SPURIOUS`, default 0): JPF's `await()` returns only after a signal, and with
+   a budget a missing signal could pass as one. The finally block of `awaitAtLeast` is a step of
+   its own (`ReaderWaitExit`, the pcs `WaitExits`; in `StreamBufferCounters.tla` too), and
+   `TraceStreamBuffer.tla` checks `waitingReaders` exactly; `RefineWait.tla`, `RefineRecords.tla`
+   and `RefineWaitProof.tla` map a thread in it to where it goes next (`MapPc`, `MapWl`). A table that comes from the cfg
+   (`GEdge <- TEdge`, `TraceLog <- TTrace`) is read only through a definition of its own (`Edges`,
+   `Out`, `Log`): TLC 1.7.4 evaluates a substituted constant anew at every use (tlaplus issue 648),
+   which made the products ~36 times slower; `check.sh` counts the evaluations (`ConstCache*`).
+   **Long runs on a rented machine** (`src/test/remote/`, README there): `pack.sh` builds the
+   payload locally, `setup.sh` installs the tools at the workflow's pins, `run-a18.sh` and
+   `run-formal.sh` run without a time limit, `detach.sh` starts them past the ssh session,
+   `status.sh` is the 30-minute check. Nothing about the provider, machine or key goes into the
+   repository.
 
 The `@GuardedBy("bufferLock")` lock discipline is gated separately by Error Prone in the default
 build. The Checker Framework Lock Checker was evaluated as a further layer and deferred — see

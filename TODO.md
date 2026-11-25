@@ -11,34 +11,105 @@ annotated, so everything below is genuinely still open.
 
 ## Open
 
-- **Open verification items — effort, odds and timeline (estimated 2026-11-13).** Estimates, not
-  measurements; "success" means the result is there as described, machine-checked. Details under
-  the items named. In this order; A15 comes last (see its row).
+- **Open items — effort, odds and timeline (estimated 2026-11-13, updated 2026-11-14).** Estimates,
+  not measurements; "success" means the result is there as described, machine-checked. Details
+  under the items named. In this order; A15 comes last (see its row).
 
-  | Item | Work | Odds of success | Timeline | Why / risk |
-  |---|---|---|---|---|
-  | **A16** Assumptions and a proof manifest (`VERIFICATION-ASSUMPTIONS.md`, a manifest artifact per formal run) | 2–3 days | high, ~90 % | ~1 week | diligence: every claim of the READMEs gets a row with a run and a SHA. **In progress, branch `feat/a16-a17`** |
-  | **A17** Data-race freedom checked on the bytecode (an ASM test, the field table against reflection) | 3–5 days | ~80 % | 1–2 weeks | then for every execution, not for scenarios; the hard part is a `@GuardedBy` method whose every caller must hold the lock. **In progress, branch `feat/a16-a17`** |
-  | **A18** Every interleaving of the code is a run of the model (JPF paths as A6 traces) | 1–2 weeks | medium, ~55 % | 2–3 weeks | JPF's state counts (`TwoReaders` 2.3 million): start with the smallest scenarios, time-box |
-  | A6: several writers and closers in the detailed model | 1–2 weeks | ~70 % | 2–3 weeks | `StreamBuffer.tla` has one of each; `RefineWaitProof.tla` (2,729 obligations) must follow; the trace scenarios are easy afterwards |
-  | A6: trim in the model | 1–2 weeks | ~60 % | 2–4 weeks | the merge of the entries touches the FIFO invariant and the refinement; the geometric merge is hard to state compactly |
-  | Prove that fairness per thread gives the fairness by role (`FairRole`, A13 follow-up; today argued and checked by TLC in bounded models) | 1–2 weeks | low, ~30 % | 2–3 weeks | tlapm cannot swap a quantifier over threads with a temporal operator (`\A q : P(q) ~> Q` to `(\E q : P(q)) ~> Q`), which is where it failed; another prover (e.g. Isabelle with a TLA embedding) would be the way out |
-  | **A19** Liveness of the detailed model for any number of readers | 2–4 weeks | medium, ~50 % | 3–6 weeks | the pattern of `StreamBufferWaitForeverLiveProof.tla` carries over, but the detailed model is much larger (the FIFO as a sequence, more stages, the copy per entry), and the assumption of the row above stays |
-  | A8: `ReentrantLock` instead of `synchronized` | 3–5 days, if taken up | technically high, ~90 %; the gain unclear | 1–2 weeks | the measurements show a trade-off (faster for platform threads, slower for virtual threads); it needs a workload that decides which kind matters |
-  | A9: functional proof of the instance methods | months | low, ~20–30 % | 3–6 months | OpenJML ESC returns "unknown" on instance methods, and the deque as a ghost sequence is large; extract a sequential core first |
-  | Checker Framework Lock Checker | 1–2 days for a spike | ~40 % | ~1 week | blocked by inconsistent JDK stubs of `close()`; a way out via `-AskipDefs` or own stubs; A17 makes it mostly unnecessary |
-  | `@VisibleForTesting` decision | ½ day | ~95 % | a few days | only the decision (an own marker annotation, or the convention does not apply here), then act |
-  | Naming review | ~1 day | ~90 % | ~1 week | mechanical; renaming private methods is cheap, a public API rename is a breaking change for the CHANGELOG |
-  | **A15** Proofs as a release gate (`workflow_call`, publish waits for the formal jobs on `v*` tags) | 1–2 days | high, ~90 % | ~1 week | **only after every other item of this table is done** (owner, 2026-11-13): each package adds checks to the formal jobs, so the gate's run time is known only at the end, and until then the formal jobs stay scheduled and keep the CI of each release short. It changes the release process (about 2 h more per release): the owner confirms before it is merged |
+  | # | Item | Work | Odds of success | Timeline | Why / risk |
+  |---|---|---|---|---|---|
+  | 1 | **First scheduled formal run after #233** (Monday 04:17 UTC): the eight manifest steps run, rows V1-V18 get a run with a SHA, `check.sh`'s 4-core time is measured | ~½ h to check | ~85 % | Monday | the steps never ran in CI (the TLA+, TLAPS and JPF jobs run on the schedule only); a failure there is a CI error of mine (cancel, fix, push) |
+  | 2 | **A18** Every interleaving of the code is a run of the model. **Done on branch `fix/stale-reads`** (with `feat/a18-jpf-traces` and A6's commits; 2026-11-24): 13 scenarios (one writer and one closer, up to two readers of `read()`, records or `waitForAtLeast`, up to two bytes) accepted with the final model and no spurious wake-ups, every control rejected; the largest, S3N, from 617.9 million JPF states; docs, `V19`, CI with S1A; open: the PR | — | — | the PR | it found two places where the model was coarser than the code (the two reads of the wait, its finally block), both repaired in the models and proofs |
+  | 3 | `@VisibleForTesting` decision (15 package-private methods; below) | ½ day | ~95 % | a few days | only the decision (an own marker annotation, or the convention does not apply here), then act |
+  | 4 | Naming review (below, `code-quality-todos.md`) | ~1 day | ~90 % | ~1 week | mechanical; renaming private methods is cheap, a public API rename is a breaking change for the CHANGELOG |
+  | 5 | A14 follow-up: a trim threshold that grows with the backlog | 1–2 days | ~70 % | ~1 week | with a backlog of 179 MiB the default threshold costs 10-20x against no trim (A14, below); it changes how many entries the buffer keeps |
+  | 6 | A6: several writers and closers in the detailed model. **Done, in `fix/stale-reads`** (A18's PR): models, TLAPS refinement (3,345 obligations), traces with several writers; open only A18 with two writers (below) | — | — | with A18's PR | the branch carries A18's commits |
+  | 7 | A6: trim in the model | 1–2 weeks | ~60 % | 2–4 weeks | the merge of the entries touches the FIFO invariant and the refinement; the geometric merge is hard to state compactly |
+  | 8 | **A19** Liveness of the detailed model for any number of readers | 2–4 weeks | medium, ~50 % | 3–6 weeks | the pattern of `StreamBufferWaitForeverLiveProof.tla` carries over, but the detailed model is much larger (the FIFO as a sequence, more stages, the copy per entry), and the assumption of the row below stays |
+  | 9 | Prove that fairness per thread gives the fairness by role (`FairRole`, A13 follow-up; today argued and checked by TLC in bounded models) | 1–2 weeks | low, ~30 % | 2–3 weeks | tlapm cannot swap a quantifier over threads with a temporal operator (`\A q : P(q) ~> Q` to `(\E q : P(q)) ~> Q`), which is where it failed; another prover (e.g. Isabelle with a TLA embedding) would be the way out |
+  | 10 | A8: `ReentrantLock` instead of `synchronized` (parked) | 3–5 days, if taken up | technically ~90 %; the gain unclear | 1–2 weeks | the measurements show a trade-off (faster for platform threads, slower for virtual threads); only worth it with a workload that decides which kind matters, e.g. more virtual threads than carriers on JDK 21-23 |
+  | 11 | A9: functional proof of the instance methods (long-term) | months | low, ~20–30 % (a partial goal ~35 %) | 3–6 months | OpenJML ESC returns "unknown" on instance methods, and the deque as a ghost sequence is large; extract a sequential core first |
+  | 12 | Checker Framework Lock Checker (deferred) | 1–2 days for a spike | ~40 % | ~1 week | blocked by inconsistent JDK stubs of `close()`; A17 checks the lock discipline on the bytecode already, so it is a candidate to drop |
+  | 13 | **A15** Proofs as a release gate (`workflow_call`, publish waits for the formal jobs on `v*` tags) | 1–2 days | high, ~90 % | ~1 week | **only after every other item of this table is done** (owner, 2026-11-13): each package adds checks to the formal jobs, so the gate's run time is known only at the end, and until then the formal jobs stay scheduled and keep the CI of each release short. It changes the release process (about 2 h more per release): the owner confirms before it is merged |
 
-  Best value for the risk: A16 and A17, then A18; the `@VisibleForTesting` decision and the naming
-  review on the side. The `FairRole` proof, A19 and A9 are research with an open outcome.
+  Best value for the risk: 1 and 2; 3 and 4 on the side. 8, 9 and 11 are research with an open
+  outcome.
 
-  For the owner: the `ANTHROPIC_API_KEY` secret (`claude-review` fails in every pull request
-  without it), the two tlapm quirks as an issue at tlaplus/tlapm (own account), the comment on
-  OpenJML#1012. Waiting on others: an Apalache release with #3505, OpenJML#1050 (then the RAC
-  scaling of the tests can go), and the first scheduled formal run with the spurious wake-ups
-  (measures the 4-core time of `check.sh`).
+  **For the owner (decisions and actions on your accounts):**
+  - the `ANTHROPIC_API_KEY` secret: `claude-review` fails in every pull request without it;
+  - the two tlapm quirks as an issue at tlaplus/tlapm (your account);
+  - OpenJML: a new issue for the inner-class invariant case left from #1012 (draft in the
+    owner's private notes; the report-back on the closed #1012 is
+    unanswered since 2026-10-21);
+  - a composite action in bernardladenthin/actions for the pinned tool setups (OpenJML,
+    jpf-core, tla2tools, Apalache, tlapm): shared by several repositories, so your decision.
+
+  **Waiting on others:**
+  - an Apalache release with apalache#3505 (merged 2026-11-12): then bump `APALACHE_VERSION` (A13,
+    below);
+  - an OpenJML release with #1050 (fixed on `dev-21`): then drop the RAC scaling of the tests;
+  - jpf-core#664 (the `AtomicLong` model) and #665 (lambda type name vs. anonymous classes), opened
+    2026-11-11: their CI waits for the maintainers' approval; once merged and pinned, the
+    `AtomicLong` patch of the `jpf-interleavings` job can go.
+
+  **Standing rules:** jqwik stays at 1.9.3 (below); the null-safety refinement (below) as new API
+  surfaces appear.
+
+- **A6: several writers and closers in the detailed model (planned and done 2026-11-14, branch
+  `feat/a6-writers-closers`).** The detailed model `StreamBuffer.tla` had one writer and one
+  closer; the abstractions have several (`StreamBufferWait.tla`: `Writers == 1..NW`,
+  `Closers == 1..NC`). Done when TLC checks the
+  current code with two writers and with two closers (safety and liveness), the older code still
+  fails with its defects, `RefineWaitProof.tla` proves the refinement for any numbers of readers,
+  writers and closers, and A6 records and accepts runs with two writers and two closers. Its own
+  branch from `main` once A18 is merged: both change `StreamBuffer.tla` and `TraceStreamBuffer.tla`.
+
+  Plan, with the reasons:
+  - [x] (1e2588d) `StreamBuffer.tla`: constants `NW`, `NC` with `Writers == 1..NW`, `Closers == 1..NC` (the
+    abstraction's form, so the refinement maps writer i to writer i and `RefineWaitProof.tla` needs
+    no bijection between two sets); `wpc`, `cpc` functions; `WriterStep(i)`, `CloserStep(c)`, weak
+    fairness for each. The writers share `nextByte`: together they write the bytes `1..Bytes`, a
+    chunk per write, in commit order (as the abstraction's shared `w`), so `Fifo` and the
+    invariants keep their meaning. A writer is done once all bytes are written by anyone.
+  - [x] (1e2588d, f960d35) Every existing configuration with `NW = 1`, `NC = 1`: the state counts must stay as they
+    are (a check that the change is a pure generalization); new models: two writers, two closers,
+    both, for `read()`, records and `waitForAtLeast`; the older code's models with two writers
+    where that shows something new (e.g. F149, a write racing a close, with two writers).
+    Result (2026-11-14): check.sh, all 45 earlier models with the same outcome, every clean one
+    with the same state count (a model that finds a violation stops at a count that depends on
+    TLC's worker order). New, clean with liveness: `Writers2Condition2`, `Closers2Condition2`,
+    `Writers2Records2`, `Writers2Mixed2` (two writers, two closers), `Writers2WaitChecked2`,
+    `Writers2WaitAndRead2`, `ForeverWriters2Mixed2`; probes `Writers2Reached2`,
+    `Closers2Reached2` (two writers, two closers signal at once) violated. The older code's models
+    keep one writer and one closer (not run with two: more writers only add behaviours, so their
+    defects stay reachable).
+  - [x] (4cbb3ad, 537f680) `StreamBufferForever.tla`, `TraceStreamBuffer.tla` (`StepOf` and the observations per
+    writer and closer; the trace's thread names `w1`.., `c1`.. map to the model's ids) and A6:
+    `TraceScenario` and `TraceGenerator` with several writers and closers; `trace.sh` and its
+    controls on the new traces.
+    Result: six scenarios with two or three writers and two closers; the code's writers choose
+    their bytes before writing, the model numbers them in commit order, so `TraceScenario`
+    renumbers a trace's bytes by the commits (`TraceScenarioTest`); a `wret` of several writers is
+    a lower bound of `Len(written)`. trace.sh 51/51 accepted, all controls pass.
+  - [x] (TLC part 4f37431; TLAPS: 2,826 obligations, 2026-11-14, local tlapm in 18 min, `LEMMA Bad == FALSE` fails alone) Refinements: `RefineWait.tla` and `RefineRecords.tla` map `wpc[i]` to the abstraction's
+    writer i (no `1..1` any more); `RefineCounters.tla` stays for one writer (its abstraction has
+    one; it assumes `NW = 1`). `RefineWaitProof.tla`: the writer and closer lemmas per i and c, the
+    detailed invariant for several writers; tlapm on all modules (proof.sh) on a rented machine.
+  - [ ] A18 with two writers or two closers in the smallest scenario, if it fits (rented machine):
+    open. The 13 scenarios with one writer and one closer finish (the largest, S3N with two
+    readers, from 617.9 million JPF states); a second writer multiplies the interleavings.
+    `graphmin.py` names the writer and the closer `w` and `c` (`TWriterName`, `TCloserName`):
+    one name per writer and closer first.
+  - [ ] Two gaps the review of the branch found (2026-11-25), neither unsafe:
+    - The closed branch of the wait for a `read()` or record reader (`ReaderWaitClosed`) reads
+      `streamClosed` and the count in one step; the code reads `availableBytes` again for its
+      return. A reader that sees 1 byte where the code reads 0 goes through `bufferLock` to the
+      same -1; A18 accepts it, but it is the kind of merged read A18 removed from the fast path.
+      Split it (a step of its own, as `wret` for a `waitForAtLeast` caller), with the proofs.
+    - No TLC model has a `waitForAtLeast` caller next to two writers that both commit
+      (`Writers2WaitAndRead2`, `Writers2WaitChecked2` and `RefineWaitWriters2WaitChecked2` allow
+      one commit; `Writers2Mixed2` has two but no wait caller). TLAPS covers it for any numbers.
+  - [x] README, CHANGELOG, CLAUDE.md, `VERIFICATION-ASSUMPTIONS.md` (V10, V13, V17 and the gaps),
+    the table above.
 
 - **Spurious wake-ups — open limits** (model and proofs since #231, `src/test/tla/README.md`,
   "Spurious wake-ups"): `FairRole` is TLC-checked only without spurious wake-ups
@@ -191,7 +262,7 @@ annotated, so everything below is genuinely still open.
       bounded search from `Init`: without the F278 re-check, with the two-phase read before #212,
       and with `waitForAtLeast` reading the count again before `CheckedReturn`.
     - **Link to the code:** TLAPS proves that `StreamBuffer.tla` with the current code refines
-      `StreamBufferWait.tla` for any number of readers (`RefineWaitProof.tla`, 2,656 obligations),
+      `StreamBufferWait.tla` for any number of readers, writers and closers (`RefineWaitProof.tla`, 3,345 obligations),
       so its safety results hold for the detailed model (liveness does not carry over: the
       refinement is of the specifications without fairness). TLC also checks the
       refinement of all three abstractions (`RefineCounters.tla`, `RefineRecords.tla`,
@@ -204,7 +275,7 @@ annotated, so everything below is genuinely still open.
     writer and closer), no lock fairness: TLC on `StreamBufferWaitForever.tla` (the abstraction
     with a ghost `Refill` of the call budget) and `StreamBufferForever.tla` (the detailed model, a
     thread calls again when done), and TLAPS for the abstraction and any number of threads, writers
-    and closers (`StreamBufferWaitForeverLiveProof.tla`, 1,322 + 633 obligations) under the
+    and closers (`StreamBufferWaitForeverLiveProof.tla`, 1,553 + 768 obligations) under the
     fairness by role. With an endless writer and no close a reader starves even with every thread
     step strongly fair (the bytes go to whoever commits first). The detailed model's readers have
     weak fairness now (was strong). Details, numbers, controls and limits in
@@ -245,89 +316,32 @@ annotated, so everything below is genuinely still open.
     of the lock discipline (README); the `safeWrite` array contract; the model invariants it
     proposes (`Fifo`, `AvailLinearizable`, `RecordsWhole`, `NoWriteAfterEof`, proved for any number
     of threads in the abstractions and carried to the detailed model by `RefineWaitProof.tla`).
+  - **Done in this part:** A16 and A17 (PR #233, 2026-11-14): `VERIFICATION-ASSUMPTIONS.md` with
+    every result as a row and the run manifests of the formal jobs; the lock discipline checked on
+    the bytecode for every execution (`drf/LockDisciplineBytecodeTest`).
   - **Not taken:** an Isabelle/JMM proof of the wake-up protocol. It uses only synchronization
     actions (volatile `availableBytes`/`streamClosed`, `AtomicInteger waitingReaders`, the locks,
     `await`/`signalAll`), which the JMM puts in one total order consistent with program order (JLS
-    §17.4.4), exactly what the TLA+ model assumes. What is left is the plain accesses (A17) and
-    the code-to-model link (A18); an Isabelle project would mostly re-prove that reduction.
+    §17.4.4), exactly what the TLA+ model assumes. The plain accesses are checked by A17;
+    what is left is the code-to-model link (A18); an Isabelle project would mostly re-prove that reduction.
     Source-to-bytecode correctness: javac and the JVM stay trusted (A16 lists them).
-  - **The gaps:** no formal job gates a release (they run scheduled only); the lock-discipline
-    table is hand-written and vmlens covers the scenarios it runs only; code and model are linked
-    by 990 recorded runs (A6), not by every interleaving; assumptions and limits are spread over
-    three READMEs and no result is tied to a revision; liveness of the detailed model and the
-    instance methods for any number of threads.
-  Order: A16 and A17 together (branch `feat/a16-a17`), then A18; A19 and A9 only if wanted
-  afterwards. A15 last, once every other item of the table above is done (owner, 2026-11-13). Run
-  with `/loop` and the prompt in "Run prompts" below.
+  - **The gaps left:** no formal job gates a release (they run scheduled only); code and model are
+    linked by 990 recorded runs (A6), not by every interleaving; liveness of the detailed model and
+    the instance methods for any number of threads.
+  Order: A18 (done, its PR from `fix/stale-reads`); A19 and A9 only if wanted afterwards. A15 last, once
+  every other item of the table above is done (owner, 2026-11-13). Run with `/loop` and the prompt
+  in "Run prompts" below.
 
-  - **A16 — Assumptions and a proof manifest (2–3 days).** A new `VERIFICATION-ASSUMPTIONS.md`:
-    the trusted base (JVM and JIT, javac, the JDK classes `ReentrantLock`/`Condition`/AQS,
-    `Semaphore`, `ArrayDeque`, `CopyOnWriteArrayList`, the atomics), the caller contracts (a
-    written array without `safeWrite`, the semaphore limits of F280, `release()` overrides, trim
-    signals), what no model covers (timeouts, interrupts, trim in the TLA+ model) and what the
-    models assume (finitely many spurious wake-ups). And a table: property → tool → scope
-    (bounded or unbounded; abstraction, detailed model or code) → assumptions → CI job. Every scheduled formal run writes a manifest (commit SHA,
-    tool versions and SHA-256, obligations, states) as an artifact. Done when every verification
-    claim in the READMEs points to a row of that table, and every row has a run with a SHA.
-
-    Plan (branch `feat/a16-a17`, started 2026-11-13), with the reasons:
-    - [x] (d142501) `VERIFICATION-ASSUMPTIONS.md` at the root: the trusted base, the caller contracts, what
-      no model covers, what the models assume; one table property → tool → scope → assumptions →
-      CI job → script, each row with an id (`V1`, `V2`, ...). At the root, not under `docs/`,
-      because the README links it next to the verification overview.
-    - [x] (d142501) Every verification claim of `README.md`, `src/test/tla/README.md` and
-      `src/test/jpf/README.md` names its row id; a test script checks both directions (every id
-      in the READMEs exists in the table, every row is referenced), so a new claim without a row
-      fails. A negative control: a README with an unknown id must fail it.
-    - [x] (d142501) The manifest: every formal job of `formal-verification.yml` writes a small JSON (commit
-      SHA, tool name, version and SHA-256, the job's counts: obligations, states, models, traces)
-      and uploads it as an artifact; one shared script writes it, so the jobs stay alike. No new
-      workflow file.
-    - [ ] The table's rows point to the manifest of the job that checks them; "every row has a run
-      with a SHA" closes with the first scheduled run after the merge (noted as such until then). The
-      section "The runs" of `VERIFICATION-ASSUMPTIONS.md` says which artifact covers which row;
-      open until the first scheduled run after the merge writes them.
-    - [x] (d142501) README, CHANGELOG, CLAUDE.md.
   - **A15 — Proofs as a release gate (1–2 days; last, see the table).** `formal-verification.yml` gets a `workflow_call`
     trigger; `publish.yml` calls it for a `v*` tag and its deploy job needs it (no new workflow
     file). Done when a release of a commit without green formal jobs is impossible. Cost: about 2 h
     more per release. Changes the release process: the owner confirms before it is merged.
-  - **A17 — Data-race freedom checked on the bytecode (3–5 days).** A test reads `StreamBuffer`'s
-    class files with ASM (already a test dependency) and checks every access to a field that is not
-    `final`, `volatile` or atomic: it lies between `monitorenter`/`monitorexit` of `bufferLock`, or
-    in a method annotated `@GuardedBy("bufferLock")` whose every call site does (the same for
-    `signalLock`). The README's field table is checked against reflection (kind of each field). Done
-    when it holds for every execution, not for scenarios, and a deliberately unguarded access (a
-    mutation of the class file in the test) turns it red.
-
-    Plan (branch `feat/a16-a17`, started 2026-11-13), with the reasons:
-    - [x] (531ac60) `asm-tree` and `asm-analysis` as explicit test dependencies (9.9.1, the version Lincheck
-      already brings, so the convergence check stays quiet): the check needs the control flow and
-      the origin of the monitor operand, which the tree and analysis APIs give.
-    - [x] (531ac60) The checker (test code, `net.ladenthin.streambuffer.drf`): for every method of
-      `StreamBuffer` and its inner classes, the locks held at each instruction (a forward data
-      flow over the control flow graph: `monitorenter` of a value loaded from the field
-      `bufferLock` or `signalLock` adds it, `monitorexit` removes it, a merge keeps what every path
-      holds). Every access to a field annotated `@GuardedBy(L)` or to a plain field (not final,
-      volatile or atomic) needs L held there; a plain field without `@GuardedBy` is an error
-      itself. A method annotated `@GuardedBy(L)` starts with L held, and every call of it needs L
-      held. Synthetic accessors (`access$NNN`, Java 8 bytecode has no nestmates) pass their needs
-      on to their callers. Constructors are exempt (before publication); lambda bodies are not
-      (their call sites cannot be seen, so they must take the lock themselves).
-    - [x] (531ac60) The field table: reflection gives every instance field and its kind (final, volatile,
-      atomic, plain); the README's "Data-Race Freedom" table must list each one with the matching
-      kind, both ways. It found `ownedPrefix` (a `@GuardedBy("bufferLock")` int since A14) missing
-      from the table; added.
-    - [x] (531ac60) Negative controls in the test, on class files mutated with ASM: an unguarded read of a
-      guarded field, an unguarded call of a `@GuardedBy` method, the annotation stripped from a
-      guarded method, a plain field without `@GuardedBy`, and a field table without one row: each
-      must fail with its own message.
-    - [x] (d142501) Runs in `mvn test` (fast, no agent); README "Data-Race Freedom" (point 2 is then checked
-      for every execution, not only by vmlens' scenarios), CHANGELOG, CLAUDE.md.
-    - Known limits (reviews 2026-11-13, not blocking, not reachable by the code today): a guarded
-      reference used after the lock is released, calls through a supertype, a static `@GuardedBy`
-      method (matched by the lock's name), a method reference to an accessor, and a method named
-      like a guarded field in a method reference.
+  - **A16 and A17 — open remnants.** The manifests' first run: the formal jobs other than ESC and
+    RAC run weekly, so the first scheduled run after #233 (Monday 04:17 UTC) writes them; until
+    then "every row has a run with a SHA" is open. A17's known limits (reviews 2026-11-13, not
+    reachable by the code today): a guarded reference used after the lock is released, calls
+    through a supertype, a static `@GuardedBy` method (matched by the lock's name), a method
+    reference to an accessor, a method named like a guarded field in a method reference.
   - **A18 — Every interleaving of the code is a run of the model, for small scenarios (1–2
     weeks).** JPF enumerates all interleavings of the real bytecode for the scenarios of
     `src/test/jpf/`; a JPF listener writes each path as a trace in the format of A6, and
@@ -335,6 +349,216 @@ annotated, so everything below is genuinely still open.
     every bytecode execution is accepted and the A6 negative controls still reject. Risk: JPF's
     state counts (`TwoReaders.jpf` 2.3 million states) — start with the smallest scenarios,
     time-box, and keep the bounded result if the larger ones do not fit.
+
+    Plan (branch `feat/a18-jpf-traces`, started 2026-11-14), with the reasons:
+    - [x] Spike first (the gate of the package): JPF explores the instrumented class of A6 (the
+      class files `TracingClassLoader` writes, dumped to a directory, with `TraceRecorder`
+      compiled at `--release 8`) in a harness of the A6 format (threads `w`, `c`, `r1`...), and
+      every path that ends prints its events. Measure the number of paths and traces for the
+      smallest scenario (one 1-byte write, a close, one `read()` reader), time-boxed. Why a gate:
+      with the trace in the program's state JPF can match no states, so it enumerates every order
+      of the logged accesses; for three threads of about ten accesses each that can be up to
+      ~10^10 orders, fewer through the locks. If that is too many, the per-trace check of
+      `trace.sh` does not scale, and the package needs another design (below).
+      **Result (2026-11-14, local, Docker, jpf-core `e61e396`):** the pipeline works
+      (`TracedClassDump`, `JpfTraceHarness` in `src/test/jpf/trace/`, `JpfTraceImport`). For the
+      smallest scenario (one 1-byte write, a closer of its own, one `read()` reader) JPF printed
+      18,630 traces in the 20-minute time-box without finishing, 2,870 of them distinct; a sample of
+      300 distinct ones: all accepted by `trace.sh` (1.7 s each). Without a recording (so JPF can
+      match states) it did not finish in 30 minutes either: the tracer's global lock adds a
+      scheduling point before every logged access (the same three threads on the plain class,
+      `WriteClose.jpf`, take 196,000 states and 1.5 minutes). So "every interleaving" is out of
+      reach in this design, even for the smallest A6 scenario; the owner decides how to go on
+      (options in the next steps).
+    - [x] The owner's choice: a tracer for JPF without a lock of its own (an atomic block per
+      access, one `Thread.yield()` before it as the access's scheduling point,
+      `src/test/jpf/trace/.../TraceRecorder.java`). Result (2026-11-14): the state graph is small
+      now and JPF finishes it, no errors: with the close after the writes 104,712 states in 41 s,
+      with the close at any point 617,544 states in 4:21 min. Enumerating the traces still does not
+      finish: 61,220 printed in 15 minutes, 10,718 distinct (the paths of a small graph are still
+      exponentially many). So per-trace checking stays bounded; a complete check has to work on
+      the graph.
+    - [x] The owner's choice: a check on the graph. A probe first (2026-11-14): the trace model
+      runs into dead branches on accepted traces (TLC with a deadlock check and a stutter at the
+      end: three of three accepted traces deadlock after 17 states). Before each line the thread
+      may take up to K silent model steps, and a wrong choice dies only later, so the sufficient
+      condition "every product state can consume every edge" would raise false alarms; an exact
+      check against this nondeterministic model is a language inclusion (a subset construction
+      over the model's states).
+    - Owner (2026-11-14): close to 100 % proven software; heavy computation on a rented machine
+      (the owner's private notes), only minimal examples in GitHub Actions; a redesign that
+      saves time is welcome if the proof stays as strong. The design that gives that:
+      **one marker per model step.** The instrumentation logs exactly one event at the code site of
+      each action of `StreamBuffer.tla` (plus the observations it has today), so the model replays
+      a trace deterministically, without silent steps. Then:
+      1. JPF exports its state graph (a listener; the events at the edges), with state matching;
+      2. a tool removes the edges without an event and minimizes the graph to a deterministic
+         automaton over the events (only the language of the event sequences matters);
+      3. TLC checks the product of that automaton and the replaying model completely; since the
+         replay is deterministic, "every edge can be consumed in every reachable product state"
+         is exactly "every interleaving of the code is a run of the model", with no false alarms.
+      A6 gets faster on the way (no search over silent steps).
+    - [x] Gate 2: the size of the minimized automaton for the smallest scenario (the graph export,
+      the minimization); if it is small, the design carries. Result (2026-11-14; `GraphExport`, a
+      JPF listener, and `graphmin.py` in `src/test/jpf/trace/`): close after the writes, 104,713
+      JPF states -> 1,839 deterministic -> **375 minimal**, 52 distinct events; close at any point,
+      617,545 -> 5,471 -> **1,402 minimal**, 57 events; seconds each.
+    - Decision (2026-11-14), with the reason: the automaton is small enough for an exact check that
+      keeps A6's trace model unchanged, so the markers (a table from every model action to its
+      code site, a new replay model) are not needed. Instead: TLC builds the product of the
+      automaton and `TraceStreamBuffer.tla`'s acceptance (`TraceGraph.tla` extends it and uses its
+      observation predicates as they are; "the next line" becomes "an edge of the automaton"), and a
+      subset construction over the dumped product follows, for every event sequence of the
+      automaton, the set of model states consistent with it; an empty set is a counterexample
+      (the sequence). Exact: no false alarms, no path left out; the acceptance relation is the one
+      A6 validated.
+    - [x] The JPF tracer gives each event its full A6 line (the ordinal of a harness event, which
+      depends on the path, counted per thread); `graphmin.py` writes the minimal automaton as a TLA+
+      module.
+    - [x] `TraceGraph.tla` (the product), TLC with a state dump, and the subset check; a positive
+      run on both small scenarios. Close after the writes (2026-11-14): automaton 373 states and
+      653 edges, product 82,944 states (TLC 30 s), 2,140 subsets: **every word is a run of the
+      model** (`graphcheck.py`). The tracer emits only from the start on (the constructor's
+      accesses in `main` are no part of a trace, as in A6).
+      Close at any point: automaton 1,451 states and 3,318 edges, product 542,666 states (TLC 34
+      min, dump 409 MB), 10,581 subsets: **every word is a run of the model** as well.
+    - [x] Negative controls: a mutated model (the writer never signals), a corrupted automaton (a
+      returned byte changed), a mutated class: each must give a rejected sequence. Done for the
+      first two (2026-11-14): the mutant rejected after 19 events (with `Spurious = 0`, which could
+      stand in for the signal), the corrupted byte after 14; the current model with `Spurious = 0`
+      accepted. A mutated class (`TracedClassDump ... no-decrement`: `readSingleByte` no longer
+      lowers `availableBytes`): rejected after 22 events (JPF itself also reports the
+      `NoSuchElementException` that follows).
+    - [x] (all 13 accepted with the final model 2026-11-24, below) Scenarios: the smallest in CI
+      (minutes), the larger ones on a rented machine; README,
+      CHANGELOG, CLAUDE.md, `VERIFICATION-ASSUMPTIONS.md` (a row for A18). CI: the step in the
+      `jpf-interleavings` job runs S1A with its controls (about 2 minutes locally). The rented run
+      (2026-11-14, a rented 32-core machine, `check-graph.sh` with controls, 4 h per scenario), so far:
+      every word accepted for S1A (1 byte, a `read()` reader, close after the writes: 104,712 JPF
+      states, automaton 373), S1N (close at any point: 617,544, 1,451), S4N (one 2-byte write, a
+      record reader: 601,656, 1,451), S7N (`waitForAtLeast(2)` alone, two 1-byte writes:
+      1,036,384, 1,555); the controls rejected where they hit. Out of the time-box: S2N, S5N (in
+      the TLC product: automata of 3,790 and 2,674 states, TLC's dump is written by one thread),
+      S3A, S3N (two `read()` readers: still in JPF after 4 h). S6A (a waiter next to a reader)
+      reached 15,081,689 JPF states, automaton 5,102.
+      The class control first missed S4N: it changed `readSingleByte` only, which a record reader
+      does not run; now it changes both read paths, and it rejects on a record scenario (S4A, a
+      2-byte write, close after: all three controls rejected, 147 s locally).
+    - [x] (not taken: the count of paths did not fit, the graph check below replaced it) If the
+      count fits: an importer writes each distinct trace as an A6 module
+      (`TraceGenerator.write`), `trace.sh` checks all of them, `trace-controls.sh` still rejects;
+      then the next larger scenarios, as far as the time-box allows.
+    - [x] (taken: `check-graph.sh`, the subset construction of `GraphCheck.java`) If it does not
+      fit: the alternative is to check JPF's state graph (with state matching,
+      each edge labelled with its logged access) against the model as a whole, a simulation
+      (every edge of the graph, some placement of the model's steps), not trace by trace; that
+      needs a subset construction over the model's states and is a larger package. Then the owner
+      decides whether it is worth it; the spike's numbers go into the table.
+    - [x] CI: the `jpf-interleavings` job runs S1A with its controls (`GRAPHCHECK_REFERENCE=1`,
+      both subset checks); README, CHANGELOG, CLAUDE.md, `VERIFICATION-ASSUMPTIONS.md` (V19).
+  - **A18 found a gap in the model (2026-11-15), repaired on branch `fix/stale-reads`.** The
+    fast path of `waitForAtLeast` and the loop of `awaitAtLeast` read `availableBytes`, then
+    `streamClosed`; the models read both in one step. S6A (a waiter next to a reader, close after)
+    was rejected with 5 words: the waiter sees too few, a write and the close come, it reads
+    closed and the byte again. The code is right; the model was coarser than it. Both reads are
+    steps now (`fastclosed`, `waitclosed`) in `StreamBuffer.tla` and the three abstractions.
+    - [x] Models and measures (`b8524ba`): `check.sh` 54/54, `trace.sh` (51/51) and
+      `trace-controls.sh` clean on the rented machine; the 5 S6A words accepted.
+    - [x] `inductive.sh` (Apalache: the inductive invariants, `PotDecreases`, the refinements):
+      64 OK with both repairs (2026-11-24).
+    - [x] TLAPS: the action lemmas of the new steps in every proof (`3d26f08`, all modules proved
+      on the rented machine; the finally step 2026-11-24, below).
+    - [x] A18 again for every scenario with the final model (2026-11-24, results in the owner's
+      local result folder): the twelve small
+      scenarios at once on the rented machine in 3 h (`REUSE_GRAPH=1` for S2N, S3A, S6A, S6N, S8A,
+      JPF anew for the others), every one accepted, every control rejected; S5N, out of reach
+      before, too. One control (S6A's class control) first had no result: two TLCs started in the
+      same second read each other's half-written `/tmp/TLC.tla`; each TLC run has a temporary
+      directory of its own since (`8c6ede5`), and S6A was run again (4 of 4).
+    - [x] Docs: the results table and its limits in `src/test/tla/README.md`,
+      `VERIFICATION-ASSUMPTIONS.md` (V19), CHANGELOG (2026-11-25).
+    - [x] The product's speed (2026-11-20): TLC 1.7.4 evaluates a constant substituted in the cfg
+      anew at every use (tlaplus issue 648), so each step rebuilt the automaton's whole table
+      (`GEdge <- TEdge`, 5.7 MB for S3A), and A6's trace (`TraceLog <- TTrace`) too.
+      `TraceGraph.tla` and `TraceStreamBuffer.tla` read them through definitions of their own
+      (`Edges`, `Out`, `Log`), which TLC evaluates once; `check.sh` counts the evaluations
+      (`ConstCacheGraph`, `ConstCacheTrace`: 3 each, the old modules 44 and 345). Locally, 4
+      workers: S1A 30 -> 23 s with the same 93,190 states and verdict; the S6A automaton (5,102
+      states, 12,271 edges) 7,180 -> 259,886 distinct states a minute. TLC's start: `graphmin.py`
+      wrote the edges out of each state as a function over a sequence (`[s \in 0..n |->
+      TOutSeq[s + 1]]`), which TLC builds at its start with the sequence evaluated anew for every
+      state, quadratic (S6N: 43 min, twice that with `Out == GOut`); now the sequence itself
+      (`Out[g + 1]`): the S6A automaton starts in 1 s instead of 19, same states and verdict.
+    - [x] The subset check's memory and TLC's dump (2026-11-22): S3N's product, estimated from
+      the A/N ratios at ~240 million states, would need ~230 GB of RAM in `graphcheck.py` (about
+      700 bytes a state: S6A, 3,837,985 states, 2.73 GB) and ~200 GB of disk for the dump. Now
+      `GraphCheck.java` (at most about 70 bytes a state: S6A with a 256 MB heap, 0.38 GB resident,
+      25 s instead of 128) and the dump through zstd (S6A 3.32 GB -> 0.22 GB). The reference
+      `graphcheck.py` stays; `graphcheck-test.sh` tests both on hand-written products (accepted,
+      rejected, an edge to no state, a missing state line, compressed, broken), and
+      `GRAPHCHECK_REFERENCE=1` compares them on real ones (CI: S1A and its controls). Found on
+      the way: `graphcheck.py` accepted a dump cut off after an edge (it never checked an edge's
+      target), now no result as in the Java check.
+    - [x] The byte control without a copy of the graph (2026-11-22): the corrupted graph goes
+      through a fifo into `graphmin.py`, which reads it once (S3N's copy would be ~75 GB); a
+      writer that stops midway gives no result, never a rejection (tested on S1A by injection).
+    - [x] S3N's JPF finished 2026-11-22 12:40 UTC (5 d 15 h, 617,868,299 states, 2,623,916,856
+      edges, no errors, graph 70.6 GB; zstd copy and sha256 in the owner's local result folder).
+      The new chain's `graphmin.py` was killed at ~40 GB during the subset construction (1.39
+      million dfa states found, with other runs next to it on the machine): the
+      closures, kept whole as dict keys, took ~10 KB a dfa state.
+    - [x] `graphmin.py` lighter (2026-11-22): the subset construction keeps its sets packed (the
+      sorted differences, zlib; exact), offsets of 32 bits. S3A: the subset construction 0.57
+      GB instead of 3.68 (1.1 KB a dfa state instead of 6.8), after reading 2.75 GB instead of
+      3.53, peak 5.45 instead of 7.21, 2,461 s instead of 2,578; the module byte-identical (S2N,
+      S6A, S3A). `graphmin-test.sh` checks the automaton of hand-written graphs (a key that
+      confuses two sets fails it).
+    - [x] S3N's `graphmin.py` with packed sets (2026-11-22 18:46 to 23:32 UTC): 3,376,776 dfa
+      states, minimal **85,450 states, 254,318 edges** (S3A: 17,319); peak 35.3 GB while reading,
+      the subset construction ~1 KB a dfa state. TLC then filled its 16 GB heap (937 full GCs,
+      19 % of the time, the rate from 310,000 to 143,000 states a minute at 67.7 million):
+      stopped, TLC again with 64 GB.
+    - [x] `check-graph.sh` `GRAPHMIN_CACHE=1` (2026-11-23): the module of a graph file is kept and
+      taken again while the graph (size, time), the arguments and `graphmin.py` are the same; the
+      control without the writer's signal has the main product's graph. CI sets it (the control
+      takes the cached module); tested on S1A: a second run takes it, a touched graph does not.
+    - [x] The products without spurious wake-ups (2026-11-23): with `Spurious = 0` and the
+      model of then S6A was rejected (a word of 40 events, also with `K = 6`), S1A accepted. As a
+      trace (A6) the word showed why: r2's `waitForAtLeast(2)` leaves the loop with the bytes,
+      the writer reads `waitingReaders = 1`, only then r2's finally block lowers it; the model
+      lowered it with the return (one step), the trace acceptance allowed a lower count and the
+      signal was skipped, and only a spurious wake-up woke r1, which had parked after. The code
+      was right; with the budget a missing signal of the code could have passed the same way.
+    - [x] The finally block of the wait a step of its own (`ReaderWaitExit`, pcs `wexit`,
+      `wexitlock`, `wexitret0`) in `StreamBuffer.tla` and `StreamBufferCounters.tla`;
+      `TraceStreamBuffer.tla` checks `waitingReaders` exactly (`waiters = v`) and the signal
+      without the skip; `RefineWait.tla`, `RefineRecords.tla` map a thread in the finally block to
+      where it goes next and `waitLock` free (`MapPc`, `MapWl`). `TraceSignalBeforeExit` in
+      `check.sh` (the S6A word, `Spurious = 0`: accepted, the old model rejected it at line 40).
+      Local: `trace.sh` 51/51 (also with `Spurious = 0`), S1A 4/4 with its controls (product
+      24,217 states instead of 94,555), S6A accepted with `Spurious = 0` (1,042,046 states
+      instead of 3,837,985). `check-graph.sh` runs the products with `PRODUCT_SPURIOUS`, default 0.
+    - [x] (2026-11-24) `check.sh` 60 OK, `inductive.sh` 64 OK, `trace-controls.sh` OK with the
+      step; the TLC refinements again after `MapPc` became a nested `IF` (14 OK). TLAPS at the
+      workflow's pin: `StreamBufferCountersProof.tla` 349 obligations (a case for the step, the
+      closed and open branch of `ReaderWaitClosed` apart), `RefineWaitProof.tla` 3,345 (the
+      mapping: `WaitPcs`, `NotDone` by `MapPc`, `EndExit`, `SReaderWaitExit` as a stuttering step,
+      `MapWl` in every abstract step by `MapWlGo`); `LEMMA Bad == FALSE` appended fails alone.
+    - [x] (2026-11-24, results in the owner's local result folder) S3N again
+      with the lighter `graphmin.py` on the same graph (`REUSE_GRAPH=1`), `Spurious = 0` and the
+      finally step, with its controls -- **OK**: every word of the minimal automaton (85,450
+      states, 254,318 edges, from 617,868,300 JPF states) is a run of the model. TLC 100,225,198
+      product states in 5 h 56 min (`-Xmx64g`, old generation at most ~27 of 44.7 GB; run 3 with
+      `Spurious = 3` and the merged finally block had passed 303.7 M with its heap full), GraphCheck
+      4,628,966 subsets in 30 min. Controls, each rejected as it must be: the writer never signals
+      (64,068,019 states, a word of 19 events), a returned byte + 1 in the graph (85,782-state
+      automaton, 100,344,588 states, a word of 30 events), the reads do not lower the count (the
+      small mutant). graphmin on the 70.6 GB graph: 4.7 h at up to ~35 GB (cached for the main
+      product and the nosignal control, again on the fifo for the byte control: 4.2 h).
+    - [x] The long runs on a rented machine by the day (until 2026-11-24, 32 cores, 125 GB, shared
+      with other runs): TLC with an explicit `TLC_HEAP` (64g for S3N, 8g for
+      the others), the graphs kept for `REUSE_GRAPH=1`, results synced off the machine as they
+      appeared.
   - **A19 — Liveness of the detailed model for any number of readers (optional, weeks).** TLAPS,
     on the pattern of `StreamBufferWaitForeverLiveProof.tla` (a measure per thread, fairness by
     role), for `StreamBuffer.tla` directly, or a refinement that carries fairness. Done when the
@@ -444,14 +668,14 @@ Prompts for long `/loop` runs. The loop is started with a one-line reference to 
 so the prompt can be changed in this file without restarting the loop; the next iteration reads
 the current text.
 
-### Verification roadmap A16–A18
+### Verification roadmap A18
 
-Start: `/loop Work on the verification roadmap A16-A18 as described in TODO.md, section "Run prompts" / "Verification roadmap A16–A18", re-read on every iteration.`
+Start: `/loop Work on the verification roadmap A18 as described in TODO.md, section "Run prompts" / "Verification roadmap A18", re-read on every iteration.`
 
 ````text
-Work on the verification roadmap A16-A18 of streambuffer (TODO.md, "Verification roadmap 2026-11,
-second part") fully automatically and as independently as possible: A16 and A17 together, then
-A18. A15 is not part of this run: it comes after every other open item (TODO.md, the table). It
+Work on the verification roadmap A18 of streambuffer (TODO.md, "Verification roadmap 2026-11,
+second part") fully automatically and as independently as possible (A16 and A17 are done, #233).
+A15 is not part of this run: it comes after every other open item (TODO.md, the table). It
 may take longer than one session; there is no deadline. Work locally (TLC, Apalache and
 tlapm as in src/test/tla/README.md; JPF in Docker, eclipse-temurin:11-jdk + apt-get install git,
 MSYS_NO_PATHCONV=1; OpenJML RAC in WSL as the formal-verification.yml job does it; Maven with
@@ -460,11 +684,10 @@ JAVA_HOME=/c/Users/berna/AppData/Local/Programs/jdk-25.0.4.1+1). A rented instan
 remote.md while it runs, delete it and sweep when done. Web search and Chrome are allowed.
 
 Procedure:
-1. Every iteration: in the real clone, switch to the branch of the current package (create it from
-   main if it does not exist: feat/a16-a17 for A16 and A17 together, then feat/a18-jpf-traces),
-   write the package's plan as checkbox steps under it in TODO.md with the reason for every
-   decision, do the next open step, test it, tick it with its commit, add steps found on the way.
-   One branch and PR for A16 with A17, one for A18.
+1. Every iteration: in the real clone, switch to the branch feat/a18-jpf-traces (create it from
+   main if it does not exist), write the package's plan as checkbox steps under it in TODO.md with
+   the reason for every decision, do the next open step, test it, tick it with its commit, add
+   steps found on the way. One branch and PR.
 2. A change of production code only if a package finds a defect (then a bug-hunt finding in
    BUGHUNT-FOUND.md, a test that is red before and green after, and the fix). Negative controls are
    mandatory for every check: a deliberately broken input must make it fail.

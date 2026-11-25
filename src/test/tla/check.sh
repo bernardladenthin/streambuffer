@@ -44,6 +44,19 @@ models=(
   "SpuriousReached2|Error: Invariant NoSpuriousWake is violated."
   "WaitAlone1|Model checking completed. No error has been found."
   "SpuriousWaitAlone1|Model checking completed. No error has been found."
+  # several writers and closers (the bytes shared in commit order); the probes show they interleave
+  "Writers2Condition2|Model checking completed. No error has been found."
+  "Closers2Condition2|Model checking completed. No error has been found."
+  "Writers2Records2|Model checking completed. No error has been found."
+  "Writers2Mixed2|Model checking completed. No error has been found."
+  "Writers2WaitChecked2|Model checking completed. No error has been found."
+  "Writers2WaitAndRead2|Model checking completed. No error has been found."
+  "Writers2Reached2|Error: Invariant NoTwoWritersSignalling is violated."
+  "Closers2Reached2|Error: Invariant NoTwoClosersSignalling is violated."
+  # a word of A18's S6A automaton, accepted without spurious wake-ups since the finally block of
+  # the wait is a step of its own (the trace's TraceNotDone violated: every line consumed; the
+  # model before ReaderWaitExit rejected it at line 40)
+  "TraceSignalBeforeExit@TraceSignalBeforeExit|Error: Invariant TraceNotDone is violated."
   # model@module: threads that call forever; fairness per process, no lock fairness
   "WaitForever2@StreamBufferWaitForever|Model checking completed. No error has been found."
   "WaitForever3@StreamBufferWaitForever|Model checking completed. No error has been found."
@@ -69,6 +82,7 @@ models=(
   "ForeverRecords2@StreamBufferForever|Model checking completed. No error has been found."
   "ForeverChunks2@StreamBufferForever|Model checking completed. No error has been found."
   "ForeverCondition3@StreamBufferForever|Model checking completed. No error has been found."
+  "ForeverWriters2Mixed2@StreamBufferForever|Model checking completed. No error has been found."
   "ForeverNextOnlyWaitAndRead2@StreamBufferForever|Error: Temporal properties were violated."
 )
 
@@ -96,6 +110,39 @@ check() {  # check <entry> [label prefix]: run the model in the current director
 for entry in "${models[@]}"; do
   check "$entry"
 done
+
+# a table substituted in the cfg (GEdge <- TEdge, TraceLog <- TTrace) is evaluated once, not at
+# every step: TLC 1.7.4 evaluates such a constant anew at every use (tlaplus issue 648), and A18's
+# products, which read the automaton's table at each step, ran at ~1,000 states a minute (S3A, 4
+# days). TraceGraph.tla and TraceStreamBuffer.tla read them through definitions of their own, which
+# TLC evaluates once; the modules print a line at each evaluation (3 at the start, per table), the
+# old modules printed one at nearly every step (44 and 345 over 21 and 97 states).
+cached() {  # cached <module> <table>...: each table evaluated at most 3 times, over 10+ states
+  local m="$1" log="$work/$1.log" n states
+  shift
+  set +e
+  java -XX:+UseParallelGC -cp "$jar" tlc2.TLC -workers 1 -metadir "$work/$m" -config "$m.cfg" "$m.tla" \
+    > "$log" 2>&1
+  set -e
+  states="$(grep -oE '[0-9]+ distinct states found' "$log" | tail -1 | grep -oE '^[0-9]+' || true)"
+  if ! grep -qF "Model checking completed. No error has been found." "$log" || [ "${states:-0}" -lt 10 ]; then
+    echo "FAIL $m: did not complete over 10 or more states (${states:-no} states)"
+    grep -E 'Error' "$log" | head -3 | sed 's/^/     /'
+    failed=1
+    return
+  fi
+  for table in "$@"; do
+    n="$(grep -cF "ConstCache: $table evaluated" "$log" || true)"
+    if [ "$n" -gt 3 ]; then
+      echo "FAIL $m: $table evaluated $n times over $states states (read at every step)"
+      failed=1
+    else
+      echo "OK   $m: $table evaluated $n times over $states states"
+    fi
+  done
+}
+cached ConstCacheGraph TEdge TOut
+cached ConstCacheTrace TTrace
 
 # the negative control of the spurious wake-ups: a mutant whose woken thread skips the test of its
 # loop (ReaderWaitLock goes to "wret" instead of "test"). Next to a lone waitForAtLeast(2) every

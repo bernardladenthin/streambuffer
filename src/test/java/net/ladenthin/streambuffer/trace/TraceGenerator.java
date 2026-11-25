@@ -38,7 +38,16 @@ public final class TraceGenerator {
             new TraceScenario("Bytes3x8", 8, 1, 1, 3, 0, 0),
             new TraceScenario("Records3", 8, 3, 2, 0, 3, 0),
             new TraceScenario("Wait2", 6, 1, 2, 1, 0, 2),
-            new TraceScenario("WaitRecords", 6, 2, 3, 0, 1, 1));
+            new TraceScenario("WaitRecords", 6, 2, 3, 0, 1, 1),
+            // several writers and closers (Writers2Condition2, Closers2Condition2, Writers2Records2,
+            // Writers2Mixed2, Writers2WaitChecked2): the bytes renumbered in commit order
+            new TraceScenario("Writers2Bytes2", 4, 1, 1, 2, 0, 0, 2, 1),
+            new TraceScenario("Closers2Bytes2", 4, 1, 1, 2, 0, 0, 1, 2),
+            new TraceScenario("Writers2Records2", 4, 1, 2, 0, 2, 0, 2, 1),
+            new TraceScenario("Writers2Mixed2", 4, 1, 2, 1, 1, 0, 2, 2),
+            new TraceScenario("Writers2WaitChecked2", 4, 2, 2, 0, 1, 1, 2, 2),
+            // larger: three writers of 3-byte writes, three readers of 2-byte records, two closers
+            new TraceScenario("Writers3Records3", 9, 3, 2, 0, 3, 0, 3, 2));
 
     private TraceGenerator() {}
 
@@ -86,6 +95,9 @@ public final class TraceGenerator {
         b.append("TBytes == ").append(s.bytes).append('\n');
         b.append("TChunkLen == ").append(s.chunkLen).append('\n');
         b.append("TReadLen == ").append(s.readLen).append('\n');
+        // the writer's and the closer's thread names in the trace, by their ids in the model
+        b.append("TWriterName == ").append(tuple(s.writerNames())).append('\n');
+        b.append("TCloserName == ").append(tuple(s.closerNames())).append('\n');
         b.append("TTrace == <<\n");
         final Map<String, Integer> calls = new HashMap<>();
         for (int i = 0; i < events.size(); i++) {
@@ -100,6 +112,10 @@ public final class TraceGenerator {
                 + "    Bytes <- TBytes\n"
                 + "    ChunkLen <- TChunkLen\n"
                 + "    ReadLen <- TReadLen\n"
+                + "    NW = " + s.writers + "\n"
+                + "    NC = " + s.closers + "\n"
+                + "    WriterName <- TWriterName\n"
+                + "    CloserName <- TCloserName\n"
                 + "    TraceLog <- TTrace\n"
                 + "    K = 6\n"
                 // spurious wake-ups of Condition.await() a trace may have (the JDK allows them)
@@ -140,6 +156,11 @@ public final class TraceGenerator {
         bytes.append(">>");
         return "[t |-> \"" + e.thread + "\", m |-> \"" + m + "\", a |-> \"" + a + "\", n |-> " + n + ", v |-> "
                 + e.value + ", b |-> " + bytes + "]";
+    }
+
+    private static String tuple(List<String> names) {
+        final String set = set(names);
+        return "<<" + set.substring(1, set.length() - 1) + ">>";
     }
 
     private static String set(List<String> names) {

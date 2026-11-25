@@ -69,7 +69,10 @@ control "mutant: the writer never signals" "$d" 1
 # line, the lines of one more round of the loop of awaitAtLeast (unpark, the test of availableBytes
 # and streamClosed, park). Nothing can wake the reader there (the other threads move only at their
 # own lines), so the trace must be accepted with the budget of TraceGenerator and rejected with
-# Spurious = 0. One trace each from up to three; each in a directory of its own.
+# Spurious = 0. Only at a park with availableBytes 0 and the stream open: a write that commits
+# between the reader's test and its park leaves bytes there, and a reader woken to them returns
+# instead of parking again, so a second round would be no run of the code (seen 2026-11-15).
+# One trace each from up to three; each in a directory of its own.
 d=$(copy spurious "")
 names=$("$py" -I - "$d" <<'EOF'
 import glob, os, re, sys
@@ -78,16 +81,23 @@ done = 0
 for f in sorted(glob.glob(os.path.join(d, 'Trace_*.tla'))):
     name = os.path.basename(f)[:-4]
     lines = open(f, encoding='utf-8').read().split('\n')
-    park = [i for i, l in enumerate(lines) if 'a |-> "park"' in l]
-    if done >= 3 or not park:
+    park = None
+    for i, l in enumerate(lines):
+        if 'a |-> "park"' not in l:
+            continue
+        # the value of availableBytes at the park: the last access of it before
+        v = [re.search(r'v \|-> (\d+)', lines[j]).group(1) for j in range(i)
+             if re.search(r'a \|-> "(getAvail|putAvail)"', lines[j])][-1]
+        closed = any('a |-> "putClosed"' in lines[j] for j in range(i))
+        if v == '0' and not closed:
+            park = i
+            break
+    if done >= 3 or park is None:
         os.remove(f)
         os.remove(f[:-4] + '.cfg')
         continue
-    p = park[0]
+    p = park
     t = re.search(r'\[t \|-> "([^"]+)"', lines[p]).group(1)
-    # the value of availableBytes at the park: the last access of it before
-    v = [re.search(r'v \|-> (\d+)', lines[j]).group(1) for j in range(p)
-         if re.search(r'a \|-> "(getAvail|putAvail)"', lines[j])][-1]
     row = ', [t |-> "%s", m |-> "awaitAtLeast", a |-> "%s", n |-> %d, v |-> %s, b |-> <<>>]'
     lines[p + 1:p + 1] = [row % (t, 'unpark', 0, 0), row % (t, 'getAvail', 2, v),
                           row % (t, 'getClosed', 0, 0), row % (t, 'park', 0, 0)]

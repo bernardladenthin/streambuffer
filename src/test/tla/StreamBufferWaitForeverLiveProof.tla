@@ -22,10 +22,10 @@ LEMMA FParts ==
   /\ FNT = NT
   BY DEF FIP, WS, WW, CC, CS, At, FSumV, FLay, LSum, LLo, LHi, Lay, FNT, NT
 
-LEMMA FVRange == ASSUME NEW q \in Threads PROVE FV(q) \in 0..9 /\ FVF[q] = FV(q)
+LEMMA FVRange == ASSUME NEW q \in Threads PROVE FV(q) \in 0..10 /\ FVF[q] = FV(q)
   BY DEF FV, FVF
 
-LEMMA FRankRange == ASSUME NEW q PROVE FRank(q) \in 0..6
+LEMMA FRankRange == ASSUME NEW q PROVE FRank(q) \in 0..8
   BY DEF FRank
 
 \* the parts are natural numbers, the lower ones bounded
@@ -83,7 +83,7 @@ LEMMA FMeasNat == ASSUME LiveInv, NEW r \in Threads PROVE FMeas(r) \in Nat
 \* the arithmetic of a drop of the first part: it pays for any rise of the others
 LEMMA ArithIP ==
   ASSUME NEW n \in Nat, NEW a \in Nat, NEW b \in Nat, NEW x \in Nat, NEW x2 \in Nat,
-         NEW y \in Nat, NEW y2 \in Nat, b < a, x2 - x <= a - b, y2 <= 28 * n + 6
+         NEW y \in Nat, NEW y2 \in Nat, b < a, x2 - x <= a - b, y2 <= 28 * n + 8
   PROVE (30 * n + 10) * b + x2 + y2 < (30 * n + 10) * a + x + y
   <1> DEFINE d == a - b
              f == 30 * n + 10
@@ -108,11 +108,11 @@ LEMMA IPStep ==
   <1>2 FIP' \in Nat /\ Buffered' \in Nat /\ FBad' \in Nat /\ FBad' <= FNT
        /\ FSumV' \in Nat /\ FSumV' <= 10 * FNT
     BY FTypesP
-  <1>3 FRank(r) \in 0..6 /\ FRank(r)' \in 0..6
+  <1>3 FRank(r) \in 0..8 /\ FRank(r)' \in 0..8
     BY FRankRange DEF FRank
   <1> DEFINE y == 8 * FBad + 2 * FSumV + FRank(r)
              y2 == 8 * FBad' + 2 * FSumV' + FRank(r)'
-  <1>4 y \in Nat /\ y2 \in Nat /\ y2 <= 28 * FNT + 6
+  <1>4 y \in Nat /\ y2 \in Nat /\ y2 <= 28 * FNT + 8
     BY <1>1, <1>2, <1>3
   <1>5 (30 * FNT + 10) * FIP' + Buffered' + y2 < (30 * FNT + 10) * FIP + Buffered + y
     BY <1>1, <1>2, <1>4, ArithIP
@@ -257,6 +257,10 @@ LEMMA ThreadBasics ==
     BY <1>4 DEF ThreadInc, ThreadCopy
   <1>5 CASE ThreadTest(q)
     BY <1>5 DEF ThreadTest, ThreadCopy
+  <1>11 CASE ThreadFastClosed(q)
+    BY <1>11 DEF ThreadFastClosed, ThreadCopy
+  <1>12 CASE ThreadWaitClosed(q)
+    BY <1>12 DEF ThreadWaitClosed, ThreadCopy
   <1>6 CASE ThreadWaitReturn(q)
     BY <1>6 DEF ThreadWaitReturn, ThreadCopy
   <1>7 CASE ThreadLock(q)
@@ -274,7 +278,7 @@ LEMMA ThreadBasics ==
   <1>10 CASE ThreadRet0(q)
     BY <1>10 DEF ThreadRet0, ThreadCopy
   <1> QED
-    BY <1>1, <1>2, <1>3, <1>4, <1>5, <1>6, <1>7, <1>8, <1>9, <1>10 DEF ThreadStep
+    BY <1>1, <1>2, <1>3, <1>4, <1>5, <1>6, <1>7, <1>8, <1>9, <1>10, <1>11, <1>12 DEF ThreadStep
 
 \* the other threads keep their stage and their membership in FBadSet
 LEMMA OthersSame ==
@@ -293,7 +297,7 @@ LEMMA ThreadCombine ==
   PROVE FMeas(r)' - FMeas(r)
           = 8 * ((IF q \in FBadSet' THEN 1 ELSE 0) - (IF q \in FBadSet THEN 1 ELSE 0))
             + 2 * (FV(q)' - FV(q)) + (IF q = r THEN FRank(q)' - FRank(q) ELSE 0)
-  <1>1 FVF[q] = FV(q) /\ FVF'[q] = FV(q)' /\ FV(q) \in 0..9 /\ FV(q)' \in 0..9
+  <1>1 FVF[q] = FV(q) /\ FVF'[q] = FV(q)' /\ FV(q) \in 0..10 /\ FV(q)' \in 0..10
     BY DEF FVF, FV
   <1>2 FSumV' = FSumV - FV(q) + FV(q)'
     <2>1 LSum(Threads, FVF') = LSum(Threads, FVF) - FVF[q] + FVF'[q]
@@ -306,7 +310,7 @@ LEMMA ThreadCombine ==
       BY DEF FBadSet
     <2> QED
       BY <2>1, Fin, SetExcept DEF FBad
-  <1>4 FRank(r) \in 0..6 /\ FRank(r)' \in 0..6 /\ FRank(q) \in 0..6 /\ FRank(q)' \in 0..6
+  <1>4 FRank(r) \in 0..8 /\ FRank(r)' \in 0..8 /\ FRank(q) \in 0..8 /\ FRank(q)' \in 0..8
     BY DEF FRank
   <1>5 FW \in Nat /\ FIP \in Nat /\ Buffered \in Nat /\ FBad \in Nat /\ FSumV \in Nat
     BY FTypes
@@ -350,10 +354,11 @@ LEMMA StepDelta ==
   <1> QED
     BY <1>1, <1>2, <1>3, <1>4, <1>5, ThreadCombine
 
-\* a step of another thread in start, reread or ret0 that takes no lock moves no lock holder
+\* a step of another thread in start, fastclosed, reread or ret0 that takes no lock moves no lock
+\* holder
 LEMMA EqFrame ==
   ASSUME LiveInv, NEW q \in Threads, NEW r \in Threads, q # r, ThreadStep(q), ~ThreadFinish(q),
-         rpc[q] \in {"start", "reread", "ret0"}, bl' = bl, wl' = wl, parked' = parked
+         rpc[q] \in {"start", "fastclosed", "reread", "ret0"}, bl' = bl, wl' = wl, parked' = parked
   PROVE FFrame(r)
   <1>1 /\ \A x \in Threads \ {q} : /\ rpc'[x] = rpc[x] /\ op'[x] = op[x]
                                     /\ hold'[x] = hold[x] /\ left'[x] = left[x]
@@ -371,7 +376,7 @@ LEMMA FMeasBoth ==
     BY FTypes
   <1>2 FIP' \in Nat /\ Buffered' \in Nat /\ FBad' \in Nat /\ FSumV' \in Nat
     BY FTypesP
-  <1>3 FRank(r) \in 0..6 /\ FRank(r)' \in 0..6
+  <1>3 FRank(r) \in 0..8 /\ FRank(r)' \in 0..8
     BY DEF FRank
   <1> QED
     BY <1>1, <1>2, <1>3 DEF FMeas
@@ -394,18 +399,22 @@ LEMMA ActPre ==
 LEMMA FVAt ==
   ASSUME NEW q \in Threads
   PROVE /\ rpc[q] \in {"start", "reread", "ret0"} => FV(q) = 4
-        /\ rpc[q] \in {"lockwait", "woken"} => FV(q) = IF FPass(q) THEN 9 ELSE 3
-        /\ rpc[q] = "inc" => FV(q) = IF FPass(q) THEN 8 ELSE 2
-        /\ rpc[q] = "test" => FV(q) = IF FPass(q) THEN 7 ELSE 1
+        /\ rpc[q] = "fastclosed" => FV(q) = IF avail >= Want(q) /\ ~closed THEN 10 ELSE 4
+        /\ rpc[q] \in {"lockwait", "woken"} => FV(q) = IF FPass(q) THEN 9 ELSE 4
+        /\ rpc[q] = "inc" => FV(q) = IF FPass(q) THEN 8 ELSE 3
+        /\ rpc[q] = "test" => FV(q) = IF FPass(q) THEN 7 ELSE 2
+        /\ rpc[q] = "waitclosed" => FV(q) = IF FPass(q) THEN 6 ELSE 1
         /\ rpc[q] = "wret" => FV(q) = 5
         /\ rpc[q] = "lock" => FV(q) = 3
         /\ rpc[q] = "decide" => FV(q) = 2
         /\ rpc[q] \in {"copy", "finish"} => FV(q) = 1
         /\ rpc[q] \in {"parked", "done"} => FV(q) = 0
-        /\ rpc[q] = "start" => FRank(q) = 6
-        /\ rpc[q] \in {"reread", "lockwait", "woken"} => FRank(q) = 5
-        /\ rpc[q] \in {"ret0", "inc", "lock"} => FRank(q) = 4
-        /\ rpc[q] \in {"test", "decide"} => FRank(q) = 3
+        /\ rpc[q] = "start" => FRank(q) = 8
+        /\ rpc[q] = "fastclosed" => FRank(q) = 7
+        /\ rpc[q] \in {"reread", "lockwait", "woken"} => FRank(q) = 6
+        /\ rpc[q] \in {"ret0", "inc", "lock", "decide"} => FRank(q) = 5
+        /\ rpc[q] = "test" => FRank(q) = 4
+        /\ rpc[q] = "waitclosed" => FRank(q) = 3
         /\ rpc[q] \in {"wret", "copy"} => FRank(q) = 2
         /\ rpc[q] \in {"parked", "finish"} => FRank(q) = 1
         /\ rpc[q] = "done" => FRank(q) = 0
@@ -416,18 +425,22 @@ LEMMA FVAt ==
 LEMMA FVAtP ==
   ASSUME NEW q \in Threads
   PROVE /\ rpc'[q] \in {"start", "reread", "ret0"} => FV(q)' = 4
-        /\ rpc'[q] \in {"lockwait", "woken"} => FV(q)' = IF FPass(q)' THEN 9 ELSE 3
-        /\ rpc'[q] = "inc" => FV(q)' = IF FPass(q)' THEN 8 ELSE 2
-        /\ rpc'[q] = "test" => FV(q)' = IF FPass(q)' THEN 7 ELSE 1
+        /\ rpc'[q] = "fastclosed" => FV(q)' = (IF avail >= Want(q) /\ ~closed THEN 10 ELSE 4)'
+        /\ rpc'[q] \in {"lockwait", "woken"} => FV(q)' = IF FPass(q)' THEN 9 ELSE 4
+        /\ rpc'[q] = "inc" => FV(q)' = IF FPass(q)' THEN 8 ELSE 3
+        /\ rpc'[q] = "test" => FV(q)' = IF FPass(q)' THEN 7 ELSE 2
+        /\ rpc'[q] = "waitclosed" => FV(q)' = IF FPass(q)' THEN 6 ELSE 1
         /\ rpc'[q] = "wret" => FV(q)' = 5
         /\ rpc'[q] = "lock" => FV(q)' = 3
         /\ rpc'[q] = "decide" => FV(q)' = 2
         /\ rpc'[q] \in {"copy", "finish"} => FV(q)' = 1
         /\ rpc'[q] \in {"parked", "done"} => FV(q)' = 0
-        /\ rpc'[q] = "start" => FRank(q)' = 6
-        /\ rpc'[q] \in {"reread", "lockwait", "woken"} => FRank(q)' = 5
-        /\ rpc'[q] \in {"ret0", "inc", "lock"} => FRank(q)' = 4
-        /\ rpc'[q] \in {"test", "decide"} => FRank(q)' = 3
+        /\ rpc'[q] = "start" => FRank(q)' = 8
+        /\ rpc'[q] = "fastclosed" => FRank(q)' = 7
+        /\ rpc'[q] \in {"reread", "lockwait", "woken"} => FRank(q)' = 6
+        /\ rpc'[q] \in {"ret0", "inc", "lock", "decide"} => FRank(q)' = 5
+        /\ rpc'[q] = "test" => FRank(q)' = 4
+        /\ rpc'[q] = "waitclosed" => FRank(q)' = 3
         /\ rpc'[q] \in {"wret", "copy"} => FRank(q)' = 2
         /\ rpc'[q] \in {"parked", "finish"} => FRank(q)' = 1
         /\ rpc'[q] = "done" => FRank(q)' = 0
@@ -454,7 +467,7 @@ LEMMA ActStart ==
          = 8 * ((IF q \in FBadSet' THEN 1 ELSE 0) - (IF q \in FBadSet THEN 1 ELSE 0))
            + 2 * (FV(q)' - FV(q)) + (IF q = r THEN FRank(q)' - FRank(q) ELSE 0)
     BY <1>0, StepDelta
-  <1>3 rpc[q] = "start" /\ FV(q) = 4 /\ FRank(q) = 6 /\ q \notin FBadSet
+  <1>3 rpc[q] = "start" /\ FV(q) = 4 /\ FRank(q) = 8 /\ q \notin FBadSet
     BY FVAt DEF ThreadStart
   <1>4 CASE avail >= Want(q) /\ op[q] = "wait"
     <2>1 rpc'[q] \in {"start", "done"} /\ bl' = bl /\ wl' = wl /\ parked' = parked
@@ -479,37 +492,106 @@ LEMMA ActStart ==
       BY <1>5, <1>1 DEF ThreadStart, Go, Ops, LiveInv, SafeInv, TypeOK
     <2>2 FOk(q)'
       BY <2>1, <1>5, <1>1 DEF FOk, Want
-    <2>3 q \notin FBadSet' /\ FV(q)' = 3 /\ FRank(q)' = 4
-      BY <2>1, <2>2, FVAtP
-    <2> QED
-      BY <1>1, <1>2, <1>3, <2>3, Decide DEF FKeeps
-  <1>6 CASE ~(avail >= Want(q)) /\ closed
-    <2>1 rpc'[q] = "reread" /\ bl' = bl /\ wl' = wl /\ parked' = parked
-      BY <1>6 DEF ThreadStart, Go, LiveInv, SafeInv, TypeOK
-    <2>2 q \notin FBadSet' /\ FV(q)' = 4 /\ FRank(q)' = 5
-      BY <2>1, FVAtP
-    <2>3 CASE q = r
-      BY <1>1, <1>2, <1>3, <2>2, <2>3, Decide DEF FKeeps
-    <2>4 CASE q # r
-      <3>1 FMeas(r)' = FMeas(r)
-        BY <1>1, <1>2, <1>3, <2>2, <2>4, Decide
-      <3>2 FFrame(r)
-        BY <1>0, <1>3, <2>1, <2>4, EqFrame
-      <3> QED
-        BY <3>1, <3>2 DEF FKeeps
-    <2> QED
-      BY <2>3, <2>4
-  <1>7 CASE ~(avail >= Want(q)) /\ ~closed
-    <2>1 rpc'[q] = "lockwait" /\ op'[q] = op[q]
-      BY <1>7 DEF ThreadStart, Go, LiveInv, SafeInv, TypeOK
-    <2>2 ~FPass(q)'
-      BY <2>1, <1>7, <1>1 DEF FPass, Want
     <2>3 q \notin FBadSet' /\ FV(q)' = 3 /\ FRank(q)' = 5
       BY <2>1, <2>2, FVAtP
     <2> QED
       BY <1>1, <1>2, <1>3, <2>3, Decide DEF FKeeps
+  \* too few: the second read follows, the stage stays (the bytes are as they were)
+  <1>6 CASE ~(avail >= Want(q))
+    <2>1 rpc'[q] = "fastclosed" /\ op'[q] = op[q] /\ bl' = bl /\ wl' = wl /\ parked' = parked
+      BY <1>6 DEF ThreadStart, Go, LiveInv, SafeInv, TypeOK
+    <2>2 ~(avail >= Want(q) /\ ~closed)'
+      BY <2>1, <1>6, <1>1 DEF Want
+    <2>3 q \notin FBadSet' /\ FV(q)' = 4 /\ FRank(q)' = 7
+      BY <2>1, <2>2, FVAtP
+    <2>4 CASE q = r
+      BY <1>1, <1>2, <1>3, <2>3, <2>4, Decide DEF FKeeps
+    <2>5 CASE q # r
+      <3>1 FMeas(r)' = FMeas(r)
+        BY <1>1, <1>2, <1>3, <2>3, <2>5, Decide
+      <3>2 FFrame(r)
+        BY <1>0, <1>3, <2>1, <2>5, EqFrame
+      <3> QED
+        BY <3>1, <3>2 DEF FKeeps
+    <2> QED
+      BY <2>4, <2>5
   <1> QED
-    BY <1>4, <1>5, <1>6, <1>7
+    BY <1>4, <1>5, <1>6
+
+LEMMA ActFastClosed ==
+  ASSUME LiveInv, NEW q \in Threads, NEW r \in Threads, ThreadFastClosed(q), ~Ret(r)
+  PROVE FKeeps(r)
+  <1>0 ThreadStep(q) /\ ~ThreadFinish(q) /\ ~ThreadCopy(q)
+    BY DEF ThreadStep, ThreadFastClosed, ThreadFinish, ThreadCopy
+  <1>1 /\ LiveInv' /\ op \in [Threads -> Ops]
+       /\ \A x \in Threads : Want(x) \in Nat /\ K[x] \in Nat
+       /\ avail \in Nat /\ avail' = avail /\ closed' = closed
+    BY <1>0, ActPre
+  <1>2 FMeas(r)' - FMeas(r)
+         = 8 * ((IF q \in FBadSet' THEN 1 ELSE 0) - (IF q \in FBadSet THEN 1 ELSE 0))
+           + 2 * (FV(q)' - FV(q)) + (IF q = r THEN FRank(q)' - FRank(q) ELSE 0)
+    BY <1>0, StepDelta
+  <1>3 rpc[q] = "fastclosed" /\ FRank(q) = 7 /\ q \notin FBadSet
+       /\ FV(q) = (IF avail >= Want(q) /\ ~closed THEN 10 ELSE 4)
+       /\ op'[q] = op[q] /\ bl' = bl /\ wl' = wl /\ parked' = parked
+    BY FVAt DEF ThreadFastClosed, Go
+  <1>4 CASE closed
+    <2>1 rpc'[q] = "reread" /\ FV(q) = 4
+      BY <1>3, <1>4 DEF ThreadFastClosed, Go, LiveInv, SafeInv, TypeOK
+    <2>2 q \notin FBadSet' /\ FV(q)' = 4 /\ FRank(q)' = 6
+      BY <2>1, FVAtP
+    <2>3 CASE q = r
+      <3>1 FMeas(r)' - FMeas(r) = -1
+        <4>1 FMeas(r)' - FMeas(r) = 8 * (0 - 0) + 2 * (4 - 4) + (6 - 7)
+          BY <1>2, <1>3, <2>1, <2>2, <2>3
+        <4> QED
+          BY <4>1
+      <3> QED
+        BY <1>1, <3>1, Decide DEF FKeeps
+    <2>4 CASE q # r
+      <3>1 FMeas(r)' = FMeas(r)
+        BY <1>1, <1>2, <1>3, <2>1, <2>2, <2>4, Decide
+      <3>2 FFrame(r)
+        BY <1>0, <1>3, <2>4, EqFrame
+      <3> QED
+        BY <3>1, <3>2 DEF FKeeps
+    <2> QED
+      BY <2>3, <2>4
+  <1>5 CASE ~closed /\ avail >= Want(q)
+    <2>1 rpc'[q] = "lockwait" /\ FV(q) = 10
+      BY <1>3, <1>5 DEF ThreadFastClosed, Go, LiveInv, SafeInv, TypeOK
+    <2>2 FPass(q)'
+      BY <1>1, <1>3, <1>5 DEF FPass, Want
+    <2>3 q \notin FBadSet' /\ FV(q)' = 9 /\ FRank(q)' = 6
+      BY <2>1, <2>2, FVAtP
+    <2> QED
+      BY <1>1, <1>2, <1>3, <2>1, <2>3, Decide DEF FKeeps
+  <1>6 CASE ~closed /\ ~(avail >= Want(q))
+    <2>1 rpc'[q] = "lockwait" /\ FV(q) = 4
+      BY <1>3, <1>6 DEF ThreadFastClosed, Go, LiveInv, SafeInv, TypeOK
+    <2>2 ~FPass(q)'
+      BY <1>1, <1>3, <1>6 DEF FPass, Want
+    <2>3 q \notin FBadSet' /\ FV(q)' = 4 /\ FRank(q)' = 6
+      BY <2>1, <2>2, FVAtP
+    <2>4 CASE q = r
+      <3>1 FMeas(r)' - FMeas(r) = -1
+        <4>1 FMeas(r)' - FMeas(r) = 8 * (0 - 0) + 2 * (4 - 4) + (6 - 7)
+          BY <1>2, <1>3, <2>1, <2>3, <2>4
+        <4> QED
+          BY <4>1
+      <3> QED
+        BY <1>1, <3>1, Decide DEF FKeeps
+    <2>5 CASE q # r
+      <3>1 FMeas(r)' = FMeas(r)
+        BY <1>1, <1>2, <1>3, <2>1, <2>3, <2>5, Decide
+      <3>2 FFrame(r)
+        BY <1>0, <1>3, <2>5, EqFrame
+      <3> QED
+        BY <3>1, <3>2 DEF FKeeps
+    <2> QED
+      BY <2>4, <2>5
+  <1> QED
+    BY <1>4, <1>5, <1>6
 
 LEMMA ActReread ==
   ASSUME LiveInv, NEW q \in Threads, NEW r \in Threads, ThreadReread(q), ~Ret(r)
@@ -524,7 +606,7 @@ LEMMA ActReread ==
          = 8 * ((IF q \in FBadSet' THEN 1 ELSE 0) - (IF q \in FBadSet THEN 1 ELSE 0))
            + 2 * (FV(q)' - FV(q)) + (IF q = r THEN FRank(q)' - FRank(q) ELSE 0)
     BY <1>0, StepDelta
-  <1>3 rpc[q] = "reread" /\ FV(q) = 4 /\ FRank(q) = 5 /\ q \notin FBadSet /\ closed
+  <1>3 rpc[q] = "reread" /\ FV(q) = 4 /\ FRank(q) = 6 /\ q \notin FBadSet /\ closed
     BY FVAt DEF ThreadReread, LiveInv, SafeInv, RereadClosed
   <1>4 CASE op[q] = "wait"
     <2>1 rpc'[q] \in {"start", "done"} /\ bl' = bl /\ wl' = wl /\ parked' = parked
@@ -549,14 +631,14 @@ LEMMA ActReread ==
       BY <1>5 DEF ThreadReread, Go, LiveInv, SafeInv, TypeOK
     <2>2 FOk(q)'
       BY <1>5, <1>3, <1>1 DEF FOk
-    <2>3 q \notin FBadSet' /\ FV(q)' = 3 /\ FRank(q)' = 4
+    <2>3 q \notin FBadSet' /\ FV(q)' = 3 /\ FRank(q)' = 5
       BY <2>1, <2>2, FVAtP
     <2> QED
       BY <1>1, <1>2, <1>3, <2>3, Decide DEF FKeeps
   <1>6 CASE op[q] # "wait" /\ ~(avail >= 1)
     <2>1 rpc'[q] = "ret0" /\ bl' = bl /\ wl' = wl /\ parked' = parked
       BY <1>6 DEF ThreadReread, Go, LiveInv, SafeInv, TypeOK
-    <2>2 q \notin FBadSet' /\ FV(q)' = 4 /\ FRank(q)' = 4
+    <2>2 q \notin FBadSet' /\ FV(q)' = 4 /\ FRank(q)' = 5
       BY <2>1, FVAtP
     <2>3 CASE q = r
       BY <1>1, <1>2, <1>3, <2>2, <2>3, Decide DEF FKeeps
@@ -585,21 +667,21 @@ LEMMA ActWaitLock ==
          = 8 * ((IF q \in FBadSet' THEN 1 ELSE 0) - (IF q \in FBadSet THEN 1 ELSE 0))
            + 2 * (FV(q)' - FV(q)) + (IF q = r THEN FRank(q)' - FRank(q) ELSE 0)
     BY <1>0, StepDelta
-  <1>3 (FPass(q)' <=> FPass(q)) /\ q \notin FBadSet /\ FRank(q) = 5
+  <1>3 (FPass(q)' <=> FPass(q)) /\ q \notin FBadSet /\ FRank(q) = 6
     BY <1>1, FVAt DEF ThreadWaitLock, FPass, Want
   <1>4 CASE rpc[q] = "lockwait"
     <2>1 rpc'[q] = "inc"
       BY <1>4 DEF ThreadWaitLock, Go, LiveInv, SafeInv, TypeOK
-    <2>2 FV(q) = (IF FPass(q) THEN 9 ELSE 3) /\ FV(q)' = (IF FPass(q) THEN 8 ELSE 2)
-         /\ q \notin FBadSet' /\ FRank(q)' = 4
+    <2>2 FV(q) = (IF FPass(q) THEN 9 ELSE 4) /\ FV(q)' = (IF FPass(q) THEN 8 ELSE 3)
+         /\ q \notin FBadSet' /\ FRank(q)' = 5
       BY <1>3, <1>4, <2>1, FVAt, FVAtP
     <2> QED
       BY <1>1, <1>2, <1>3, <2>2, Decide DEF FKeeps
   <1>5 CASE rpc[q] = "woken"
     <2>1 rpc'[q] = "test"
       BY <1>5 DEF ThreadWaitLock, Go, LiveInv, SafeInv, TypeOK
-    <2>2 FV(q) = (IF FPass(q) THEN 9 ELSE 3) /\ FV(q)' = (IF FPass(q) THEN 7 ELSE 1)
-         /\ q \notin FBadSet' /\ FRank(q)' = 3
+    <2>2 FV(q) = (IF FPass(q) THEN 9 ELSE 4) /\ FV(q)' = (IF FPass(q) THEN 7 ELSE 2)
+         /\ q \notin FBadSet' /\ FRank(q)' = 4
       BY <1>3, <1>5, <2>1, FVAt, FVAtP
     <2> QED
       BY <1>1, <1>2, <1>3, <2>2, Decide DEF FKeeps
@@ -621,8 +703,8 @@ LEMMA ActInc ==
     BY <1>0, StepDelta
   <1>3 (FPass(q)' <=> FPass(q)) /\ rpc[q] = "inc" /\ rpc'[q] = "test"
     BY <1>1 DEF ThreadInc, Go, FPass, Want, LiveInv, SafeInv, TypeOK
-  <1>4 FV(q) = (IF FPass(q) THEN 8 ELSE 2) /\ FV(q)' = (IF FPass(q) THEN 7 ELSE 1)
-       /\ q \notin FBadSet /\ q \notin FBadSet' /\ FRank(q) = 4 /\ FRank(q)' = 3
+  <1>4 FV(q) = (IF FPass(q) THEN 8 ELSE 3) /\ FV(q)' = (IF FPass(q) THEN 7 ELSE 2)
+       /\ q \notin FBadSet /\ q \notin FBadSet' /\ FRank(q) = 5 /\ FRank(q)' = 4
     BY <1>3, FVAt, FVAtP
   <1> QED
     BY <1>1, <1>2, <1>4, Decide DEF FKeeps
@@ -640,50 +722,99 @@ LEMMA ActTest ==
          = 8 * ((IF q \in FBadSet' THEN 1 ELSE 0) - (IF q \in FBadSet THEN 1 ELSE 0))
            + 2 * (FV(q)' - FV(q)) + (IF q = r THEN FRank(q)' - FRank(q) ELSE 0)
     BY <1>0, StepDelta
-  <1>3 rpc[q] = "test" /\ q \notin FBadSet /\ FRank(q) = 3
-       /\ FV(q) = (IF FPass(q) THEN 7 ELSE 1)
+  <1>3 rpc[q] = "test" /\ q \notin FBadSet /\ FRank(q) = 4
+       /\ FV(q) = (IF FPass(q) THEN 7 ELSE 2)
     BY FVAt DEF ThreadTest
-  <1>4 CASE FPass(q) /\ op[q] = "wait" /\ CheckedReturn /\ avail >= Want(q)
+  <1>4 CASE avail >= Want(q) /\ op[q] = "wait" /\ CheckedReturn
     <2>1 rpc'[q] \in {"start", "done"}
-      BY <1>4 DEF ThreadTest, Return, EndCall, Go, FPass, LiveInv, SafeInv, TypeOK
+      BY <1>4 DEF ThreadTest, Return, EndCall, Go, LiveInv, SafeInv, TypeOK
     <2>2 q # r
       BY <2>1, <1>0, <1>3 DEF Ret
     <2>3 q \notin FBadSet' /\ (FV(q)' = 4 \/ FV(q)' = 0)
       BY <2>1, FVAtP
+    <2>4 FPass(q)
+      BY <1>4 DEF FPass
     <2> QED
-      BY <1>1, <1>2, <1>3, <1>4, <2>2, <2>3, Decide DEF FKeeps
-  <1>5 CASE FPass(q) /\ op[q] = "wait" /\ ~(CheckedReturn /\ avail >= Want(q))
-    <2>1 rpc'[q] = "wret"
+      BY <1>1, <1>2, <1>3, <2>2, <2>3, <2>4, Decide DEF FKeeps
+  <1>5 CASE avail >= Want(q) /\ op[q] = "wait" /\ ~CheckedReturn
+    <2>1 rpc'[q] = "wret" /\ FPass(q)
       BY <1>5 DEF ThreadTest, Go, FPass, LiveInv, SafeInv, TypeOK
     <2>2 q \notin FBadSet' /\ FV(q)' = 5 /\ FRank(q)' = 2
       BY <2>1, FVAtP
     <2> QED
-      BY <1>1, <1>2, <1>3, <1>5, <2>2, Decide DEF FKeeps
-  <1>6 CASE FPass(q) /\ op[q] # "wait" /\ avail >= 1
-    <2>1 rpc'[q] = "lock" /\ op[q] = "read"
+      BY <1>1, <1>2, <1>3, <2>1, <2>2, Decide DEF FKeeps
+  <1>6 CASE avail >= Want(q) /\ op[q] # "wait"
+    <2>1 rpc'[q] = "lock" /\ op[q] = "read" /\ FPass(q)
       BY <1>6, <1>1 DEF ThreadTest, Go, FPass, Ops, LiveInv, SafeInv, TypeOK
     <2>2 FOk(q)'
-      BY <1>6, <2>1, <1>1 DEF FOk, FPass, Want
-    <2>3 q \notin FBadSet' /\ FV(q)' = 3 /\ FRank(q)' = 4
+      BY <1>6, <2>1, <1>1 DEF FOk, Want
+    <2>3 q \notin FBadSet' /\ FV(q)' = 3 /\ FRank(q)' = 5
       BY <2>1, <2>2, FVAtP
     <2> QED
-      BY <1>1, <1>2, <1>3, <1>6, <2>3, Decide DEF FKeeps
-  <1>7 CASE FPass(q) /\ op[q] # "wait" /\ ~(avail >= 1)
-    <2>1 rpc'[q] = "ret0"
-      BY <1>7 DEF ThreadTest, Go, FPass, LiveInv, SafeInv, TypeOK
-    <2>2 q \notin FBadSet' /\ FV(q)' = 4 /\ FRank(q)' = 4
+      BY <1>1, <1>2, <1>3, <2>1, <2>3, Decide DEF FKeeps
+  \* too few: the read of streamClosed follows, under waitLock
+  <1>7 CASE ~(avail >= Want(q))
+    <2>1 rpc'[q] = "waitclosed" /\ op'[q] = op[q]
+      BY <1>7 DEF ThreadTest, Go, LiveInv, SafeInv, TypeOK
+    <2>2 FPass(q)' <=> FPass(q)
+      BY <2>1, <1>1 DEF FPass, Want
+    <2>3 q \notin FBadSet' /\ FV(q)' = (IF FPass(q) THEN 6 ELSE 1) /\ FRank(q)' = 3
+      BY <2>1, <2>2, FVAtP
+    <2> QED
+      BY <1>1, <1>2, <1>3, <2>3, Decide DEF FKeeps
+  <1> QED
+    BY <1>4, <1>5, <1>6, <1>7
+
+LEMMA ActWaitClosed ==
+  ASSUME LiveInv, NEW q \in Threads, NEW r \in Threads, ThreadWaitClosed(q), ~Ret(r)
+  PROVE FKeeps(r)
+  <1>0 ThreadStep(q) /\ ~ThreadFinish(q) /\ ~ThreadCopy(q)
+    BY DEF ThreadStep, ThreadWaitClosed, ThreadFinish, ThreadCopy
+  <1>1 /\ LiveInv' /\ op \in [Threads -> Ops]
+       /\ \A x \in Threads : Want(x) \in Nat /\ K[x] \in Nat
+       /\ avail \in Nat /\ avail' = avail /\ closed' = closed
+    BY <1>0, ActPre
+  <1>2 FMeas(r)' - FMeas(r)
+         = 8 * ((IF q \in FBadSet' THEN 1 ELSE 0) - (IF q \in FBadSet THEN 1 ELSE 0))
+           + 2 * (FV(q)' - FV(q)) + (IF q = r THEN FRank(q)' - FRank(q) ELSE 0)
+    BY <1>0, StepDelta
+  <1>3 rpc[q] = "waitclosed" /\ q \notin FBadSet /\ FRank(q) = 3
+       /\ FV(q) = (IF FPass(q) THEN 6 ELSE 1)
+    BY FVAt DEF ThreadWaitClosed
+  <1>4 CASE closed /\ op[q] = "wait"
+    <2>1 rpc'[q] = "wret" /\ FPass(q)
+      BY <1>4 DEF ThreadWaitClosed, Go, FPass, LiveInv, SafeInv, TypeOK
+    <2>2 q \notin FBadSet' /\ FV(q)' = 5 /\ FRank(q)' = 2
       BY <2>1, FVAtP
     <2> QED
-      BY <1>1, <1>2, <1>3, <1>7, <2>2, Decide DEF FKeeps
-  <1>8 CASE ~FPass(q)
+      BY <1>1, <1>2, <1>3, <2>1, <2>2, Decide DEF FKeeps
+  <1>5 CASE closed /\ op[q] # "wait" /\ avail >= 1
+    <2>1 rpc'[q] = "lock" /\ FPass(q)
+      BY <1>5 DEF ThreadWaitClosed, Go, FPass, LiveInv, SafeInv, TypeOK
+    <2>2 FOk(q)'
+      BY <1>5, <1>1 DEF FOk
+    <2>3 q \notin FBadSet' /\ FV(q)' = 3 /\ FRank(q)' = 5
+      BY <2>1, <2>2, FVAtP
+    <2> QED
+      BY <1>1, <1>2, <1>3, <2>1, <2>3, Decide DEF FKeeps
+  <1>6 CASE closed /\ op[q] # "wait" /\ ~(avail >= 1)
+    <2>1 rpc'[q] = "ret0" /\ FPass(q)
+      BY <1>6 DEF ThreadWaitClosed, Go, FPass, LiveInv, SafeInv, TypeOK
+    <2>2 q \notin FBadSet' /\ FV(q)' = 4 /\ FRank(q)' = 5
+      BY <2>1, FVAtP
+    <2> QED
+      BY <1>1, <1>2, <1>3, <2>1, <2>2, Decide DEF FKeeps
+  \* open: q parks, whatever a write since its test brought (the signal of that write waits for
+  \* waitLock, which q holds)
+  <1>7 CASE ~closed
     <2>1 rpc'[q] = "parked"
-      BY <1>8 DEF ThreadTest, Go, FPass, LiveInv, SafeInv, TypeOK
+      BY <1>7 DEF ThreadWaitClosed, Go, LiveInv, SafeInv, TypeOK
     <2>2 q \notin FBadSet' /\ FV(q)' = 0 /\ FRank(q)' = 1
       BY <2>1, FVAtP
     <2> QED
-      BY <1>1, <1>2, <1>3, <1>8, <2>2, Decide DEF FKeeps
+      BY <1>1, <1>2, <1>3, <2>2, Decide DEF FKeeps
   <1> QED
-    BY <1>4, <1>5, <1>6, <1>7, <1>8
+    BY <1>4, <1>5, <1>6, <1>7
 
 LEMMA ActWaitReturn ==
   ASSUME LiveInv, NEW q \in Threads, NEW r \in Threads, ThreadWaitReturn(q), ~Ret(r)
@@ -724,7 +855,7 @@ LEMMA ActLock ==
     BY <1>0, StepDelta
   <1>3 rpc[q] = "lock" /\ rpc'[q] = "decide" /\ (FOk(q)' <=> FOk(q))
     BY <1>1 DEF ThreadLock, Go, FOk, LiveInv, SafeInv, TypeOK
-  <1>4 FV(q) = 3 /\ FV(q)' = 2 /\ FRank(q) = 4 /\ FRank(q)' = 3
+  <1>4 FV(q) = 3 /\ FV(q)' = 2 /\ FRank(q) = 5 /\ FRank(q)' = 5
        /\ (q \in FBadSet' <=> q \in FBadSet)
     BY <1>3, FVAt, FVAtP
   <1> QED
@@ -743,7 +874,7 @@ LEMMA ActDecide ==
          = 8 * ((IF q \in FBadSet' THEN 1 ELSE 0) - (IF q \in FBadSet THEN 1 ELSE 0))
            + 2 * (FV(q)' - FV(q)) + (IF q = r THEN FRank(q)' - FRank(q) ELSE 0)
     BY <1>0, StepDelta
-  <1>3 rpc[q] = "decide" /\ FV(q) = 2 /\ FRank(q) = 3 /\ (q \in FBadSet <=> ~FOk(q))
+  <1>3 rpc[q] = "decide" /\ FV(q) = 2 /\ FRank(q) = 5 /\ (q \in FBadSet <=> ~FOk(q))
     BY FVAt DEF ThreadDecide
   <1>4 CASE FOk(q)
     <2>1 rpc'[q] = "copy"
@@ -755,7 +886,7 @@ LEMMA ActDecide ==
   <1>5 CASE ~FOk(q)
     <2>1 rpc'[q] = "start"
       BY <1>5 DEF ThreadDecide, Go, FOk, LiveInv, SafeInv, TypeOK
-    <2>2 q \in FBadSet /\ q \notin FBadSet' /\ FV(q)' = 4 /\ FRank(q)' = 6
+    <2>2 q \in FBadSet /\ q \notin FBadSet' /\ FV(q)' = 4 /\ FRank(q)' = 8
       BY <1>3, <1>5, <2>1, FVAtP
     <2> QED
       BY <1>1, <1>2, <1>3, <2>2, Decide DEF FKeeps
@@ -839,7 +970,7 @@ LEMMA ActCopy ==
       BY <1>3, <1>9 DEF FBadSet
     <2> QED
       BY <2>1 DEF FBad
-  <1>12 FRank(r)' <= FRank(r) /\ FRank(r) \in 0..6 /\ FRank(r)' \in 0..6
+  <1>12 FRank(r)' <= FRank(r) /\ FRank(r) \in 0..8 /\ FRank(r)' \in 0..8
     <2>1 CASE q = r
       BY <2>1, <1>5, <1>8 DEF FRank
     <2>2 CASE q # r
@@ -963,8 +1094,13 @@ LEMMA StepKeeps ==
       BY <2>10, ActFinish DEF FKeeps
     <2>11 CASE ThreadRet0(q)
       BY <2>11, ActRet0
+    <2>12 CASE ThreadFastClosed(q)
+      BY <2>12, ActFastClosed
+    <2>13 CASE ThreadWaitClosed(q)
+      BY <2>13, ActWaitClosed
     <2> QED
-      BY <2>1, <2>2, <2>3, <2>4, <2>5, <2>6, <2>7, <2>8, <2>9, <2>10, <2>11 DEF ThreadStep
+      BY <2>1, <2>2, <2>3, <2>4, <2>5, <2>6, <2>7, <2>8, <2>9, <2>10, <2>11, <2>12, <2>13
+         DEF ThreadStep
   <1>4 CASE \E q \in Threads : SpuriousWake(q)
     BY <1>4, ActSpurious DEF FKeeps
   <1> QED
@@ -1000,26 +1136,31 @@ LEMMA OwnMoves ==
     BY <1>10 DEF ThreadFinish, EndCall, ThreadStep
   <1>11 CASE ThreadRet0(r)
     BY <1>11 DEF ThreadRet0, EndCall, ThreadStep
+  <1>12 CASE ThreadFastClosed(r)
+    BY <1>12 DEF ThreadFastClosed
+  <1>13 CASE ThreadWaitClosed(r)
+    BY <1>13 DEF ThreadWaitClosed
   <1> QED
-    BY <1>1, <1>2, <1>3, <1>4, <1>5, <1>6, <1>7, <1>8, <1>9, <1>10, <1>11 DEF ThreadStep
+    BY <1>1, <1>2, <1>3, <1>4, <1>5, <1>6, <1>7, <1>8, <1>9, <1>10, <1>11, <1>12, <1>13
+       DEF ThreadStep
 
 \* a step of a lock holder moves it
 LEMMA HolderMoves ==
   ASSUME LiveInv, NEW q \in Threads, ThreadStep(q), bl = q \/ wl = q
   PROVE rpc'[q] # rpc[q] \/ hold'[q] # hold[q]
   <1> USE DEF LiveInv, SafeInv, TypeOK, Go
-  <1>1 rpc[q] \in {"decide", "copy", "finish", "inc", "test", "wret"}
+  <1>1 rpc[q] \in {"decide", "copy", "finish", "inc", "test", "waitclosed", "wret"}
     BY DEF BufLock, WaitLockInv
   <1>2 CASE rpc[q] = "copy"
     <2>1 ThreadCopy(q) /\ left[q] >= 1 /\ Buffered >= left[q] /\ hold[q] \in Nat
-      BY <1>2 DEF ThreadStep, ThreadStart, ThreadReread, ThreadWaitLock, ThreadInc, ThreadTest,
+      BY <1>2 DEF ThreadStep, ThreadStart, ThreadReread, ThreadWaitLock, ThreadInc, ThreadTest, ThreadFastClosed, ThreadWaitClosed,
              ThreadWaitReturn, ThreadLock, ThreadDecide, ThreadCopy, ThreadFinish, ThreadRet0,
              HoldLeft, CopyHasBytes
     <2> QED
       BY <2>1 DEF ThreadCopy
   <1>3 CASE rpc[q] # "copy"
     BY <1>1, <1>3 DEF ThreadStep, ThreadStart, ThreadReread, ThreadWaitLock, ThreadInc,
-           ThreadTest, ThreadWaitReturn, ThreadLock, ThreadDecide, ThreadCopy, ThreadFinish,
+           ThreadTest, ThreadFastClosed, ThreadWaitClosed, ThreadWaitReturn, ThreadLock, ThreadDecide, ThreadCopy, ThreadFinish,
            ThreadRet0, Return, EndCall
   <1> QED
     BY <1>2, <1>3
@@ -1047,12 +1188,12 @@ LEMMA NotDone ==
     <2> PICK q \in Threads : ThreadStep(q)
       BY <1>4
     <2>1 CASE q # r
-      BY <2>1 DEF ThreadStep, ThreadStart, ThreadReread, ThreadWaitLock, ThreadInc, ThreadTest,
+      BY <2>1 DEF ThreadStep, ThreadStart, ThreadReread, ThreadWaitLock, ThreadInc, ThreadTest, ThreadFastClosed, ThreadWaitClosed,
              ThreadWaitReturn, ThreadLock, ThreadDecide, ThreadCopy, ThreadFinish, ThreadRet0,
              Go, Return, EndCall
     <2>2 CASE q = r
       <3>1 rpc[r] # "decide"
-        BY <2>2 DEF ThreadStep, ThreadStart, ThreadReread, ThreadWaitLock, ThreadInc, ThreadTest,
+        BY <2>2 DEF ThreadStep, ThreadStart, ThreadReread, ThreadWaitLock, ThreadInc, ThreadTest, ThreadFastClosed, ThreadWaitClosed,
                ThreadWaitReturn, ThreadLock, ThreadDecide, ThreadCopy, ThreadFinish, ThreadRet0,
                Go, Return, EndCall
       <3> QED
@@ -1279,7 +1420,7 @@ LEMMA Lower ==
     BY <1>1, Case1, Case2, Case3, Case4, Case5, Case6, PTL
 
 \* the measure is bounded by a constant
-MB == FW * (3 * Bytes + 3 * NW + 3 * NC + Spurious) + Bytes + 28 * FNT + 6
+MB == FW * (3 * Bytes + 3 * NW + 3 * NC + Spurious) + Bytes + 28 * FNT + 8
 
 LEMMA MeasBound ==
   ASSUME LiveInv, NEW r \in Threads
@@ -1307,7 +1448,7 @@ LEMMA MeasBound ==
       BY <1>1, <2>1
     <2> QED
       BY <1>1, <2>1, <2>2
-  <1>6 FRank(r) \in 0..6
+  <1>6 FRank(r) \in 0..8
     BY DEF FRank
   <1> QED
     BY <1>1, <1>3, <1>5, <1>6 DEF FMeas, MB

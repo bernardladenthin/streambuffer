@@ -58,9 +58,12 @@ FBad == Cardinality(FBadSet)
 \* 4.
 FV(q) ==
     CASE rpc[q] \in {"start", "reread", "ret0"} -> 4
-      [] rpc[q] \in {"lockwait", "woken"} -> IF FPass(q) THEN 9 ELSE 3
-      [] rpc[q] = "inc" -> IF FPass(q) THEN 8 ELSE 2
-      [] rpc[q] = "test" -> IF FPass(q) THEN 7 ELSE 1
+      \* the second read of the fast path: a write after the first lifts the wait that follows
+      [] rpc[q] = "fastclosed" -> IF avail >= Want(q) /\ ~closed THEN 10 ELSE 4
+      [] rpc[q] \in {"lockwait", "woken"} -> IF FPass(q) THEN 9 ELSE 4
+      [] rpc[q] = "inc" -> IF FPass(q) THEN 8 ELSE 3
+      [] rpc[q] = "test" -> IF FPass(q) THEN 7 ELSE 2
+      [] rpc[q] = "waitclosed" -> IF FPass(q) THEN 6 ELSE 1
       [] rpc[q] = "wret" -> 5
       [] rpc[q] = "lock" -> 3
       [] rpc[q] = "decide" -> 2
@@ -75,10 +78,12 @@ FSumV == (FLay(1) + FLay(2) + FLay(3) + FLay(4) + FLay(5))
 
 \* 5.
 FRank(q) ==
-    CASE rpc[q] = "start" -> 6
-      [] rpc[q] \in {"reread", "lockwait", "woken"} -> 5
-      [] rpc[q] \in {"ret0", "inc", "lock"} -> 4
-      [] rpc[q] \in {"test", "decide"} -> 3
+    CASE rpc[q] = "start" -> 8
+      [] rpc[q] = "fastclosed" -> 7
+      [] rpc[q] \in {"reread", "lockwait", "woken"} -> 6
+      [] rpc[q] \in {"ret0", "inc", "lock", "decide"} -> 5
+      [] rpc[q] = "test" -> 4
+      [] rpc[q] = "waitclosed" -> 3
       [] rpc[q] \in {"wret", "copy"} -> 2
       [] rpc[q] \in {"parked", "finish"} -> 1
       [] OTHER -> 0

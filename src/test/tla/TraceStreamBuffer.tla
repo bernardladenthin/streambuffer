@@ -14,8 +14,9 @@
 (* value, b: bytes].                                                       *)
 (*                                                                         *)
 (* The model is coarser than the code: one step of it is several accesses *)
-(* of the code (the fast path of the wait reads availableBytes and         *)
-(* streamClosed in one step; ReaderTest also decrements waitingReaders).   *)
+(* of the code (the finally block of the wait, decrement and unlock, is   *)
+(* one step; the closed branch of a read()'s wait reads streamClosed and  *)
+(* the count in one).                                                     *)
 (* So a thread's model steps are not tied to single lines: before a line   *)
 (* of thread t is consumed, t may take up to K steps of the model (Silent),*)
 (* and then the line must agree with the model's state (Obs): the values   *)
@@ -29,7 +30,9 @@ EXTENDS StreamBuffer, TLC
 
 CONSTANTS
     TraceLog,   \* the recorded lines
-    K           \* the model steps a thread may take before one of its lines
+    K,          \* the model steps a thread may take before one of its lines
+    WriterName, \* the thread name of writer i in the trace: WriterName[i]
+    CloserName  \* the thread name of closer c in the trace: CloserName[c]
 
 VARIABLES
     l,          \* the next line
@@ -41,9 +44,14 @@ Last(s) == s[Len(s)]
 
 (* A model step of thread t: a step of the protocol, or for a reader a    *)
 (* spurious wake-up (within the trace's budget Spurious).                  *)
+IsWriter(t) == \E i \in Writers : WriterName[i] = t
+IsCloser(t) == \E c \in Closers : CloserName[c] = t
+WriterOf(t) == CHOOSE i \in Writers : WriterName[i] = t
+CloserOf(t) == CHOOSE c \in Closers : CloserName[c] = t
+
 StepOf(t) ==
-    IF t = "w" THEN WriterStep
-    ELSE IF t = "c" THEN CloserStep
+    IF IsWriter(t) THEN WriterStep(WriterOf(t))
+    ELSE IF IsCloser(t) THEN CloserStep(CloserOf(t))
     ELSE ReaderStep(t) \/ SpuriousWake(t)
 
 (***************************************************************************)
@@ -53,13 +61,15 @@ StepOf(t) ==
 IsReader(t) == t \in Readers
 
 (* The value checks: every access of availableBytes, streamClosed and     *)
-(* waitingReaders. The model lowers waitingReaders in ReaderTest, the code *)
-(* a few accesses later, so the model's count may be lower than the code's.*)
+(* waitingReaders. The model changes waitingReaders where the code does    *)
+(* (ReaderInc, ReaderWaitExit), so the counts agree; until A18 found a     *)
+(* word only a spurious wake-up explained, the model lowered it with the   *)
+(* return and the check allowed a lower count.                             *)
 Values(e) ==
     /\ e.a \in {"getAvail", "putAvail"} => avail = e.v
     /\ e.a = "getClosed" => closed = (e.v = 1)
     /\ e.a = "putClosed" => closed
-    /\ e.a \in {"waitersGet", "waitersInc", "waitersDec"} => waiters <= e.v
+    /\ e.a \in {"waitersGet", "waitersInc", "waitersDec"} => waiters = e.v
 
 (* The locks. The writer and the closer hold bufferLock and waitLock only  *)
 (* inside one model step each, so while they hold it no reader does.       *)
@@ -82,43 +92,53 @@ WaitPc(e) ==
     /\ e.a = "waitersInc" => rpc[r] \notin {"lockwait", "inc"}
     /\ e.a = "park" => rpc[r] = "parked"
     /\ e.a = "unpark" => rpc[r] \notin {"parked", "woken"}
-    /\ e.a = "waitersDec" => rpc[r] \notin {"lockwait", "inc", "test", "parked", "woken", "wret"}
+    /\ e.a = "waitersDec" => rpc[r] \notin {"lockwait", "inc", "test", "waitclosed", "parked",
+                                            "woken", "wret"} \cup WaitExits
 
 (* The results of the calls (the lines the test adds). *)
 Results(e) ==
-    /\ e.a = "wret" => Len(written) = e.v /\ wpc \in {"write", "done"}
-    /\ e.a = "wfail" => wpc = "failed"
-    /\ e.a = "cret" => cpc = "done"
+    \* a wret has the bytes of all writers up to its writer's last commit (TraceScenario numbers
+    \* them in commit order); with several writers another may commit before the line
+    /\ e.a = "wret" => (IF NW = 1 THEN Len(written) = e.v ELSE Len(written) >= e.v)
+                       /\ wpc[WriterOf(e.t)] \in {"write", "done"}
+    /\ e.a = "wfail" => wpc[WriterOf(e.t)] = "failed"
+    /\ e.a = "cret" => cpc[CloserOf(e.t)] = "done"
     /\ e.a = "ret" => rpc[e.t] = "start" /\ Len(reads[e.t]) = e.n /\ Last(reads[e.t]) = e.b
     /\ e.a = "eof" => rpc[e.t] = "done" /\ Len(reads[e.t]) = e.n
     /\ e.a = "wfa" => rpc[e.t] = "done" /\ wres[e.t] = e.v
 
-(* The signal: the model's waitingReaders may be 0 where the code's is not *)
-(* (see Values), then the model skips the signal; it wakes nobody then.    *)
+(* The signal: the read of waitingReaders and the signal itself are the   *)
+(* model's WriterSigRead and WriterSigLock, taken by the line.             *)
 Signal(e) ==
-    /\ e.a = "waitersGet" /\ e.t = "w" => wpc # "sigread"
-    /\ e.a = "waitersGet" /\ e.t = "c" => cpc # "sigread"
-    /\ e.a = "signalAll" /\ e.t = "w" => wpc # "siglock"
-    /\ e.a = "signalAll" /\ e.t = "c" => cpc # "siglock"
+    /\ e.a = "waitersGet" /\ IsWriter(e.t) => wpc[WriterOf(e.t)] # "sigread"
+    /\ e.a = "waitersGet" /\ IsCloser(e.t) => cpc[CloserOf(e.t)] # "sigread"
+    /\ e.a = "signalAll" /\ IsWriter(e.t) => wpc[WriterOf(e.t)] # "siglock"
+    /\ e.a = "signalAll" /\ IsCloser(e.t) => cpc[CloserOf(e.t)] # "siglock"
 
 Obs(e) ==
     /\ Values(e) /\ Locks(e) /\ Signal(e) /\ Results(e)
     /\ IsReader(e.t) => WaitPc(e)
 
 -----------------------------------------------------------------------------
+(* The trace through a definition of its own: TLC 1.7.4 evaluates a       *)
+(* constant substituted in the cfg (TraceLog <- TTrace) anew at every use, *)
+(* the whole trace at each step, but a definition of constant level once   *)
+(* (tlaplus issue 648). check.sh counts the evaluations (ConstCacheTrace). *)
+Log == TraceLog
+
 TraceInit == Init /\ l = 1 /\ k = 0 /\ TLCSet(1, 0)
 
 Silent ==
-    /\ l <= Len(TraceLog) /\ k < K
-    /\ StepOf(TraceLog[l].t)
+    /\ l <= Len(Log) /\ k < K
+    /\ StepOf(Log[l].t)
     /\ k' = k + 1
     /\ UNCHANGED l
 
 (* A rejected trace: the last "line" TLC prints is the first line no     *)
 (* placement could consume.                                                *)
 Consume ==
-    /\ l <= Len(TraceLog)
-    /\ Obs(TraceLog[l])
+    /\ l <= Len(Log)
+    /\ Obs(Log[l])
     /\ l + 1 > TLCGet(1) => TLCSet(1, l + 1) /\ PrintT(<<"line", l + 1>>)
     /\ l' = l + 1
     /\ k' = 0
@@ -129,6 +149,6 @@ TraceNext == Silent \/ Consume
 TraceSpec == TraceInit /\ [][TraceNext]_tvars
 
 (* Violated exactly when every line has been consumed: the trace is accepted. *)
-TraceNotDone == l <= Len(TraceLog)
+TraceNotDone == l <= Len(Log)
 
 =============================================================================

@@ -14,8 +14,11 @@ part of the Maven build and never touches the shipped jar.
 
 ## What is modeled
 
-- **Threads:** a writer of `Bytes` bytes in writes of `ChunkLen` bytes (the last one shorter), a
-  closer, and the threads in `Readers`. A reader reads until a call returns -1: `read()` if it is in
+- **Threads:** `NW` writers of `Bytes` bytes together in writes of `ChunkLen` bytes (the last one
+  shorter), `NC` closers, and the threads in `Readers`. The writers share the bytes: each write
+  takes the next ones, so the bytes are numbered in the order the writes commit; a writer that
+  finds none left stops. The models have one writer and one closer unless they say otherwise
+  ("Several writers and closers"). A reader reads until a call returns -1: `read()` if it is in
   `ByteReaders`, `read(b, 0, ReadLen)` otherwise. A thread in `WaitCallers` calls
   `waitForAtLeast(ReadLen)` once instead and keeps what it returns.
 - **State:** the FIFO as a sequence of entries, one per write (`buf`), with the read position in the
@@ -66,8 +69,9 @@ part of the Maven build and never touches the shipped jar.
 
 `check.sh` runs every model and compares it with its **expected** outcome [V10]: the 16 models below
 (last run 2026-11-13, TLC v1.7.4, about 90 s), the 8 of "Spurious wake-ups" and its mutant, the 18
-of "Liveness with threads that call forever" and the 3 of the external signals (F280), 45 in all;
-361 s on 32 cores (2026-11-13, next to the other checks), 594 s on 4 cores with 32 of them before.
+of "Liveness with threads that call forever", the 3 of the external signals (F280), the 9 of
+"Several writers and closers" and the regression trace `TraceSignalBeforeExit` (A18), 55 in all; 933 s on 16 cores (2026-11-14, next to a tlapm run). The 45 before the last 9 took 361 s on 32
+cores (2026-11-13, next to the other checks), 594 s on 4 cores with 32 of them before.
 Writes are single bytes unless the row says otherwise:
 
 | Model | Code | Reads | Threads | Expected and found |
@@ -145,6 +149,34 @@ The abstraction `StreamBufferWait.tla` has the same step and budget, and so do i
 gives the thread. The trace validation lets a parked reader wake spuriously within a budget
 (below).
 
+### Several writers and closers
+
+`NW` writers and `NC` closers (A6 follow-up, 2026-11-14), each with its own steps and weak fairness.
+The writers share the bytes `1..Bytes`: a write takes the next `ChunkLen` of them under `bufferLock`,
+so `written` is the order of the commits and `Fifo`, `ReaderOrder` and `RecordsWhole` keep their
+meaning; a writer that finds none left stops, as in the abstractions. Every model above has `NW = 1`
+and `NC = 1`, with the same outcome and, where it checks clean, the same state count as before (a
+model that finds a violation stops at a count that depends on the order of TLC's workers). The
+current code with two:
+
+| Model | Reads | Threads | Writers, closers | Expected and found |
+|---|---|---|---|---|
+| `Writers2Condition2` | `read()`; 2 bytes | 2 | 2, 1 | no error, 57,755 states |
+| `Closers2Condition2` | `read()`; 2 bytes | 2 | 1, 2 | no error, 48,127 states |
+| `Writers2Records2` | `read(b, 0, 2)`; 4 bytes (a record of the bytes of two writers) | 2 | 2, 1 | no error, 102,307 states |
+| `Writers2Mixed2` | `read()` and `read(b, 0, 2)`; writes of 2 and 1 bytes | 2 | 2, 2 | no error, 289,109 states |
+| `Writers2WaitChecked2` | `waitForAtLeast(2)` and `read(b, 0, 2)`; one 2-byte write | 2 | 2, 2 | no error, 52,412 states |
+| `Writers2WaitAndRead2` | `waitForAtLeast(2)` and `read()`; 1 byte | 2 | 2, 1 | no error, 8,282 states |
+| `ForeverWriters2Mixed2` | as `Writers2Mixed2`, every thread calling again forever (`EveryCallReturns`) | 2 | 2, 2 | no error, 402,669 states |
+| `Writers2Reached2` | as `Writers2Condition2`, probe `NoTwoWritersSignalling` | 2 | 2, 1 | violated: two writers signal at once |
+| `Closers2Reached2` | as `Closers2Condition2`, probe `NoTwoClosersSignalling` | 2 | 1, 2 | violated: two closers signal at once |
+
+The probes show that the writers and the closers do interleave, so the clean results are not
+vacuous. The models of older code keep one writer and one closer: their defects need no second
+one. TLC checks the refinement of `StreamBufferWait.tla` and `StreamBufferRecords.tla` with two
+writers and two closers too (`inductive.sh`), and `RefineWaitProof.tla` proves it for any numbers
+(below).
+
 ## Unbounded safety: inductive invariants (roadmap A13)
 
 TLC checks fixed constants, up to 3 readers and a few bytes. Counter abstractions with inductive
@@ -156,12 +188,13 @@ writers and closers; its liveness is proved too.
   the budget of calls symbolic.
 - **TLAPS** (`proof.sh`) [V12]: any number of threads, writers and closers.
 - **TLC refinement checks** tie each abstraction to the detailed model; for `StreamBufferWait.tla`
-  a TLAPS proof does so for any number of readers (`RefineWaitProof.tla`, in `proof.sh`) [V13].
+  a TLAPS proof does so for any number of readers, writers and closers (`RefineWaitProof.tla`, in
+  `proof.sh`) [V13].
 
 **What this does and does not show.** The unbounded results hold for the abstractions, and the
 safety results carry over to `StreamBuffer.tla` with the current code: `RefineWaitProof.tla` proves
-with TLAPS that it refines `StreamBufferWait.tla` for **any** set of readers (see "The refinement"
-below). The liveness does not carry over: the refinement is of the specifications without
+with TLAPS that it refines `StreamBufferWait.tla` for **any** set of readers and any numbers of
+writers and closers (see "The refinement" below). The liveness does not carry over: the refinement is of the specifications without
 fairness, and weak fairness of the abstraction's `Next` does not follow from the detailed model's
 fairness by this proof, so the detailed model's liveness rests on TLC's bounded checks. For
 `StreamBufferCounters.tla` and `StreamBufferRecords.tla` the link is TLC's refinement check of the
@@ -176,11 +209,11 @@ therefore true by construction there, and the F279 defect is only shown by the b
 
 | Abstraction | Slice | Apalache (fixed N) | TLAPS (any N) | Refinement (TLC) | Older code reaches a violation |
 |---|---|---|---|---|---|
-| `StreamBufferCounters.tla` | `read()`, single-byte writes | N = 2, 3, 4, 8, 12; any bytes (`IndInv`) | `SafeInv`, 216 obligations | `Condition2`, `Condition3` | the empty take without the re-check (F278), 10 steps |
-| `StreamBufferRecords.tla` | `read(b, 0, K)`, several writers and closers, any chunking | 2, 3, 4 readers with 2 writers and 2 closers, 2 readers with 3 and 3; any K and bytes (`SafeModInv`) | `SafeInv`, any readers, writers and closers, 488 obligations | `Records2`, `Chunks2` | a torn record with the two-phase read (#212), 6 steps |
-| `StreamBufferWait.tla` | every thread any number of calls, each `read(b, 0, K[r])` (`K[r] = 1` is `read()`) or `waitForAtLeast(M[r])`; several writers and closers, any chunking | 2, 3, 4 threads with 2 writers and 2 closers, 2 threads with 3 and 3; any read sizes, requests, bytes and calls (`SafeModInv`) | `SafeInv`, any threads, writers and closers, with spurious wake-ups, 617 obligations | TLAPS for any number of readers (`RefineWaitProof.tla`, 2,729 obligations, spurious wake-ups included); TLC in all seven configurations of the current code (`Condition2`, `Condition3`, `Records2`, `Chunks2`, `Mixed2`, `WaitAndRead2`, `WaitChecked2`) and two with spurious wake-ups (`SpuriousWaitChecked2`, `SpuriousMixed2`) | `waitForAtLeast(M[r]) < M[r]` on an open buffer before `CheckedReturn`, 11 steps |
-| `StreamBufferWaitForeverLive.tla` | liveness with threads that call forever: with a closer, every call returns | TLC (`WaitForever*`, below) | `SpecRole => EveryCallReturns`, any threads, writers and closers, any budget of spurious wake-ups: 633 + 1,378 obligations | as `StreamBufferWait.tla` | with an endless writer and no close a reader starves, also with fair locks |
-| `StreamBufferWaitLive.tla` | liveness of `StreamBufferWait.tla`: with a closer, every call returns and all finish | 2 threads with 2 writers and 1 closer, 3 with 2 and 2: `LiveInv` inductive, `Pot` goes down with every step, a step until all are done | `FairSpec => <>AllDone`, any threads, writers and closers, any budget of spurious wake-ups: 363 + 628 + 956 obligations | as `StreamBufferWait.tla` | without `ClosedNoPark` a state of `SafeInv` has no step |
+| `StreamBufferCounters.tla` | `read()`, single-byte writes | N = 2, 3, 4, 8, 12; any bytes (`IndInv`) | `SafeInv`, 349 obligations | `Condition2`, `Condition3` | the empty take without the re-check (F278), 10 steps |
+| `StreamBufferRecords.tla` | `read(b, 0, K)`, several writers and closers, any chunking | 2, 3, 4 readers with 2 writers and 2 closers, 2 readers with 3 and 3; any K and bytes (`SafeModInv`) | `SafeInv`, any readers, writers and closers, 554 obligations | `Records2`, `Chunks2` | a torn record with the two-phase read (#212), 6 steps |
+| `StreamBufferWait.tla` | every thread any number of calls, each `read(b, 0, K[r])` (`K[r] = 1` is `read()`) or `waitForAtLeast(M[r])`; several writers and closers, any chunking | 2, 3, 4 threads with 2 writers and 2 closers, 2 threads with 3 and 3; any read sizes, requests, bytes and calls (`SafeModInv`) | `SafeInv`, any threads, writers and closers, with spurious wake-ups, 709 obligations | TLAPS for any number of readers, writers and closers (`RefineWaitProof.tla`, 3,345 obligations, spurious wake-ups included); TLC in all seven configurations of the current code (`Condition2`, `Condition3`, `Records2`, `Chunks2`, `Mixed2`, `WaitAndRead2`, `WaitChecked2`), two with spurious wake-ups (`SpuriousWaitChecked2`, `SpuriousMixed2`) and two with two writers and two closers (`Writers2Mixed2`, `Writers2WaitChecked2`) | `waitForAtLeast(M[r]) < M[r]` on an open buffer before `CheckedReturn`, 11 steps |
+| `StreamBufferWaitForeverLive.tla` | liveness with threads that call forever: with a closer, every call returns | TLC (`WaitForever*`, below) | `SpecRole => EveryCallReturns`, any threads, writers and closers, any budget of spurious wake-ups: 768 + 1,553 obligations | as `StreamBufferWait.tla` | with an endless writer and no close a reader starves, also with fair locks |
+| `StreamBufferWaitLive.tla` | liveness of `StreamBufferWait.tla`: with a closer, every call returns and all finish | 2 threads with 2 writers and 1 closer, 3 with 2 and 2: `LiveInv` inductive, `Pot` goes down with every step, a step until all are done | `FairSpec => <>AllDone`, any threads, writers and closers, any budget of spurious wake-ups: 704 + 714 + 1,054 obligations | as `StreamBufferWait.tla` | without `ClosedNoPark` a state of `SafeInv` has no step |
 
 **The abstractions.** The writer writes the bytes 1, 2, ... in order, and the FIFO hands them out
 in order, so the byte sequences reduce to counts:
@@ -192,7 +225,8 @@ The records and wait abstractions have NW writers sharing the budget of `Bytes` 
 that finds it used up is done. They have NC closers: `close()` sets `streamClosed` under
 `bufferLock` and signals, and a second close does the same again. With `K = 1` the records
 abstraction is the `read()` protocol, so `read()` with several writers and closers is covered
-there; `StreamBufferCounters.tla` keeps one writer and one closer.
+there; `StreamBufferCounters.tla` keeps one writer and one closer (its mapping,
+`RefineCounters.tla`, assumes `NW = NC = 1`).
 
 In `StreamBufferWait.tla` the threads are a constant set `Threads`, each with a read size `K[r]`
 and a request `M[r]` of its own. A thread chooses, for every call anew, a read or a wait
@@ -274,11 +308,11 @@ every thread, writer and closer done. Weak fairness of `Next` as a whole only sa
 does not halt while a step is possible; it assumes no fairness per thread or lock. The argument:
 - **`Pot` goes down with every step.** `Pot` is a natural number: the bytes to write and to commit,
   the bytes buffered, the calls left, the spurious wake-ups still to come (10 each), and a rank
-  per thread (at most 10), writer and closer. Each loop of the protocol is paid for: a wake-up by
+  per thread (at most 12), writer and closer. Each loop of the protocol is paid for: a wake-up by
   the signal that caused it or by the budget of spurious wake-ups (the rank of the woken thread
-  rises from 1 to 6), a failed re-check under `bufferLock` by the commit that took the bytes, the
+  rises from 1 to 7), a failed re-check under `bufferLock` by the commit that took the bytes, the
   next call by the budget of calls. The thread part is
-  the sum of 10 layers, layer k the number of threads of rank at least k, so the proof needs no sum
+  the sum of 12 layers, layer k the number of threads of rank at least k, so the proof needs no sum
   over the threads, only cardinalities (`StreamBufferCountLemmas.tla`).
 - **A step is possible until all are done** (`StreamBufferWaitEnabled.tla`). A lock holder can always
   go on, and no thread is parked once a closer is done (`ClosedNoPark`): that closer woke every
@@ -293,18 +327,23 @@ the threads parked has no step (in `inductive.sh`).
 
 **The refinement** (`RefineWaitProof.tla`). Every step of `StreamBuffer.tla` keeps a detailed
 invariant `DInv` and is a step of `StreamBufferWait.tla` under the mapping of `RefineWait.tla`, or
-a stuttering step; with `Init` mapped to `Init`, `Spec => W!CSpec` for any finite set of readers.
+a stuttering step; with `Init` mapped to `Init`, `Spec => W!CSpec` for any finite set of readers
+and any numbers of writers and closers (writer i is the abstraction's writer i, closer c its closer
+c; 3,345 obligations, tlapm, 2026-11-24, with the finally block of the wait as a step of its own).
 The abstraction's own invariant holds in the mapped state (the instantiated `StepSafe`) and gives
 what the detailed one lacks, such as a copying reader having its bytes buffered. `DInv` needs no
-sum over the FIFO: the writer writes the bytes 1, 2, ... in order, so it describes each entry by
+sum over the FIFO: the writers write the bytes 1, 2, ... in commit order, so it describes each entry by
 its first byte and its length: the next entry starts where one ends, the last ends at `nextByte`,
 and the head starts, past `pos`, with the byte after those committed and in flight.
-`waitingReaders` is the number of threads between the increment and the return of the wait, so a
+`waitingReaders` is the number of threads between the increment and the finally block of the wait
+(`WaitPcs`, the threads in the finally block included), so a
 skipped signal (`waitingReaders = 0`) has nobody to wake; that is what maps `sigread` to `siglock`.
+A writer at `write` may find the bytes all taken by the others; it stops then, and so does the
+abstraction's writer, since the abstraction's `w` is `Len(written)`.
 Two changes to `StreamBuffer.tla` make the proof possible, both without new states: `Flat` is a
 recursive function instead of a RECURSIVE operator, which tlapm cannot parse, and the ghost `toff`
 replaces `Len(taken) % ReadLen` in the mapping, since tlapm proves nothing about `%` with a symbolic
-divisor (not even `(a + R) % R = a % R`). Negative control (2026-11-12): with `LEMMA Bad == FALSE`
+divisor (not even `(a + R) % R = a % R`). Negative control (2026-11-12, again 2026-11-14 with several writers and closers): with `LEMMA Bad == FALSE`
 added, exactly that obligation fails, so the assumptions are consistent; a wrong mapping (`avail + 1`)
 makes TLC's refinement check fail.
 
@@ -318,13 +357,29 @@ above. With the ranges made non-empty, the torn record is found in 6 steps inste
 **Limits of A13:**
 - **Liveness of the detailed model** for any number of readers is not shown; the proof is about
   the abstraction (above), TLC checks the detailed model's liveness in its bounded configurations.
+  The abstraction has no finally step of the wait, so that a signaller waiting for the
+  `waitLock` of a thread in its finally block goes on is TLC's alone (V10).
 - **Liveness with threads that call forever** is in its own section below: with a finite stream
   and a closer every call returns without lock fairness; with an endless writer a reader can
   starve.
 - **Inherited from `StreamBuffer.tla`:**
-  - A reader's lock-free read of `availableBytes` and of `streamClosed` is one step, where Java
-    reads them one after the other. This is harmless for safety: `RereadClosed` needs only
-    `closed`, and nothing raises the count after the close.
+  - Until 2026-11 a reader's read of `availableBytes` and then of `streamClosed` (the fast path of
+    `waitForAtLeast` and the loop of `awaitAtLeast`) was one step, where Java reads them one after
+    the other. The A18 graph check found it (`S6A`, below): a write and a close between the two
+    reads give runs of the code the model did not have. Both reads are steps of their own since
+    (`fastclosed`, `waitclosed`, in the detailed model and in the three abstractions).
+  - Until 2026-11 the finally block of `awaitAtLeast` (`waitingReaders.decrementAndGet()`,
+    `waitLock.unlock()`) was one step with the return: the model lowered the count where the code
+    still counts the thread. A18 found a word (`S6A`) the model accepted only with a spurious
+    wake-up: a writer reads the count 1 between a waiter's check and its finally block, and its
+    signal wakes a reader that parked after; the model had the signal skipped (the trace
+    acceptance allowed a lower count) and woke the reader spuriously. The finally block is a step
+    of its own since (`ReaderWaitExit`, the pcs `wexit`, `wexitlock`, `wexitret0`; in
+    `StreamBufferCounters.tla` too, which counts `waitingReaders`), the trace acceptance checks
+    the count exactly, and the word is accepted without a spurious wake-up
+    (`TraceSignalBeforeExit`, `check.sh`). `StreamBufferWait.tla` and `StreamBufferRecords.tla`,
+    which have no count, see a thread in the finally block where it goes next and `waitLock` free
+    (`MapPc`, `MapWl` in `RefineWait.tla`, `RefineRecords.tla`, `RefineWaitProof.tla`).
   - Spurious wake-ups of `await` are modelled with a finite budget ("Spurious wake-ups" above):
     safety holds for any budget, liveness assumes finitely many.
 - **The refinement proof is for the current code** (`Protocol = "condition"` and the four fixes on),
@@ -440,9 +495,9 @@ finitely many threads, writers and closers.
 - **The measure is bounded by a constant**, so one induction over it (WF1 for each case,
   `NatInduction`) gives the property from every state.
 
-Obligations: `StreamBufferWaitForeverEnabled.tla` 633 (the role actions are enabled where the
-proof needs them), `StreamBufferWaitForeverLiveProof.tla` 1,378 (1,322 before the spurious
-wake-ups). Negative controls (2026-11-13,
+Obligations: `StreamBufferWaitForeverEnabled.tla` 768 (the role actions are enabled where the
+proof needs them), `StreamBufferWaitForeverLiveProof.tla` 1,553 (with the two reads of the
+wait as steps of their own, 2026-11-24). Negative controls (2026-11-13,
 not committed); each makes exactly the obligation fail that it should:
 
 - a lemma `FALSE` added: only that one fails, so no backend derives `FALSE` from the
@@ -524,8 +579,14 @@ the accesses. A blocking one is logged right after it returns, a release right b
 keeps the order of everything that depends on the lock. `TraceScenario` runs the model's
 scenarios on real threads:
 
-- one writer of the bytes 1, 2, ... in writes of `ChunkLen` bytes, and one closer that closes at a
-  random point of the run;
+- writers of the bytes 1, 2, ... in writes of `ChunkLen` bytes (one writer `w`, or several `w1`,
+  `w2`, ..., the k-th write by writer k mod their number), and closers (`c`, or `c1`, ...) that
+  close at a random point of the run. The model numbers the bytes in the order the writes commit,
+  the code's writers choose theirs before they write, so `TraceScenario` renumbers the bytes of a
+  run by the order of the commits (a write's store to `availableBytes` under `bufferLock`); with
+  one writer that changes nothing (`TraceScenarioTest`). With several writers a write's result
+  line has the bytes all writers have written up to its commit, a lower bound of the model's
+  `Len(written)` at the line, since another writer may commit in between;
 - readers of `read()` or `read(b, 0, ReadLen)` until -1, and `waitForAtLeast(ReadLen)` callers;
 - `maxBufferElements` above the number of writes, since trim is not modeled;
 - seeded random yields before the accesses, to vary the interleavings.
@@ -536,13 +597,12 @@ with its configuration. A module rather than ndjson, because `ndJsonDeserialize`
 CommunityModules jar as a second pinned dependency.
 
 **Matching** (`TraceStreamBuffer.tla`, which extends the model unchanged). The model is coarser
-than the code in three places, so a thread's model steps are not tied to single lines:
+than the code in two places, so a thread's model steps are not tied to single lines:
 
-- the fast path of the wait reads `availableBytes` and `streamClosed` in one step, the code in two
-  reads;
-- `ReaderTest` lowers `waitingReaders` in the step that reads the count, the code a few accesses
-  later;
-- a waiter's closed branch reads the count again for its result.
+- the finally block of the wait (`waitingReaders.decrementAndGet()`, `waitLock.unlock()`) is one
+  step (`ReaderWaitExit`);
+- a `read()` or record reader's closed branch of the wait reads `streamClosed` and the count
+  again in one step (`ReaderWaitClosed`).
 
 Before a line of thread `t`, `t` may take up to `K` = 6 model steps; then the line must agree with
 the model's state:
@@ -565,20 +625,21 @@ prints the first line no placement could consume.
 |---|---|
 | traces | 990, all accepted: 11 scenarios x 30 seeds x 3 yield rates (0, 32, 128 per 256 accesses) |
 | scenarios | the seven of `check.sh` (2 and 3 `read()` readers, records of 2 bytes from writes of 1 and 3, `read()` next to a record reader, `waitForAtLeast` next to a reader, also next to a 2-byte write), plus 3 `read()` readers of 8 bytes, 3 record readers of writes of 3 bytes, two waiters next to a reader, a waiter next to a reader of 3-byte records |
+| several writers and closers (2026-11-14, CI-sized: 3 seeds, yields 32) | 18 traces, all accepted: two writers or two closers next to 2 `read()` readers, two writers next to 2 record readers, two writers and two closers next to `read()` and a record reader and next to `waitForAtLeast` and a record reader, three writers of 3-byte writes and two closers next to 3 record readers |
 | size | 81,998 lines, 82 per trace on average, up to 284; TLC up to 50,683 distinct states per trace (2,254 on average) |
 | time | about 2.3 s per trace with one TLC worker; the 990 in 10 min, 9 in parallel on 16 cores |
 
 **Negative controls** (`trace-controls.sh`, also in CI; in CI the two scripts take about 5 min). A validation that accepts everything shows
 nothing, so these must reject:
 
-| control | rejected (one CI-sized run: 33 traces, 3 seeds, a budget of 3 spurious wake-ups, 2026-11-13; the counts vary with the interleavings) |
+| control | rejected (one CI-sized run: 51 traces, 3 seeds, a budget of 3 spurious wake-ups, 2026-11-24, the model with the finally block of the wait as a step and the exact count; the counts vary with the interleavings) |
 |---|---|
-| older code with fewer behaviours: `AtomicRead = FALSE` (before #212, the `Records*` traces) | 3 of 6 |
-| the semaphore wait (before F278) | 16 of 33 |
+| older code with fewer behaviours: `AtomicRead = FALSE` (before #212, the `Records*` traces) | 4 of 6 |
+| the semaphore wait (before F278) | 27 of 51 |
 | no re-check under `bufferLock` (`ReCheck = FALSE`, before F278, the `Bytes*` traces) | 9 of 9 |
-| a mutated model whose writer never signals (without spurious wake-ups, which could stand in for the signal) | 9 of 33 |
-| a spurious wake-up written into a trace (unpark, the test, park right after a reader's park, before any other thread's line): accepted with the budget, rejected with `Spurious = 0` | 3 of 3 |
-| every trace with a completed read, its first returned byte changed by one | 33 of 33 |
+| a mutated model whose writer never signals (without spurious wake-ups, which could stand in for the signal) | 15 of 51 |
+| a spurious wake-up written into a trace (unpark, the test, park right after a reader's park with `availableBytes` 0 and the stream open, before any other thread's line): accepted with the budget, rejected with `Spurious = 0` | 3 of 3 |
+| every trace with a completed read, its first returned byte changed by one | 49 of 49 |
 
 The traces a wrong model accepts are those that never reach the difference, e.g. no thread
 waited, so the semaphore and the missing signal never mattered. Two older versions accept every
@@ -596,15 +657,106 @@ runs have the properties is what model checking (`check.sh`) and the proofs show
   instead.
 - A spurious wake-up of `await()` is in the model within the trace's budget (`Spurious = 3`, set by
   `TraceGenerator`). An accepted trace therefore no longer shows whether one happened in the
-  recorded run; that a written one is accepted only with a budget is the control above.
+  recorded run; that a written one is accepted only with a budget is the control above. Every
+  trace of `TraceGenerator` is also accepted with `Spurious = 0` (51 of 51, 2026-11-24), and A18's
+  products check without a budget (`PRODUCT_SPURIOUS`, default 0, of `check-graph.sh`): with one,
+  a missing signal of the code could pass as a spurious wake-up.
 - The lines name a method and its n-th access of a kind (`waitForAtLeast.getAvail#0`). A change of
   those methods needs the mapping in `TraceStreamBuffer.tla` changed with it (`TraceRecorderTest`
   fails first, with the fixed list of a single-threaded run).
 
+## Every interleaving of the code is a run of the model (roadmap A18)
+
+Trace validation checks the runs it sees. For small scenarios this checks **every** interleaving
+of the real bytecode [V19]. Java PathFinder enumerates them, and the model accepts every one, as
+the same trace acceptance as A6 and without a sampling step.
+
+1. **JPF over the instrumented class.** `TracedClassDump` writes the class files A6's
+   `TracingClassLoader` produces, and JPF runs them in `JpfTraceHarness` (`src/test/jpf/trace/`),
+   with A6's threads and harness events. Under JPF the tracer (`src/test/jpf/trace/.../
+   TraceRecorder.java`) logs each access in an atomic block, behind one `Thread.yield()`, which is
+   the access's scheduling point. It keeps only state the path determines (each thread's
+   number of calls), so JPF matches states. A6's
+   tracer used a global lock, which gave the lock's states and two scheduling points per access,
+   and the graph did not finish.
+2. **The state graph.** A JPF listener (`GraphExport`) writes the graph JPF explores. Each
+   transition is labelled with the events the tracer reported during it.
+3. **The minimal automaton.** `graphmin.py` removes the edges without an event, determinizes and
+   minimizes. Only the language of the event sequences matters, and it is small: in the smallest
+   scenario 104,712 JPF states become 373; the automata checked have 188 to 85,450 states.
+4. **The product.** `TraceGraph.tla` extends `TraceStreamBuffer.tla` and uses its `StepOf` and
+   `Obs` as they are. An edge of the automaton is chosen, the thread of its event takes up to K
+   steps of the model, and the event must agree with the model's state. TLC dumps the product's
+   state graph.
+5. **The subset check.** `GraphCheck.java` (its reference `graphcheck.py`; both tested by
+   `graphcheck-test.sh`) follows each word of the automaton. For each word it
+   keeps the set of the product's states that consume it. If that set is ever empty, the word is a
+   counterexample. The check is exact: the model's choices (how many silent steps, which ones) are
+   existential, so a single product state that cannot go on is no counterexample. Checking that
+   instead raised false alarms on accepted traces.
+
+`check-graph.sh` runs the chain for one scenario, and with `controls` also checks that it fails
+where it must:
+
+- **a model whose writer never signals**, with `Spurious = 0`, which could otherwise stand in for
+  the signal;
+- **a corrupted returned byte**, or for a scenario without reads, the count `waitForAtLeast`
+  returned;
+- **a class whose reads do not lower the count** (`TracedClassDump ... no-decrement`, on both read
+  paths; skipped where nothing reads).
+
+**Results** (2026-11-24; the final model: both reads of the wait and its finally block steps of
+their own, the products without spurious wake-ups; a rented 32-core machine, the twelve small
+scenarios at once in 3 h, S3N alone in 20 h; "close after" means the closer closes once the
+writer is done, "any" means at any point; the controls are those above):
+
+| Scenario | JPF states | Minimal automaton | Product states | Every word a run of the model | Controls |
+|---|---|---|---|---|---|
+| `S1A`: one 1-byte write, a `read()` reader, close after | 104,712 | 373 | 24,217 | yes | 3 of 3 rejected |
+| `S1N`: the same, close any | 617,544 | 1,451 | 162,370 | yes | 3 of 3 rejected |
+| `S2N`: two 1-byte writes, a `read()` reader, close any | 2,368,384 | 3,790 | 708,483 | yes | 3 of 3 rejected |
+| `S3A`: two 1-byte writes, two `read()` readers, close after | 97,263,920 | 17,319 | 8,236,620 | yes | 3 of 3 rejected |
+| `S3N`: the same, close any | 617,868,299 | 85,450 | 100,225,198 | yes | 3 of 3 rejected |
+| `S4A`: one 2-byte write, a record reader of 2, close after | 102,132 | 373 | 24,217 | yes | 3 of 3 rejected |
+| `S4N`: the same, close any | 601,656 | 1,451 | 162,370 | yes | 3 of 3 rejected |
+| `S5N`: two 1-byte writes, a record reader of 2, close any | 1,794,264 | 2,674 | 382,224 | yes | 3 of 3 rejected |
+| `S6A`: one 2-byte write, a `read()` reader and a `waitForAtLeast(2)` caller, close after | 15,081,689 | 5,102 | 1,042,046 | yes | 3 of 3 rejected |
+| `S6N`: the same, close any | 96,051,027 | 20,392 | 7,979,672 | yes | 3 of 3 rejected |
+| `S7A`: one 2-byte write, a `waitForAtLeast(2)` caller, close after | 41,211 | 188 | 4,879 | yes | 2 of 2 rejected (no class control: nothing reads) |
+| `S7N`: two 1-byte writes, a `waitForAtLeast(2)` caller, close any | 1,036,384 | 1,555 | 106,555 | yes | 2 of 2 rejected (no class control: nothing reads) |
+| `S8A`: two 1-byte writes, a `read()` reader and a record reader of 2, close after | 76,675,897 | 11,237 | 4,090,019 | yes | 3 of 3 rejected |
+
+What the runs cost: S3N, the largest, took JPF 5 d 15 h (a 70.6 GB graph), `graphmin.py` 4.7 h
+at up to 35 GB, TLC 6 h for the product with a 64 GB heap (old generation at most ~27 GB) and
+`GraphCheck.java` 30 min; the next largest (S3A, S6N, S8A, graphs of 7 to 10 GB) took under an
+hour each after JPF. When the twelve ran at once, two products started in the same second read
+each other's half-written `/tmp/TLC.tla` and one control had no result; each TLC run has a
+temporary directory of its own since, and that scenario was run again.
+
+**Beyond these scenarios:** three readers, two writers or two closers, and more than two bytes
+have not been tried; S3N's JPF graph is near what one machine holds today.
+
+**CI:** the `jpf-interleavings` job runs `S1A` with its controls, about 3 minutes. The larger
+scenarios run on a rented machine.
+
+**What it rests on:**
+- JPF and its models of the JDK classes. Its interleavings are those of its scheduling points,
+  each shared access and synchronization; they are sequentially consistent, which the data-race
+  freedom of the code (README, "Data-Race Freedom") makes sufficient.
+- The tracer adds one scheduling point per logged access.
+- Two small tools, `graphmin.py` (partition refinement) and `GraphCheck.java` (the subset
+  construction, with `graphcheck.py` as its reference).
+- The check is about the sequences of events, every prefix of a run (the end states play no
+  role). A deadlock or an uncaught exception on some interleaving is JPF's own finding: the
+  scenario's run must end with "no errors detected", or `check-graph.sh` fails, since JPF stops
+  at its first error and the graph would be incomplete.
+
+The controls show that the chain finds defects. They do not show that the tools are free of
+errors.
+
 ## Limits
 
-- **Not in the model:** several writers (each write is atomic under the lock, so they interleave
-  as whole entries), read sizes other than 1 and `ReadLen`, `waitForAtLeast` with a timeout,
+- **Not in the model:** read sizes other than 1 and `ReadLen`, `waitForAtLeast` with a timeout,
   interrupts, the external `addSignal` semaphores, and trim's merging of the entries (it keeps the
   bytes, their order and `availableBytes`; it only changes how many copy steps a read takes, which
   matters to the count per entry before F279 alone). JPF, vmlens, jcstress and Lincheck cover them.
@@ -645,3 +797,7 @@ bash src/test/tla/proof.sh "$PWD/tlapm/bin/tlapm"
 One model by hand, with its error trace: `java -cp tla2tools.jar tlc2.TLC -config Semaphore2.cfg
 StreamBuffer.tla` from this directory. CI: the `tla-model` job (`check.sh`, `inductive.sh`) and the
 `tlaps-proofs` job (`proof.sh`) of `formal-verification.yml`, both scheduled or dispatched.
+
+Runs too long for CI (the A18 scenarios beyond the smallest, all proofs at once, every model): on
+a rented machine with the scripts of [`src/test/remote/`](../remote/README.md), which pack the
+payload, install the pinned tools, run without a time limit and say what to watch.

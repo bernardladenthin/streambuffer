@@ -80,7 +80,8 @@ ConstInitW3 == N = 2 /\ NW = 3 /\ NC = 3 /\ Bytes \in Nat /\ Bytes >= 1 /\ K \in
 \* the read before #212 (two phases): the invariant is not inductive
 ConstInitTwoPhase == N = 2 /\ NW = 2 /\ NC = 1 /\ Bytes \in Nat /\ Bytes >= 1 /\ K \in Nat /\ K >= 2 /\ AtomicRead = FALSE
 
-States == {"start", "reread", "lockwait", "inc", "test", "parked", "woken", "lock",
+States == {"start", "fastclosed", "reread", "lockwait", "inc", "test", "waitclosed", "parked",
+           "woken", "lock",
            "decide", "copy", "finish", "ret0", "done", "nsee"}
 
 InFlight == IF bl = None THEN 0 ELSE hold[bl]
@@ -137,9 +138,18 @@ CloserSigLock(c) ==
 
 Go(r, s) == rpc' = [rpc EXCEPT ![r] = s]
 
+\* A18: the fast path and the loop of awaitAtLeast read availableBytes and, only if that is too
+\* few, then streamClosed: two volatile reads, two steps, and a write or a close can come between
+\* them (the thread then goes on as one that saw too few). A park so overtaken by a write is woken
+\* all the same: the write's signal waits for waitLock, which the parking thread holds.
 ReaderStart(r) ==
     /\ rpc[r] = "start"
-    /\ Go(r, IF avail >= Want(r) THEN "lock" ELSE IF closed THEN "reread" ELSE "lockwait")
+    /\ Go(r, IF avail >= Want(r) THEN "lock" ELSE "fastclosed")
+    /\ UNCHANGED <<off, w, t, avail, closed, wpc, cpc, hold, left, cur, eofAt, parked, wl, bl>>
+
+ReaderFastClosed(r) ==
+    /\ rpc[r] = "fastclosed"
+    /\ Go(r, IF closed THEN "reread" ELSE "lockwait")
     /\ UNCHANGED <<off, w, t, avail, closed, wpc, cpc, hold, left, cur, eofAt, parked, wl, bl>>
 
 ReaderReread(r) ==
@@ -157,7 +167,14 @@ ReaderInc(r) ==
 
 ReaderTest(r) ==
     /\ rpc[r] = "test" /\ wl = r
-    /\ IF avail >= Want(r) \/ closed
+    /\ IF avail >= Want(r)
+          THEN /\ Go(r, "lock") /\ wl' = None
+          ELSE /\ Go(r, "waitclosed") /\ UNCHANGED wl
+    /\ UNCHANGED <<off, w, t, avail, closed, wpc, cpc, hold, left, cur, eofAt, parked, bl>>
+
+ReaderWaitClosed(r) ==
+    /\ rpc[r] = "waitclosed" /\ wl = r
+    /\ IF closed
           THEN /\ Go(r, IF avail >= 1 THEN "lock" ELSE "ret0") /\ UNCHANGED parked
           ELSE /\ parked' = parked \cup {r} /\ Go(r, "parked")
     /\ wl' = None
@@ -210,9 +227,9 @@ ReaderRet0(r) ==
     /\ UNCHANGED <<off, w, t, avail, closed, wpc, cpc, hold, left, parked, wl, bl>>
 
 ReaderStep(r) ==
-    \/ ReaderStart(r) \/ ReaderReread(r) \/ ReaderWaitLock(r) \/ ReaderInc(r)
-    \/ ReaderTest(r) \/ ReaderLock(r) \/ ReaderDecide(r) \/ ReaderCopy(r)
-    \/ ReaderFinish(r) \/ ReaderRet0(r)
+    \/ ReaderStart(r) \/ ReaderFastClosed(r) \/ ReaderReread(r) \/ ReaderWaitLock(r)
+    \/ ReaderInc(r) \/ ReaderTest(r) \/ ReaderWaitClosed(r) \/ ReaderLock(r) \/ ReaderDecide(r)
+    \/ ReaderCopy(r) \/ ReaderFinish(r) \/ ReaderRet0(r)
 
 Next ==
     \/ \E i \in Writers : WriterWrite(i) \/ WriterSigLock(i)
@@ -257,7 +274,7 @@ CopyHasBytes == \A r \in Readers : rpc[r] = "copy" => Buffered >= left[r]
 \* a whole record per read, fewer only from a closed buffer (#212)
 WholeRead == \A r \in Readers : rpc[r] \in {"copy", "finish"} => hold[r] + left[r] = K \/ closed
 CurZero == \A r \in Readers : cur[r] = 0
-WaitLockInv == \A r \in Readers : (rpc[r] \in {"inc", "test"}) <=> wl = r
+WaitLockInv == \A r \in Readers : (rpc[r] \in {"inc", "test", "waitclosed"}) <=> wl = r
 ParkedInv == parked = {r \in Readers : rpc[r] = "parked"}
 RereadClosed == \A r \in Readers : rpc[r] = "reread" => closed
 Ret0Empty == \A r \in Readers : rpc[r] = "ret0" => closed /\ avail = 0
