@@ -16,11 +16,13 @@
 #      about 700; with zstd on the path TLC's dump goes through it into product.dot.zst (S6A:
 #      3.32 GB to 0.22 GB, 15:1).
 # With "controls" it also checks that the chain fails where it must: a model whose writer never
-# signals, a corrupted returned byte, and a class whose reads (readSingleByte, readIntoArray) do not
-# lower the count.
+# signals, a corrupted returned byte, a class whose reads (readSingleByte, readIntoArray) do not
+# lower the count, and a class whose write never signals. "controls-noclass" runs them without the
+# last, "class" runs only the last (not the class itself): its JPF is a whole search, about as long
+# as the scenario's own, so a long scenario can run it beside the rest.
 #
 # Usage: src/test/jpf/trace/check-graph.sh <name> <bytes> <chunk> <read length> <read() readers>
-#          <record readers> <waitForAtLeast callers> <after|any> [controls]
+#          <record readers> <waitForAtLeast callers> <after|any> [controls|controls-noclass|class]
 # Environment: JPF_CORE (jpf-core, built), JAVA_JPF (a JDK 11 java for JPF), JAVA_TLC (java 11+
 #   for TLC), TLA2TOOLS (the jar), TRACED (the instrumented class files), TRACED_MUTANT (the same
 #   with TracedClassDump's no-decrement, for the controls), TRACED_NOSIGNAL (the same with
@@ -41,6 +43,10 @@
 set -euo pipefail
 name="$1" bytes="$2" chunk="$3" readlen="$4" nbyte="$5" nrecord="$6" nwait="$7" close="$8"
 controls="${9:-}"
+case "$controls" in
+  "" | controls | controls-noclass | class) ;;
+  *) echo "unknown mode $controls (controls, controls-noclass or class)" >&2; exit 2 ;;
+esac
 here="$(cd "$(dirname "$0")" && pwd)"
 tla="$(cd "$here/../../tla" && pwd)"
 py="$(command -v python3 || command -v python)"
@@ -221,27 +227,43 @@ expect() {  # expect <label> <0 accepted | 1 rejected> <command...>
   fi
 }
 
+class_control() {
+  # a class whose write never signals: the closer's signal wakes its readers later, so JPF finds
+  # no deadlock and the graph is a whole search; the product must reject it, since the model's
+  # writer signals only at the code's lines of it (SignalAt in TraceStreamBuffer.tla)
+  jpf_graph "$name-nosignal-class" "$TRACED_NOSIGNAL" || failed=1
+  expect "control: the class's write never signals" 1 \
+    product "$name-nosignal-class" "$WORK/$name-nosignal-class.graph" "$tla"
+}
+if [ "$controls" = class ]; then
+  class_control
+  exit "$failed"
+fi
+
 if [ "${REUSE_GRAPH:-}" = 1 ]; then
   echo "  JPF $name: the graph of an earlier run, $(grep -oE 'new=[0-9]+' "$WORK/$name.jpf.log" | head -1) states"
   # the same scenario and the same instrumented classes; a run before the stamp has the arguments
-  # in its .jpf only, and its classes are not checked
+  # in its .jpf, or (a graph copied from another machine without it) in JPF's log, and its classes
+  # are not checked
+  sut="JpfTraceHarness.main(\"$bytes\",\"$chunk\",\"$readlen\",\"$nbyte\",\"$nrecord\",\"$nwait\",\"false\",\"$close\")"
   if [ -f "$WORK/$name.stamp" ]; then
     if [ "$(cat "$WORK/$name.stamp")" != "$(stamp "$TRACED")" ]; then
       echo "FAIL  JPF $name: the earlier graph is of other arguments or classes ($WORK/$name.stamp)"
       exit 1
     fi
-  elif ! grep -qxF "target.args = $bytes,$chunk,$readlen,$nbyte,$nrecord,$nwait,false,$close" "$WORK/$name.jpf"; then
-    echo "FAIL  JPF $name: the earlier graph is of other arguments ($WORK/$name.jpf)"
-    exit 1
-  else
+  elif grep -qxF "target.args = $bytes,$chunk,$readlen,$nbyte,$nrecord,$nwait,false,$close" "$WORK/$name.jpf" 2> /dev/null \
+    || { [ ! -f "$WORK/$name.jpf" ] && grep -qF "$sut" "$WORK/$name.jpf.log"; }; then
     echo "  JPF $name: an earlier run without a stamp: the arguments match, the classes are not checked"
+  else
+    echo "FAIL  JPF $name: the earlier graph is of other arguments ($WORK/$name.jpf, or JPF's log without one)"
+    exit 1
   fi
   graph_ok "$name" "$TRACED" || exit 1
 else
   jpf_graph "$name" "$TRACED" || exit 1
 fi
 expect "$name" 0 product "$name" "$WORK/$name.graph" "$tla"
-if [ "$controls" = controls ]; then
+if [ "$controls" = controls ] || [ "$controls" = controls-noclass ]; then
   mutant="$WORK/$name-model-nosignal"
   rm -rf "$mutant" && mkdir -p "$mutant" && cp "$tla/StreamBuffer.tla" "$tla/TraceStreamBuffer.tla" "$tla/TraceGraph.tla" "$mutant/"
   sed -i 's/IF waiters # 0 THEN "siglock" ELSE WriterDone/WriterDone/' "$mutant/StreamBuffer.tla"
@@ -293,11 +315,6 @@ EOF
     # the mutation is on the read paths, which a scenario of waitForAtLeast callers only never runs
     echo "SKIP  control: the reads do not lower the count (no reader in this scenario)"
   fi
-  # a class whose write never signals: the closer's signal wakes its readers later, so JPF finds
-  # no deadlock and the graph is a whole search; the product must reject it, since the model's
-  # writer signals only at the code's lines of it (SignalAt in TraceStreamBuffer.tla)
-  jpf_graph "$name-nosignal-class" "$TRACED_NOSIGNAL" || failed=1
-  expect "control: the class's write never signals" 1 \
-    product "$name-nosignal-class" "$WORK/$name-nosignal-class.graph" "$tla"
+  if [ "$controls" = controls ]; then class_control; fi
 fi
 exit "$failed"
