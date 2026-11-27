@@ -571,8 +571,10 @@ jobs:
     # inductive.sh took about 20 min on 4 cores with the A13 calls and liveness checks (2026-11-12),
     # check.sh 594 s with 32 models (2026-11-13, 4 cores) and 361 s with the 45 of the spurious
     # wake-ups on 32 cores (2026-11-13; on 4 cores about 20 min, estimated), the trace validation
-    # about 5 min
-    timeout-minutes: 75
+    # about 5 min. With the gates of 2026-11-25 (the state counts, the mutants, the refinement that
+    # must fail) the job took 54 min (check.sh 19 min, traces 5, inductive.sh 30) and on a slower
+    # runner on 2026-11-27 ran into the old 75 (check.sh 33 min, traces 7, inductive.sh past 35)
+    timeout-minutes: 120
     env:
       TLA_TOOLS_VERSION: "v1.7.4"
       TLA_TOOLS_SHA256: "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88"
