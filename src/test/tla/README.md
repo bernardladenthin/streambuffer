@@ -171,8 +171,9 @@ current code with two:
 | `Writers2Reached2` | as `Writers2Condition2`, probe `NoTwoWritersSignalling` | 2 | 2, 1 | violated: two writers signal at once |
 | `Closers2Reached2` | as `Closers2Condition2`, probe `NoTwoClosersSignalling` | 2 | 1, 2 | violated: two closers signal at once |
 
-The probes show that the writers and the closers do interleave, so the clean results are not
-vacuous. The models of older code keep one writer and one closer: their defects need no second
+The probes show that the writers and the closers do interleave in the `Condition2` constants, so
+those clean results are not vacuous; `Writers2WaitAndRead2` and `Writers2WaitChecked2` commit one
+write only (the second writer finds no bytes left or the stream closed). The models of older code keep one writer and one closer: their defects need no second
 one. TLC checks the refinement of `StreamBufferWait.tla` and `StreamBufferRecords.tla` with two
 writers and two closers too (`inductive.sh`), and `RefineWaitProof.tla` proves it for any numbers
 (below).
@@ -607,12 +608,17 @@ than the code in two places, so a thread's model steps are not tied to single li
 Before a line of thread `t`, `t` may take up to `K` = 6 model steps; then the line must agree with
 the model's state:
 
-- **Values:** every value read or written. Only `waitingReaders` may be lower in the model,
-  because of the later decrement; the writer then skips a signal that wakes nobody.
+- **Values:** every value read or written, `waitingReaders` too (exactly, since the finally block
+  of the wait is a step of its own).
 - **Locks:** who holds `bufferLock` and `waitLock`.
 - **The thread's position:** after the fast path, after the closed check, parked, past the
   decrement.
 - **Results:** what its calls returned.
+- **The signal:** a writer's or closer's read of `waitingReaders` and its signal are model steps
+  only right before its `waitersGet` and `signalAll` lines (`SignalAt`). Before 2026-11-25 the
+  model could signal where the code had no line of it; the closer's signal then woke the reader
+  later, and a class whose write never signals passed (48 of 51 traces). The class control
+  `no-write-signal` (`TraceMutants`) now has every trace with a committed write rejected.
 
 Other threads move only at their own lines. A trace is accepted if some placement consumes every
 line. TLC 1.7.4 has no `POSTCONDITION`, so the verdict is the inverted invariant `TraceNotDone`,
@@ -640,6 +646,21 @@ nothing, so these must reject:
 | a mutated model whose writer never signals (without spurious wake-ups, which could stand in for the signal) | 15 of 51 |
 | a spurious wake-up written into a trace (unpark, the test, park right after a reader's park with `availableBytes` 0 and the stream open, before any other thread's line): accepted with the budget, rejected with `Spurious = 0` | 3 of 3 |
 | every trace with a completed read, its first returned byte changed by one | 49 of 49 |
+
+**A full run with `SignalAt`** (2026-11-25, a rented 32-core machine, `cd758c0`: the 17 scenarios
+of `TraceGenerator` x 30 seeds at each yield rate 0, 32, 128; the scripts' counts at yields 0 / 32 /
+128):
+
+| | |
+|---|---|
+| traces of the code (`trace.sh`) | 510 / 510 / 510 accepted (1,530 in all) |
+| a class whose write never signals (`no-write-signal`), traces with a committed write | 496 of 496 / 498 of 498 / 489 of 489 rejected |
+| first returned byte changed by one | 498 of 498 / 490 of 490 / 493 of 493 rejected |
+| a model whose writer never signals | 122 / 159 / 153 of 510 rejected |
+| the semaphore wait | 228 / 267 / 249 of 510 rejected |
+| `ReCheck = FALSE` | 58 / 70 / 77 of 90 rejected |
+| `AtomicRead = FALSE` | 27 / 30 / 31 of 60 rejected |
+| a spurious wake-up written into a trace | 3 of 3 / 3 of 3 / 3 of 3 (accepted with the budget, rejected without) |
 
 The traces a wrong model accepts are those that never reach the difference, e.g. no thread
 waited, so the semaphore and the missing signal never mattered. Two older versions accept every
@@ -703,35 +724,63 @@ where it must:
 - **a corrupted returned byte**, or for a scenario without reads, the count `waitForAtLeast`
   returned;
 - **a class whose reads do not lower the count** (`TracedClassDump ... no-decrement`, on both read
-  paths; skipped where nothing reads).
+  paths; skipped where nothing reads);
+- **a class whose write never signals** (`TracedClassDump ... no-write-signal`; a JPF run of its
+  own over the scenario, so `controls-noclass` runs the others without it and `class` runs only
+  it, for a long scenario beside the rest).
 
-**Results** (2026-11-24; the final model: both reads of the wait and its finally block steps of
-their own, the products without spurious wake-ups; a rented 32-core machine, the twelve small
-scenarios at once in 3 h, S3N alone in 20 h; "close after" means the closer closes once the
-writer is done, "any" means at any point; the controls are those above):
+**Results** (2026-11-25 to 2026-11-27, `cd758c0`: the model with `SignalAt`, both reads of the
+wait and its finally block steps of their own, the products without spurious wake-ups; a rented
+32-core machine; the scenarios' JPF graphs of 2026-11-24, of the same instrumented class, the class
+controls' JPF anew; all at once, the twelve small scenarios with every control in 6.5 h, S3N's
+product and controls in 19.5 h, S3N's class control in 38.4 h; "close after" means the closer
+closes once the writer is done, "any" means at any point; the controls are those above):
 
 | Scenario | JPF states | Minimal automaton | Product states | Every word a run of the model | Controls |
 |---|---|---|---|---|---|
-| `S1A`: one 1-byte write, a `read()` reader, close after | 104,712 | 373 | 24,217 | yes | 3 of 3 rejected |
-| `S1N`: the same, close any | 617,544 | 1,451 | 162,370 | yes | 3 of 3 rejected |
-| `S2N`: two 1-byte writes, a `read()` reader, close any | 2,368,384 | 3,790 | 708,483 | yes | 3 of 3 rejected |
-| `S3A`: two 1-byte writes, two `read()` readers, close after | 97,263,920 | 17,319 | 8,236,620 | yes | 3 of 3 rejected |
-| `S3N`: the same, close any | 617,868,299 | 85,450 | 100,225,198 | yes | 3 of 3 rejected |
-| `S4A`: one 2-byte write, a record reader of 2, close after | 102,132 | 373 | 24,217 | yes | 3 of 3 rejected |
-| `S4N`: the same, close any | 601,656 | 1,451 | 162,370 | yes | 3 of 3 rejected |
-| `S5N`: two 1-byte writes, a record reader of 2, close any | 1,794,264 | 2,674 | 382,224 | yes | 3 of 3 rejected |
-| `S6A`: one 2-byte write, a `read()` reader and a `waitForAtLeast(2)` caller, close after | 15,081,689 | 5,102 | 1,042,046 | yes | 3 of 3 rejected |
-| `S6N`: the same, close any | 96,051,027 | 20,392 | 7,979,672 | yes | 3 of 3 rejected |
-| `S7A`: one 2-byte write, a `waitForAtLeast(2)` caller, close after | 41,211 | 188 | 4,879 | yes | 2 of 2 rejected (no class control: nothing reads) |
-| `S7N`: two 1-byte writes, a `waitForAtLeast(2)` caller, close any | 1,036,384 | 1,555 | 106,555 | yes | 2 of 2 rejected (no class control: nothing reads) |
-| `S8A`: two 1-byte writes, a `read()` reader and a record reader of 2, close after | 76,675,897 | 11,237 | 4,090,019 | yes | 3 of 3 rejected |
+| `S1A`: one 1-byte write, a `read()` reader, close after | 104,712 | 373 | 11,546 | yes | 4 of 4 rejected |
+| `S1N`: the same, close any | 617,544 | 1,451 | 52,805 | yes | 4 of 4 rejected |
+| `S2N`: two 1-byte writes, a `read()` reader, close any | 2,368,384 | 3,790 | 192,262 | yes | 4 of 4 rejected |
+| `S3A`: two 1-byte writes, two `read()` readers, close after | 97,263,920 | 17,319 | 3,385,600 | yes | 4 of 4 rejected |
+| `S3N`: the same, close any | 617,868,299 | 85,450 | 24,032,839 | yes | 4 of 4 rejected |
+| `S4A`: one 2-byte write, a record reader of 2, close after | 102,132 | 373 | 11,546 | yes | 4 of 4 rejected |
+| `S4N`: the same, close any | 601,656 | 1,451 | 52,805 | yes | 4 of 4 rejected |
+| `S5N`: two 1-byte writes, a record reader of 2, close any | 1,794,264 | 2,674 | 126,258 | yes | 4 of 4 rejected |
+| `S6A`: one 2-byte write, a `read()` reader and a `waitForAtLeast(2)` caller, close after | 15,081,689 | 5,102 | 494,298 | yes | 4 of 4 rejected |
+| `S6N`: the same, close any | 96,051,027 | 20,392 | 2,312,431 | yes | 4 of 4 rejected |
+| `S7A`: one 2-byte write, a `waitForAtLeast(2)` caller, close after | 41,211 | 188 | 2,481 | yes | 3 of 3 rejected (no `no-decrement`: nothing reads) |
+| `S7N`: two 1-byte writes, a `waitForAtLeast(2)` caller, close any | 1,036,384 | 1,555 | 39,395 | yes | 3 of 3 rejected (no `no-decrement`: nothing reads) |
+| `S8A`: two 1-byte writes, a `read()` reader and a record reader of 2, close after | 76,675,897 | 11,237 | 1,776,088 | yes | 4 of 4 rejected |
 
-What the runs cost: S3N, the largest, took JPF 5 d 15 h (a 70.6 GB graph), `graphmin.py` 4.7 h
-at up to 35 GB, TLC 6 h for the product with a 64 GB heap (old generation at most ~27 GB) and
-`GraphCheck.java` 30 min; the next largest (S3A, S6N, S8A, graphs of 7 to 10 GB) took under an
-hour each after JPF. When the twelve ran at once, two products started in the same second read
-each other's half-written `/tmp/TLC.tla` and one control had no result; each TLC run has a
-temporary directory of its own since, and that scenario was run again.
+The products are smaller than with the model before `SignalAt` (S3N: 100,225,198 states on
+2026-11-24), which let a writer or closer signal at any point. The class control `no-write-signal`
+in each scenario (its JPF states, minimal automaton and product; JPF's time):
+
+| Scenario | JPF states | Minimal automaton | Product states | JPF |
+|---|---|---|---|---|
+| `S1A` | 48,218 | 312 | 3,018 | 36 s |
+| `S1N` | 199,467 | 869 | 24,823 | 129 s |
+| `S2N` | 654,712 | 2,340 | 24,823 | 373 s |
+| `S3A` | 38,337,017 | 13,341 | 94,824 | 6.3 h |
+| `S3N` | 164,562,877 | 46,610 | 1,446,500 | 37.3 h |
+| `S4A` | 47,600 | 312 | 3,018 | 36 s |
+| `S4N` | 196,611 | 869 | 24,823 | 130 s |
+| `S5N` | 611,202 | 1,644 | 21,115 | 336 s |
+| `S6A` | 6,433,532 | 4,262 | 58,672 | 58 min |
+| `S6N` | 25,547,556 | 11,356 | 888,116 | 3.6 h |
+| `S7A` | 30,233 | 179 | 1,336 | 25 s |
+| `S7N` | 418,051 | 1,113 | 13,996 | 224 s |
+| `S8A` | 30,092,642 | 8,775 | 47,237 | 4.0 h |
+
+Every one was rejected: some word of the class is no run of the model.
+
+What the runs cost: S3N, the largest, took JPF 5 d 15 h (2026-11-16 to 22; a 70.6 GB graph),
+`graphmin.py` 4.7 h at up to 35 GB, TLC 1.5 h for the product with `SignalAt` (64 GB heap) and
+each control's TLC about as long; its class control JPF 37.3 h (a graph of about 17 GB, JPF's heap below
+5 GB). The next largest (S3A, S6N, S8A, graphs of 7 to 10 GB) took under an hour each after JPF.
+When the twelve ran at once on 2026-11-24, two products started in the same second read each
+other's half-written `/tmp/TLC.tla` and one control had no result; each TLC run has a temporary
+directory of its own since, and that scenario was run again.
 
 **Beyond these scenarios:** three readers, two writers or two closers, and more than two bytes
 have not been tried; S3N's JPF graph is near what one machine holds today.
@@ -759,7 +808,8 @@ errors.
 - **Not in the model:** read sizes other than 1 and `ReadLen`, `waitForAtLeast` with a timeout,
   interrupts, the external `addSignal` semaphores, and trim's merging of the entries (it keeps the
   bytes, their order and `availableBytes`; it only changes how many copy steps a read takes, which
-  matters to the count per entry before F279 alone). JPF, vmlens, jcstress and Lincheck cover them.
+  matters to the count per entry before F279 alone). JPF, vmlens, jcstress and Lincheck cover
+  trim; the timed wait and interrupts only the unit tests and jcstress.
 - **Sequential consistency.** TLC explores interleavings of atomic steps. That this matches the Java
   memory model rests on the data-race-freedom argument in the README ("Data-Race Freedom").
 - **Model vs. code.** The model is written by hand from the code. Trace validation (above, roadmap

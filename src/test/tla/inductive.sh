@@ -61,7 +61,7 @@ refine() { # module, config
   java -XX:+UseParallelGC -cp "$jar" tlc2.TLC -workers auto -metadir "$work/$2" \
     -config "$2.cfg" "$1.tla" > "$log" 2>&1
   set -e
-  expect "$2" "Model checking completed. No error has been found." "$log"
+  expect "$2" "${3:-Model checking completed. No error has been found.}" "$log"
 }
 
 # only ranges that are never empty: 1..Bytes (Bytes >= 1), 0..left[r] and 0..calls (Nats)
@@ -141,4 +141,7 @@ for c in Condition2 Condition3 Records2 Chunks2 Mixed2 WaitAndRead2 WaitChecked2
          SpuriousWaitChecked2 SpuriousMixed2 Writers2Mixed2 Writers2WaitChecked2; do
   refine RefineWait "RefineWait$c"
 done
+# the negative control: the code before F278 (no re-check) does not refine StreamBufferWait, so a
+# refinement check that passes is not one that passes everything
+refine RefineWait RefineWaitNoReCheck2 "of module StreamBufferWait is violated."
 exit "$failed"

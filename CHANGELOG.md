@@ -8,6 +8,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **A class whose write never signals passed the trace checks (found by a vacuity audit).** The
+  trace acceptance (`TraceStreamBuffer.tla`, used by A6 and A18) let the model take a writer's
+  signal before any line of it, and every scenario has a closer, whose signal woke the waiting
+  reader later. So a `StreamBuffer` whose write never calls `signalModification()` (a lost
+  wake-up on an open stream) was accepted: 48 of 51 of its traces. The code was right; the check
+  could not see this defect. `SignalAt` takes the read of `waitingReaders` and the signal only at
+  the code's `waitersGet` and `signalAll` lines, and the class control `no-write-signal`
+  (`TraceMutants`) must be rejected in A6 (`trace-controls.sh`: 48/48) and A18 (`check-graph.sh`).
+  The 51 traces of the code are accepted as before. At full size (2026-11-25 to 27): A6 accepts
+  1,530 of 1,530 traces of the code and rejects every class trace with a committed write; A18
+  accepts all 13 scenarios and rejects the class control in each (S3N's: 164.6 million JPF
+  states). `check-graph.sh` runs the class control on its own (`class`) or the other controls
+  without it (`controls-noclass`).
+- **The formal checks notice a check that got weaker.** `proof.sh` requires each module's exact
+  obligation count (a weakened theorem proves fewer) and fails on an omitted proof; `check.sh`
+  requires the distinct states of every clean model, fails on a `.cfg` no script runs, and runs
+  mutants that must violate `Fifo`, `ReaderOrder` and `AllReadersFinish`; `inductive.sh` checks
+  that the code before F278 does not refine `StreamBufferWait.tla`; the JPF gate requires
+  `constraints=0` (JPF prints "no errors detected" after a search the heap cut short too) and at
+  least each harness's states. A background thread that dies on an uncaught throwable fails its
+  test (`UncaughtExceptionsExtension`; under `-Pjml-rac` a contract violation there passed
+  silently). `VERIFICATION-ASSUMPTIONS.md` (V1, V2, V10, V13, V17) and the README no longer
+  claim more than is checked.
 - **The two reads of the wait are two steps in the TLA+ models (found by A18).** The fast path
   of `waitForAtLeast` and the loop of `awaitAtLeast` read `availableBytes` and then
   `streamClosed`; the models read both in one step, so a write and a close between the two reads

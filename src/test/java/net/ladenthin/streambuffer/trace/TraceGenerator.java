@@ -55,17 +55,19 @@ public final class TraceGenerator {
      * Records and writes the traces.
      *
      * @param args the output directory, the number of seeds per scenario, the yield probability
-     *     in 1/256
+     *     in 1/256, and optionally a defect of {@link TraceMutants} in the class (the traces of a
+     *     negative control, which {@code trace-controls.sh} must see rejected)
      * @throws Exception if a run fails or a file cannot be written
      */
     public static void main(String[] args) throws Exception {
         final Path dir = Paths.get(args[0]);
         final int seeds = Integer.parseInt(args[1]);
         final int yieldPer256 = Integer.parseInt(args[2]);
+        final String mutant = args.length > 3 ? args[3] : null;
         Files.createDirectories(dir);
         for (TraceScenario s : SCENARIOS) {
             for (int seed = 1; seed <= seeds; seed++) {
-                final List<TraceRecorder.Event> events = s.run(seed, yieldPer256);
+                final List<TraceRecorder.Event> events = s.run(seed, yieldPer256, mutant);
                 write(dir, s, seed, events);
             }
         }

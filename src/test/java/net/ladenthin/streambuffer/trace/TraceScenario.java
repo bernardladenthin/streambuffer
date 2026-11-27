@@ -166,7 +166,21 @@ public final class TraceScenario {
      * @throws Exception if the class cannot be loaded or a thread does not end within 30 s
      */
     public List<TraceRecorder.Event> run(long seed, int yieldPer256) throws Exception {
-        final Class<?> c = new TracingClassLoader().loadClass("net.ladenthin.streambuffer.StreamBuffer");
+        return run(seed, yieldPer256, null);
+    }
+
+    /**
+     * Runs the scenario once on a freshly loaded, instrumented {@code StreamBuffer} with a defect of
+     * {@link TraceMutants} (a negative control; {@code null}: none).
+     *
+     * @param seed the seed of the yields and of the closer's delay
+     * @param yieldPer256 the probability of a yield before each access, in 1/256
+     * @param mutant the defect, or {@code null}
+     * @return the events in the order they happened
+     * @throws Exception if the class cannot be loaded or a thread does not end within 30 s
+     */
+    public List<TraceRecorder.Event> run(long seed, int yieldPer256, String mutant) throws Exception {
+        final Class<?> c = new TracingClassLoader(mutant).loadClass("net.ladenthin.streambuffer.StreamBuffer");
         final Object sb = c.getConstructor().newInstance();
         c.getMethod("setMaxBufferElements", int.class).invoke(sb, bytes + 10);
         final InputStream in = (InputStream) c.getMethod("getInputStream").invoke(sb);

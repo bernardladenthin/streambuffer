@@ -7,7 +7,8 @@
 # needs, from the working tree, into one archive. Contents (payload root):
 #   sb/        src/test/{tla,jpf,remote} and .github/workflows/formal-verification.yml (the tool
 #              pins setup.sh reads, so the machine uses the versions CI uses)
-#   traced/, traced-mutant/   the instrumented StreamBuffer classes (A18; TracedClassDump)
+#   traced/, traced-mutant/, traced-nosignal/   the instrumented StreamBuffer classes (A18;
+#                             TracedClassDump, the last two with a defect of TraceMutants)
 #   lib/       the annotation jars the production bytecode references (checker-qual, jspecify,
 #              error-prone-annotations), for JPF's classpath
 #   traces/    Trace_*.tla of TraceGenerator (A6; TRACE_SEEDS seeds per scenario, yields 32/256)
@@ -41,6 +42,7 @@ cp "$work"/anno/error_prone_annotations-*.jar "$stage/lib/error-prone-annotation
 cp="target/test-classes${sep}target/classes${sep}$(cat "$work/test-classpath.txt")"
 java -cp "$cp" net.ladenthin.streambuffer.trace.TracedClassDump "$stage/traced"
 java -cp "$cp" net.ladenthin.streambuffer.trace.TracedClassDump "$stage/traced-mutant" no-decrement
+java -cp "$cp" net.ladenthin.streambuffer.trace.TracedClassDump "$stage/traced-nosignal" no-write-signal
 java -ea -cp "$cp" net.ladenthin.streambuffer.trace.TraceGenerator "$stage/traces" "${TRACE_SEEDS:-3}" 32
 
 cp -r src/test/tla src/test/jpf src/test/remote "$stage/sb/src/test/"

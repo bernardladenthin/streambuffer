@@ -19,7 +19,7 @@
 //  * ESC (deductive proof, openjml --esc): the static, pure, sequential core listed in the
 //    ESC_METHODS variable of the workflow — the two offset/length validators (including the
 //    intentional "(off + len) < 0" int-wraparound idiom, proven equivalent to the clean
-//    bounds condition under Java wrap semantics via code_java_math) and the thirteen static
+//    bounds condition under Java wrap semantics via code_java_math) and the fifteen static
 //    trim-decision/arithmetic/timeout helpers (full functional contracts; the ceiling division in
 //    calculateResultingChunks is proven against its multiplicative characterization).
 //
@@ -163,9 +163,10 @@ public class StreamBuffer implements Closeable {
     // ASSUMED PRECONDITION (scope caveat): the third requires bounds availableBytes so the
     // inlined (availableBytes + maxAllocationSize - 1) cannot overflow a long. The sole real
     // caller, shouldTrim(), is an instance method OUTSIDE the ESC method list, so ESC assumes
-    // this bound rather than discharging it at the call site. A caller CAN leave the proven
-    // domain — e.g. setMaxAllocationSize(Long.MAX_VALUE) drops the bound to availableBytes <= 1
-    // — but not into a wrong answer: the overflow needs maxAllocationSize < availableBytes AND
+    // this bound rather than discharging it at the call site. A caller leaves the proven domain
+    // only with availableBytes above Long.MAX_VALUE - maxAllocationSize + 1, about 2^63 - 2^31
+    // (setMaxAllocationSize clamps to MAX_ARRAY_LENGTH) — and even then not into a wrong
+    // answer: the overflow needs maxAllocationSize < availableBytes AND
     // availableBytes + maxAllocationSize - 1 > Long.MAX_VALUE simultaneously, i.e. > ~4 EiB
     // buffered, which no JVM heap can hold. So this proves the decision tree on the only
     // physically reachable domain; the bound is a lemma about an unreachable region, not a

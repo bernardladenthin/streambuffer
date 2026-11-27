@@ -55,7 +55,7 @@ prev="$(grep -E '^export (TLA2TOOLS|APALACHE|JPF_CORE|TLAPM)=' "$tools/env.sh" 2
   echo "# written by setup.sh"
   echo "export PAYLOAD=$payload"
   echo "export JAVA_JPF=$j11 JAVA_TLC=$j11"
-  echo "export TRACED=$payload/traced TRACED_MUTANT=$payload/traced-mutant LIB=$payload/lib"
+  echo "export TRACED=$payload/traced TRACED_MUTANT=$payload/traced-mutant TRACED_NOSIGNAL=$payload/traced-nosignal LIB=$payload/lib"
   [ -z "$prev" ] || echo "$prev"
 } > "$tools/env.sh"
 
