@@ -16,7 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   could not see this defect. `SignalAt` takes the read of `waitingReaders` and the signal only at
   the code's `waitersGet` and `signalAll` lines, and the class control `no-write-signal`
   (`TraceMutants`) must be rejected in A6 (`trace-controls.sh`: 48/48) and A18 (`check-graph.sh`).
-  The 51 traces of the code are accepted as before.
+  The 51 traces of the code are accepted as before. At full size (2026-11-25 to 27): A6 accepts
+  1,530 of 1,530 traces of the code and rejects every class trace with a committed write; A18
+  accepts all 13 scenarios and rejects the class control in each (S3N's: 164.6 million JPF
+  states). `check-graph.sh` runs the class control on its own (`class`) or the other controls
+  without it (`controls-noclass`).
 - **The formal checks notice a check that got weaker.** `proof.sh` requires each module's exact
   obligation count (a weakened theorem proves fewer) and fails on an omitted proof; `check.sh`
   requires the distinct states of every clean model, fails on a `.cfg` no script runs, and runs

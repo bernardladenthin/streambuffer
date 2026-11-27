@@ -124,10 +124,13 @@ annotated, so everything below is genuinely still open.
       refinement (`RefineWaitNoReCheck2`); a background thread's uncaught throwable fails its test
       (`UncaughtExceptionsExtension`, RAC). The docs that said more than was checked (V1, V2,
       V10, V13, V17, the README) are corrected.
-    - [ ] A18: the 12 scenarios beyond S1A again, with the current trace model and the
-      `no-write-signal` class control (rented machine; `pack.sh` builds `traced-nosignal/`). Their
-      results of 2026-11-24 were with the model before `SignalAt`, which accepts more; S1A runs in
-      CI. Each control is one more JPF run of its scenario.
+    - [x] A18: the 12 scenarios beyond S1A again, with the current trace model and the
+      `no-write-signal` class control (2026-11-25 to 27, `cd758c0`, rented 32-core machine; results
+      in the owner's local result folder): all 13 accepted, every control rejected, the class
+      control in all 13 (S3N's JPF of it 37.3 h, 164.6 M states); A6 at full size with it, 1,530 of
+      1,530 traces accepted, every class trace with a committed write rejected. `check-graph.sh`
+      runs the class control on its own (`class`) or the others without it (`controls-noclass`),
+      `2c3d9ba`. Tables: `src/test/tla/README.md`.
     - [ ] `common/check-proof-escapes` of bernardladenthin/actions (branch
       `feat/check-proof-escapes`, not yet released): once released, a step in the
       `repository-checks` job and a `proof-escapes` section in `.github/actions-config.json`
